@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}New Publication - Chuuk Dictionary OCR{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Create New Publication</h2>
+    <p>Create a new publication to organize your dictionary pages. You can upload up to 400+ pages per publication.</p>
+    
+    <form method="POST" style="margin-top: 30px;">
+        <div class="form-group">
+            <label for="title">Publication Title *</label>
+            <input type="text" id="title" name="title" required placeholder="e.g., Chuuk-English Dictionary">
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description (Optional)</label>
+            <textarea id="description" name="description" placeholder="Enter a description of this publication..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" class="btn btn-success">Create Publication</button>
+            <a href="{{ url_for('index') }}" class="btn">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
