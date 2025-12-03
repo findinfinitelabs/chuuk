@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Chuuk Dictionary OCR{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Welcome to the Chuuk Dictionary OCR System</h2>
+    <p>This tool helps you digitize and cross-reference Chuukese dictionary pages using OCR technology and online resources.</p>
+    
+    <div style="margin-top: 20px;">
+        <h3>Features:</h3>
+        <ul style="margin-left: 20px; margin-top: 10px;">
+            <li>📚 Upload and manage dictionary publications (400+ pages)</li>
+            <li>🔍 OCR processing using Tesseract and Google Vision API</li>
+            <li>🌐 Cross-reference words with JW.org Chuukese resources</li>
+            <li>💾 Store and organize your digitized content</li>
+        </ul>
+    </div>
+    
+    <div style="margin-top: 30px; display: flex; gap: 10px;">
+        <a href="{{ url_for('new_publication') }}" class="btn btn-success">Create New Publication</a>
+        <a href="{{ url_for('lookup') }}" class="btn">Lookup Words</a>
+    </div>
+</div>
+
+{% if publications %}
+<div class="card">
+    <h2>Your Publications</h2>
+    <div class="grid" style="margin-top: 20px;">
+        {% for pub in publications %}
+        <div class="card" style="background-color: #f8f9fa;">
+            <h3>{{ pub.title }}</h3>
+            {% if pub.description %}
+            <p style="color: #666; margin-top: 10px;">{{ pub.description }}</p>
+            {% endif %}
+            <p style="margin-top: 10px; color: #888; font-size: 0.9em;">
+                Pages: {{ pub.pages|length }}<br>
+                Created: {{ pub.created_at[:10] }}
+            </p>
+            <a href="{{ url_for('view_publication', pub_id=pub.id) }}" class="btn" style="margin-top: 15px;">View Publication</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <h2>Getting Started</h2>
+    <p>You don't have any publications yet. Create one to start uploading and processing dictionary pages!</p>
+    <a href="{{ url_for('new_publication') }}" class="btn btn-success" style="margin-top: 15px;">Create Your First Publication</a>
+</div>
+{% endif %}
+{% endblock %}
