@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Word Lookup - Chuuk Dictionary OCR{% endblock %}
+
+{% block extra_css %}
+<style>
+    .search-box {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .search-box input[type="text"] {
+        flex: 1;
+    }
+    
+    .result-item {
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .result-item h4 {
+        color: #2c3e50;
+        margin-bottom: 10px;
+    }
+    
+    .result-item a {
+        color: #3498db;
+        text-decoration: none;
+        word-break: break-all;
+    }
+    
+    .result-item a:hover {
+        text-decoration: underline;
+    }
+    
+    .status-success {
+        color: #27ae60;
+        font-weight: bold;
+    }
+    
+    .status-error {
+        color: #e74c3c;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>🔍 Word & Phrase Lookup</h2>
+    <p>Search for Chuukese words and phrases across JW.org resources and other online sources.</p>
+    
+    <form method="POST" style="margin-top: 30px;">
+        <div class="search-box">
+            <input type="text" 
+                   id="word" 
+                   name="word" 
+                   placeholder="Enter a word or phrase to search..." 
+                   value="{{ word or '' }}"
+                   required
+                   autofocus>
+            
+            <select id="lang" name="lang" style="width: 200px;">
+                <option value="chk" {% if lang == 'chk' %}selected{% endif %}>Chuukese</option>
+                <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
+                <option value="es" {% if lang == 'es' %}selected{% endif %}>Spanish</option>
+                <option value="pt" {% if lang == 'pt' %}selected{% endif %}>Portuguese</option>
+                <option value="fr" {% if lang == 'fr' %}selected{% endif %}>French</option>
+                <option value="de" {% if lang == 'de' %}selected{% endif %}>German</option>
+                <option value="it" {% if lang == 'it' %}selected{% endif %}>Italian</option>
+                <option value="ja" {% if lang == 'ja' %}selected{% endif %}>Japanese</option>
+                <option value="ko" {% if lang == 'ko' %}selected{% endif %}>Korean</option>
+                <option value="zh" {% if lang == 'zh' %}selected{% endif %}>Chinese</option>
+            </select>
+            
+            <button type="submit" class="btn btn-success">Search</button>
+        </div>
+    </form>
+</div>
+
+{% if results %}
+<div class="card">
+    <h3>Search Results for "{{ word }}"</h3>
+    <p style="color: #666; margin-bottom: 20px;">Language: {{ lang }}</p>
+    
+    {% for result in results %}
+    <div class="result-item">
+        <h4>{{ result.source }}</h4>
+        
+        {% if result.status == 'success' %}
+        <p class="status-success">✓ Resource available</p>
+        <p style="margin-top: 10px;">
+            <a href="{{ result.url }}" target="_blank" rel="noopener noreferrer">
+                {{ result.url }}
+            </a>
+        </p>
+        <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
+            Click the link above to view search results on {{ result.source }}
+        </p>
+        {% else %}
+        <p class="status-error">✗ Error accessing resource</p>
+        {% if result.error %}
+        <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
+            Error: {{ result.error }}
+        </p>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h3>💡 Tips for Better Results</h3>
+    <ul style="margin-left: 20px; margin-top: 10px;">
+        <li>Try searching in both Chuukese and English to find cross-references</li>
+        <li>Use complete phrases for more accurate results</li>
+        <li>Check multiple sources to verify translations</li>
+        <li>Click on the links to view full context and usage examples</li>
+    </ul>
+</div>
+{% elif word %}
+<div class="card">
+    <p style="color: #666;">No results found. Please try again.</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>📚 Available Resources</h3>
+    <p>This tool searches across the following JW.org resources:</p>
+    <ul style="margin-left: 20px; margin-top: 15px;">
+        <li><strong>JW.org Main Site</strong> - General publications and articles in multiple languages</li>
+        <li><strong>Watchtower Online Library (WOL)</strong> - Comprehensive library of publications and Bible translations</li>
+    </ul>
+    <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
+        These resources can help cross-reference your dictionary content with verified translations and usage examples.
+    </p>
+</div>
+{% endblock %}

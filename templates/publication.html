@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}{{ publication.title }} - Chuuk Dictionary OCR{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-area {
+        border: 2px dashed #3498db;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+        background-color: #f8f9fa;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    
+    .upload-area:hover {
+        background-color: #e9ecef;
+    }
+    
+    .upload-area.dragover {
+        background-color: #d4e9f7;
+        border-color: #2980b9;
+    }
+    
+    .page-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+    }
+    
+    .page-item {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        background: white;
+    }
+    
+    .page-item img {
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+        border-radius: 4px;
+    }
+    
+    .ocr-result {
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        margin-top: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 0.85em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2>{{ publication.title }}</h2>
+            {% if publication.description %}
+            <p style="color: #666; margin-top: 10px;">{{ publication.description }}</p>
+            {% endif %}
+            <p style="color: #888; margin-top: 5px; font-size: 0.9em;">
+                Created: {{ publication.created_at[:10] }} | Pages: {{ publication.pages|length }}
+            </p>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Upload Pages</h3>
+    <p>Upload dictionary pages (PNG, JPG, PDF, etc.). You can upload multiple pages at once.</p>
+    
+    <form id="uploadForm" enctype="multipart/form-data" style="margin-top: 20px;">
+        <div class="upload-area" id="uploadArea">
+            <p style="font-size: 1.2em; margin-bottom: 10px;">📄 Click or drag files here to upload</p>
+            <input type="file" id="fileInput" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.pdf" multiple style="display: none;">
+            <p style="color: #666; font-size: 0.9em;">Supported formats: PNG, JPG, PDF, TIFF</p>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <label>
+                <input type="checkbox" id="processOcr" name="process_ocr" checked>
+                Process OCR automatically after upload
+            </label>
+        </div>
+        
+        <div class="form-group" style="margin-top: 15px;">
+            <label for="ocrLang">OCR Language</label>
+            <select id="ocrLang" name="ocr_lang">
+                <option value="eng">English</option>
+                <option value="chk" selected>Chuukese (if available)</option>
+                <option value="eng+chk">English + Chuukese</option>
+            </select>
+        </div>
+    </form>
+    
+    <div id="uploadStatus" style="margin-top: 15px; display: none;"></div>
+</div>
+
+{% if publication.pages %}
+<div class="card">
+    <h3>Uploaded Pages ({{ publication.pages|length }})</h3>
+    
+    <div class="page-grid">
+        {% for page in publication.pages %}
+        <div class="page-item">
+            <img src="{{ url_for('static', filename='placeholder.png') }}" alt="{{ page.filename }}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22150%22%3E%3Crect width=%22200%22 height=%22150%22 fill=%22%23ddd%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EImage%3C/text%3E%3C/svg%3E';">
+            <p style="margin-top: 8px; font-size: 0.85em; word-break: break-all;">{{ page.filename }}</p>
+            <p style="font-size: 0.75em; color: #888;">{{ page.added_at[:10] }}</p>
+            
+            {% if page.ocr_results %}
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #3498db;">View OCR Results</summary>
+                <div class="ocr-result">
+                    {% if page.ocr_results.tesseract %}
+                    <strong>Tesseract:</strong>
+                    <pre style="white-space: pre-wrap; margin-top: 5px;">{{ page.ocr_results.tesseract[:200] }}{% if page.ocr_results.tesseract|length > 200 %}...{% endif %}</pre>
+                    {% endif %}
+                    
+                    {% if page.ocr_results.google_vision %}
+                    <strong style="margin-top: 10px; display: block;">Google Vision:</strong>
+                    <pre style="white-space: pre-wrap; margin-top: 5px;">{{ page.ocr_results.google_vision[:200] }}{% if page.ocr_results.google_vision|length > 200 %}...{% endif %}</pre>
+                    {% endif %}
+                </div>
+            </details>
+            {% else %}
+            <button class="btn" style="margin-top: 10px; width: 100%; font-size: 0.85em;" onclick="processPageOcr('{{ page.filename }}')">Process OCR</button>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const pubId = '{{ publication.id }}';
+    
+    // Click to upload
+    uploadArea.addEventListener('click', () => fileInput.click());
+    
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        fileInput.files = e.dataTransfer.files;
+        uploadFiles();
+    });
+    
+    // File selection
+    fileInput.addEventListener('change', uploadFiles);
+    
+    function uploadFiles() {
+        const files = fileInput.files;
+        if (files.length === 0) return;
+        
+        uploadStatus.style.display = 'block';
+        uploadStatus.innerHTML = '<p style="color: #3498db;">Uploading ' + files.length + ' file(s)...</p>';
+        
+        const processOcr = document.getElementById('processOcr').checked;
+        const ocrLang = document.getElementById('ocrLang').value;
+        
+        let completed = 0;
+        let errors = 0;
+        
+        Array.from(files).forEach(file => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('process_ocr', processOcr);
+            formData.append('ocr_lang', ocrLang);
+            
+            fetch(`/publication/${pubId}/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                completed++;
+                if (data.error) errors++;
+                
+                if (completed === files.length) {
+                    if (errors === 0) {
+                        uploadStatus.innerHTML = '<p style="color: #27ae60;">✓ Successfully uploaded ' + files.length + ' file(s)!</p>';
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        uploadStatus.innerHTML = '<p style="color: #e74c3c;">Uploaded ' + (files.length - errors) + ' file(s), ' + errors + ' failed.</p>';
+                    }
+                }
+            })
+            .catch(error => {
+                completed++;
+                errors++;
+                if (completed === files.length) {
+                    uploadStatus.innerHTML = '<p style="color: #e74c3c;">Error uploading files. Please try again.</p>';
+                }
+            });
+        });
+    }
+    
+    function processPageOcr(filename) {
+        const formData = new FormData();
+        formData.append('pub_id', pubId);
+        formData.append('filename', filename);
+        formData.append('lang', document.getElementById('ocrLang').value);
+        
+        fetch('/ocr/process', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error processing OCR: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error processing OCR: ' + error);
+        });
+    }
+</script>
+{% endblock %}
