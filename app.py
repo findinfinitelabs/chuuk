@@ -14,7 +14,14 @@ from publication_manager import PublicationManager
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+secret_key = os.getenv('FLASK_SECRET_KEY')
+if not secret_key:
+    # Generate a random secret key for development
+    import secrets
+    secret_key = secrets.token_hex(32)
+    if os.getenv('FLASK_ENV') == 'production':
+        raise ValueError('FLASK_SECRET_KEY must be set in production')
+app.config['SECRET_KEY'] = secret_key
 app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))  # 16MB default
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 
@@ -60,6 +67,12 @@ def new_publication():
 @app.route('/publication/<pub_id>')
 def view_publication(pub_id):
     """View a publication and its pages"""
+    # Validate publication ID format (timestamp + UUID)
+    import re
+    if not re.match(r'^\d{14}_[a-f0-9]{8}$', pub_id):
+        flash('Invalid publication ID', 'error')
+        return redirect(url_for('index'))
+    
     publication = pub_manager.get_publication(pub_id)
     
     if not publication:
@@ -72,6 +85,11 @@ def view_publication(pub_id):
 @app.route('/publication/<pub_id>/upload', methods=['POST'])
 def upload_page(pub_id):
     """Upload a page to a publication"""
+    # Validate publication ID format (timestamp + UUID)
+    import re
+    if not re.match(r'^\d{14}_[a-f0-9]{8}$', pub_id):
+        return jsonify({'error': 'Invalid publication ID'}), 400
+    
     publication = pub_manager.get_publication(pub_id)
     
     if not publication:
@@ -163,4 +181,6 @@ if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
     # Run the application
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Debug mode should only be enabled in development
+    debug_mode = os.getenv('FLASK_ENV') == 'development'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5000)
