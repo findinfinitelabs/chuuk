@@ -55,7 +55,9 @@ class PublicationManager:
         Returns:
             Publication ID
         """
-        pub_id = datetime.now().strftime('%Y%m%d%H%M%S')
+        # Use UUID to ensure uniqueness and prevent timestamp collisions
+        import uuid
+        pub_id = datetime.now().strftime('%Y%m%d%H%M%S') + '_' + str(uuid.uuid4())[:8]
         
         self.publications[pub_id] = {
             'id': pub_id,
