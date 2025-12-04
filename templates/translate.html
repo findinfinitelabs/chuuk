@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}AI Translation - Chuukese Dictionary OCR{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/translate.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2><span class="glyphicon glyphicon-transfer"></span> AI-Powered Chuukese Translation</h2>
+    <p>Use our locally-trained AI model to translate between Chuukese and English. The model learns from your uploaded dictionaries to provide accurate, contextual translations.</p>
+    
+    <!-- LLM Status -->
+    {% if error_message and 'not available' in error_message %}
+    <div class="llm-status unavailable">
+        <span class="glyphicon glyphicon-remove-circle"></span> <strong>Local AI Model Not Available</strong><br>
+        The translation model needs to be installed and trained first.
+        <form method="POST" action="{{ url_for('train_llm') }}">
+            <button type="submit" class="train-btn">
+                <span class="glyphicon glyphicon-flash"></span> Train AI Model
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <div class="llm-status available">
+        <span class="glyphicon glyphicon-ok-circle"></span> <strong>AI Translation Model Ready</strong><br>
+        Local Chuukese translator is trained and ready to use.
+        <form method="POST" action="{{ url_for('train_llm') }}">
+            <button type="submit" class="train-btn">
+                <span class="glyphicon glyphicon-refresh"></span> Retrain with Latest Data
+            </button>
+        </form>
+    </div>
+    {% endif %}
+    
+    <form method="POST" class="translate-form">
+        <!-- Direction Selector -->
+        <div class="direction-selector">
+            <div class="direction-option">
+                <input type="radio" id="auto" name="direction" value="auto" {% if direction == 'auto' %}checked{% endif %}>
+                <label for="auto">
+                    <span class="glyphicon glyphicon-resize-horizontal"></span> Auto-Detect Language
+                </label>
+            </div>
+            <div class="direction-option">
+                <input type="radio" id="chk_to_en" name="direction" value="chk_to_en" {% if direction == 'chk_to_en' %}checked{% endif %}>
+                <label for="chk_to_en">
+                    <span class="glyphicon glyphicon-arrow-right"></span> Chuukese → English
+                </label>
+            </div>
+            <div class="direction-option">
+                <input type="radio" id="en_to_chk" name="direction" value="en_to_chk" {% if direction == 'en_to_chk' %}checked{% endif %}>
+                <label for="en_to_chk">
+                    <span class="glyphicon glyphicon-arrow-left"></span> English → Chuukese
+                </label>
+            </div>
+        </div>
+        
+        <!-- Translation Interface -->
+        <div class="translation-container">
+            <div class="translation-box input">
+                <h3 class="translate-section-title">
+                    <span class="glyphicon glyphicon-edit"></span> Input Text
+                </h3>
+                <textarea 
+                    name="text" 
+                    placeholder="Enter text to translate..."
+                    required
+                    autofocus>{{ text }}</textarea>
+            </div>
+            
+            <div class="translation-box output">
+                <h3 class="translate-section-title output">
+                    <span class="glyphicon glyphicon-comment"></span> Translation Result
+                </h3>
+                {% if translation_result %}
+                <div class="translation-result">{{ translation_result }}</div>
+                {% elif error_message %}
+                <div class="translation-result error">
+                    <span class="glyphicon glyphicon-exclamation-sign"></span> {{ error_message }}
+                </div>
+                {% else %}
+                <div class="translation-result placeholder">
+                    Translation will appear here...
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Translate Button -->
+        <div class="translate-center">
+            <button type="submit" class="translate-btn" {% if error_message and 'not available' in error_message %}disabled{% endif %}>
+                <span class="glyphicon glyphicon-transfer"></span> Translate Text
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Model Information -->
+<div class="card">
+    <h3><span class="glyphicon glyphicon-cog"></span> About the AI Translation Model</h3>
+    
+    <div class="feature-grid">
+        <div class="feature-card local">
+            <h4>
+                <span class="glyphicon glyphicon-home"></span> Local Processing
+            </h4>
+            <p>Your translations are processed entirely on your device using <strong>Ollama</strong> - no data is sent to external servers.</p>
+        </div>
+        
+        <div class="feature-card dictionary">
+            <h4>
+                <span class="glyphicon glyphicon-book"></span> Dictionary-Trained
+            </h4>
+            <p>The model learns directly from your uploaded Chuukese dictionaries, ensuring authentic and accurate translations.</p>
+        </div>
+        
+        <div class="feature-card adaptive">
+            <h4>
+                <span class="glyphicon glyphicon-repeat"></span> Adaptive Learning
+            </h4>
+            <p>As you add more dictionary content, you can retrain the model to improve its knowledge and accuracy.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Installation Guide -->
+{% if error_message and 'not available' in error_message %}
+<div class="card">
+    <h3><span class="glyphicon glyphicon-wrench"></span> Setup Instructions</h3>
+    
+    <div class="setup-instructions">
+        <h4>
+            <span class="glyphicon glyphicon-list"></span> Prerequisites:
+        </h4>
+        <ol>
+            <li><strong>Install Ollama:</strong> Download from <a href="https://ollama.com/download" target="_blank">ollama.com/download</a></li>
+            <li><strong>Add Dictionary Content:</strong> Upload and process Chuukese dictionaries first</li>
+            <li><strong>Train the Model:</strong> Click the "Train AI Model" button above</li>
+        </ol>
+        
+        <h4 class="command-setup">
+            <span class="glyphicon glyphicon-console"></span> Command Line Setup:
+        </h4>
+        <div class="command-block">
+# Install Ollama<br>
+curl -fsSL https://ollama.com/install.sh | sh<br><br>
+# Pull the base model<br>
+ollama pull llama3.2:3b<br><br>
+# Train with your dictionary data<br>
+python llm_trainer.py
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if db_stats %}
+<div class="card">
+    <h3><span class="glyphicon glyphicon-stats"></span> Training Data Status</h3>
+    {% if db_stats.database_status == 'connected' %}
+    <div class="stats-grid">
+        <div class="stat-card entries">
+            <div class="stat-number">{{ db_stats.total_entries or 0 }}</div>
+            <div class="stat-label">
+                <span class="glyphicon glyphicon-list-alt"></span> Dictionary Entries
+            </div>
+        </div>
+        <div class="stat-card pages">
+            <div class="stat-number">{{ db_stats.total_pages or 0 }}</div>
+            <div class="stat-label">
+                <span class="glyphicon glyphicon-file"></span> Processed Pages
+            </div>
+        </div>
+        <div class="stat-card publications">
+            <div class="stat-number">{{ db_stats.publications or 0 }}</div>
+            <div class="stat-label">
+                <span class="glyphicon glyphicon-folder-open"></span> Publications
+            </div>
+        </div>
+    </div>
+    <p class="db-status connected">
+        <span class="glyphicon glyphicon-ok"></span> Database connected and ready for training
+    </p>
+    {% else %}
+    <p class="db-status error">
+        <span class="glyphicon glyphicon-remove"></span> Database not available. Please upload dictionary content first.
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h3><span class="glyphicon glyphicon-info-sign"></span> Translation Tips</h3>
+    <ul class="tips-list">
+        <li><strong>Start Simple:</strong> Try translating individual words first to test the model</li>
+        <li><strong>Use Context:</strong> The AI understands context, so full sentences often work better than isolated words</li>
+        <li><strong>Check Accuracy:</strong> Cross-reference important translations with your dictionary lookup tool</li>
+        <li><strong>Improve Training:</strong> Add more dictionary content and retrain for better accuracy</li>
+        <li><strong>Grammar Assistance:</strong> Ask the AI about word types and grammatical explanations</li>
+    </ul>
+</div>
+{% endblock %}

@@ -80,14 +80,21 @@
     <form id="uploadForm" enctype="multipart/form-data" style="margin-top: 20px;">
         <div class="upload-area" id="uploadArea">
             <p style="font-size: 1.2em; margin-bottom: 10px;">📄 Click or drag files here to upload</p>
-            <input type="file" id="fileInput" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.pdf" multiple style="display: none;">
-            <p style="color: #666; font-size: 0.9em;">Supported formats: PNG, JPG, PDF, TIFF</p>
+            <input type="file" id="fileInput" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.pdf,.docx" multiple style="display: none;">
+            <p style="color: #666; font-size: 0.9em;">Supported formats: PNG, JPG, PDF, DOCX</p>
         </div>
         
         <div style="margin-top: 20px;">
             <label>
                 <input type="checkbox" id="processOcr" name="process_ocr" checked>
                 Process OCR automatically after upload
+            </label>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <label>
+                <input type="checkbox" id="indexDictionary" name="index_dictionary">
+                Index as dictionary content (extract word translations)
             </label>
         </div>
         
@@ -102,6 +109,21 @@
     </form>
     
     <div id="uploadStatus" style="margin-top: 15px; display: none;"></div>
+    
+    <!-- Processing Logs Container -->
+    <div id="processingLogs" style="margin-top: 20px; display: none;">
+        <h4>📊 Processing Progress</h4>
+        <div id="progressBar" style="background: #e9ecef; border-radius: 4px; margin-bottom: 15px;">
+            <div id="progressFill" style="background: #28a745; height: 20px; border-radius: 4px; transition: width 0.3s; width: 0%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.85em;">
+                0%
+            </div>
+        </div>
+        <div id="processingStatus" style="margin-bottom: 10px; font-weight: bold;"></div>
+        <div id="processingStats" style="margin-bottom: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;"></div>
+        <div id="logContainer" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em;">
+            <div id="logEntries"></div>
+        </div>
+    </div>
 </div>
 
 {% if publication.pages %}
@@ -146,7 +168,15 @@
     const fileInput = document.getElementById('fileInput');
     const uploadForm = document.getElementById('uploadForm');
     const uploadStatus = document.getElementById('uploadStatus');
+    const processingLogs = document.getElementById('processingLogs');
+    const logEntries = document.getElementById('logEntries');
+    const progressBar = document.getElementById('progressFill');
+    const processingStatus = document.getElementById('processingStatus');
+    const processingStats = document.getElementById('processingStats');
     const pubId = '{{ publication.id }}';
+    
+    let currentSessionId = null;
+    let logUpdateInterval = null;
     
     // Click to upload
     uploadArea.addEventListener('click', () => fileInput.click());
@@ -179,6 +209,7 @@
         uploadStatus.innerHTML = '<p style="color: #3498db;">Uploading ' + files.length + ' file(s)...</p>';
         
         const processOcr = document.getElementById('processOcr').checked;
+        const indexDictionary = document.getElementById('indexDictionary').checked;
         const ocrLang = document.getElementById('ocrLang').value;
         
         let completed = 0;
@@ -188,6 +219,7 @@
             const formData = new FormData();
             formData.append('file', file);
             formData.append('process_ocr', processOcr);
+            formData.append('index_dictionary', indexDictionary);
             formData.append('ocr_lang', ocrLang);
             
             fetch(`/publication/${pubId}/upload`, {
@@ -199,10 +231,17 @@
                 completed++;
                 if (data.error) errors++;
                 
+                // Start real-time logging if OCR processing and session ID provided
+                if (data.session_id && processOcr) {
+                    startProcessingMonitor(data.session_id, file.name);
+                }
+                
                 if (completed === files.length) {
                     if (errors === 0) {
                         uploadStatus.innerHTML = '<p style="color: #27ae60;">✓ Successfully uploaded ' + files.length + ' file(s)!</p>';
-                        setTimeout(() => location.reload(), 1500);
+                        if (!processOcr) {
+                            setTimeout(() => location.reload(), 1500);
+                        }
                     } else {
                         uploadStatus.innerHTML = '<p style="color: #e74c3c;">Uploaded ' + (files.length - errors) + ' file(s), ' + errors + ' failed.</p>';
                     }
@@ -216,6 +255,128 @@
                 }
             });
         });
+    }
+    
+    function startProcessingMonitor(sessionId, filename) {
+        currentSessionId = sessionId;
+        processingLogs.style.display = 'block';
+        
+        // Clear previous logs
+        logEntries.innerHTML = '';
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        processingStatus.textContent = `Processing ${filename}...`;
+        
+        // Start polling for updates
+        logUpdateInterval = setInterval(() => updateProcessingLogs(sessionId), 1000);
+        
+        // Also get initial logs immediately
+        updateProcessingLogs(sessionId);
+    }
+    
+    function updateProcessingLogs(sessionId) {
+        // Get current status
+        fetch(`/api/processing/status/${sessionId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) return;
+                
+                // Update progress bar
+                const progress = data.progress_percentage || 0;
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = Math.round(progress) + '%';
+                
+                // Update status
+                const status = data.status || 'processing';
+                const statusEmoji = {
+                    'started': '🚀',
+                    'processing': '⚙️',
+                    'completed': '✅',
+                    'failed': '❌'
+                };
+                processingStatus.innerHTML = `${statusEmoji[status] || '⚙️'} Status: ${status.toUpperCase()}`;
+                
+                // Update stats
+                const stats = data.stats || {};
+                processingStats.innerHTML = `
+                    <div style="background: #e3f2fd; padding: 8px; border-radius: 4px;">
+                        <strong>Pages:</strong> ${data.current_page || 0}/${data.total_pages || 1}
+                    </div>
+                    <div style="background: #f3e5f5; padding: 8px; border-radius: 4px;">
+                        <strong>OCR Method:</strong> ${stats.ocr_method || 'Unknown'}
+                    </div>
+                    <div style="background: #e8f5e8; padding: 8px; border-radius: 4px;">
+                        <strong>Words Indexed:</strong> ${stats.words_indexed || 0}
+                    </div>
+                    <div style="background: ${stats.errors > 0 ? '#ffebee' : '#f1f8e9'}; padding: 8px; border-radius: 4px;">
+                        <strong>Errors:</strong> ${stats.errors || 0}
+                    </div>
+                `;
+                
+                // Stop polling if completed or failed
+                if (status === 'completed' || status === 'failed') {
+                    clearInterval(logUpdateInterval);
+                    if (status === 'completed') {
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                }
+            })
+            .catch(error => console.log('Status update error:', error));
+        
+        // Get recent logs
+        fetch(`/api/processing/logs/${sessionId}/recent?limit=50`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.logs) {
+                    updateLogDisplay(data.logs);
+                }
+            })
+            .catch(error => console.log('Log update error:', error));
+    }
+    
+    function updateLogDisplay(logs) {
+        const logContainer = document.getElementById('logEntries');
+        
+        // Clear and rebuild log display
+        logContainer.innerHTML = '';
+        
+        logs.forEach(log => {
+            const logEntry = document.createElement('div');
+            logEntry.style.marginBottom = '5px';
+            logEntry.style.padding = '5px';
+            logEntry.style.borderRadius = '3px';
+            
+            // Color code by level
+            const colors = {
+                'info': '#d4edda',
+                'warning': '#fff3cd', 
+                'error': '#f8d7da',
+                'success': '#d1ecf1'
+            };
+            logEntry.style.backgroundColor = colors[log.level] || colors['info'];
+            
+            // Format timestamp
+            const time = new Date(log.timestamp).toLocaleTimeString();
+            
+            // Add emoji based on content
+            let emoji = '';
+            if (log.message.includes('✓') || log.message.includes('Completed')) emoji = '✅';
+            else if (log.message.includes('⚠') || log.level === 'warning') emoji = '⚠️';
+            else if (log.message.includes('✗') || log.level === 'error') emoji = '❌';
+            else if (log.message.includes('Starting')) emoji = '🚀';
+            else if (log.message.includes('Processing')) emoji = '⚙️';
+            else if (log.message.includes('indexed')) emoji = '📝';
+            
+            logEntry.innerHTML = `
+                <span style="color: #666; font-size: 0.8em;">[${time}]</span>
+                ${emoji} <span>${log.message}</span>
+            `;
+            
+            logContainer.appendChild(logEntry);
+        });
+        
+        // Scroll to bottom
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
     
     function processPageOcr(filename) {

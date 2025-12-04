@@ -9,8 +9,8 @@ from io import BytesIO
 # Add the parent directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from publication_manager import PublicationManager
-from jworg_lookup import JWOrgLookup
+from src.database.publication_manager import PublicationManager
+from src.core.jworg_lookup import JWOrgLookup
 
 
 def test_publication_manager():

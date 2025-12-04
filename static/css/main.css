@@ -1,0 +1,283 @@
+/* Base Template Styles with ADA-Compliant Typography */
+
+/* Import Finnish-inspired fonts */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.7; /* Increased for better readability */
+    color: #1a1a1a; /* Higher contrast for ADA compliance */
+    background-color: #f7f8fa;
+    padding-top: 0;
+    font-size: 22px; /* Base font size increased for better readability */
+    font-weight: 400;
+}
+
+/* Typography Hierarchy - Finnish Block Style */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #0d1421;
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+}
+
+h1 {
+    font-size: 3.5rem; /* 56px - increased */
+    font-weight: 700;
+}
+
+h2 {
+    font-size: 3rem; /* 48px - increased */
+    font-weight: 700;
+}
+
+h3 {
+    font-size: 2.25rem; /* 36px - increased */
+    font-weight: 600;
+}
+
+h4 {
+    font-size: 1.75rem; /* 28px - increased */
+    font-weight: 600;
+}
+
+p {
+    font-size: 1.125rem; /* 18px */
+    line-height: 1.7;
+    margin-bottom: 1rem;
+    color: #2d3748;
+}
+
+/* Monospace text for code */
+code, pre, .mono {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+.container-fluid {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header - Finnish Municipal Style */
+header {
+    background: linear-gradient(135deg, #003d82 0%, #0056b3 100%);
+    color: white;
+    padding: 24px 0;
+    margin-bottom: 0;
+    border-bottom: 4px solid #ffd700;
+}
+
+header h1 {
+    text-align: center;
+    font-size: 3.5rem; /* 56px - increased significantly */
+    margin: 0;
+    font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    color: white;
+}
+
+/* Navigation - High Contrast */
+.main-nav {
+    background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
+    padding: 0;
+    margin-bottom: 24px;
+    border-radius: 0;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.navbar-nav > li > a {
+    color: #ffffff !important;
+    padding: 18px 24px;
+    font-size: 1.5rem; /* 24px - increased significantly */
+    font-weight: 600; /* Increased weight */
+    transition: all 0.3s ease;
+}
+
+.navbar-nav > li > a:hover,
+.navbar-nav > li > a:focus {
+    background: linear-gradient(135deg, #003d82 0%, #0056b3 100%) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+}
+
+.navbar-nav > li > a .glyphicon {
+    margin-right: 12px;
+    font-size: 1.4em; /* Increased icon size */
+}
+
+/* Cards - Finnish Clean Design */
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Card Typography - Increased Sizes */
+.card h2 {
+    font-size: 3rem; /* 48px - significantly increased */
+    font-weight: 700;
+    color: #1e3a8a;
+    margin-bottom: 20px;
+}
+
+.card h3 {
+    font-size: 2.25rem; /* 36px - significantly increased */
+    font-weight: 600;
+    color: #3730a3;
+    margin-bottom: 16px;
+}
+
+.card p {
+    font-size: 1.5rem; /* 24px - significantly increased */
+    line-height: 1.7;
+    color: #374151;
+    margin-bottom: 16px;
+}
+
+/* Buttons - ADA Compliant */
+.btn {
+    border-radius: 8px;
+    font-size: 1.375rem; /* 22px - increased */
+    font-weight: 700; /* Increased weight */
+    padding: 16px 28px; /* Increased padding */
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    min-height: 52px; /* Increased minimum touch target */
+    line-height: 1.2;
+}
+
+.btn:hover,
+.btn:focus {
+    transform: translateY(-2px);
+    text-decoration: none;
+}
+
+.btn:focus {
+    outline: 3px solid #4299e1;
+    outline-offset: 2px;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+    color: white;
+    border-color: #38a169;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #2f855a 0%, #276749 100%);
+    color: white;
+}
+
+.btn .glyphicon {
+    margin-right: 8px;
+    font-size: 1.1em;
+}
+
+/* Forms - Enhanced Accessibility */
+.form-group {
+    margin-bottom: 24px;
+}
+
+.form-control {
+    border-radius: 8px;
+    border: 2px solid #cbd5e0;
+    font-size: 1.125rem; /* 18px */
+    padding: 14px 16px;
+    transition: all 0.3s ease;
+    min-height: 48px; /* ADA compliance */
+}
+
+.form-control:focus {
+    border-color: #4299e1;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+}
+
+label {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* Alerts - High Contrast */
+.alert {
+    border-radius: 8px;
+    margin-bottom: 24px;
+    padding: 20px;
+    font-size: 1.125rem;
+    font-weight: 500;
+    border-width: 2px;
+}
+
+.alert-success {
+    background-color: #f0fff4;
+    border-color: #38a169;
+    color: #1a202c;
+}
+
+.alert-danger {
+    background-color: #fed7d7;
+    border-color: #e53e3e;
+    color: #1a202c;
+}
+
+.alert-info {
+    background-color: #ebf8ff;
+    border-color: #3182ce;
+    color: #1a202c;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding: 20px;
+    margin-top: 40px;
+    color: #7f8c8d;
+}
+
+/* Icon Utilities */
+.icon-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.navbar-brand .glyphicon {
+    margin-right: 8px;
+    font-size: 18px;
+}

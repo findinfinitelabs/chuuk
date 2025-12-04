@@ -3,50 +3,7 @@
 {% block title %}Word Lookup - Chuuk Dictionary OCR{% endblock %}
 
 {% block extra_css %}
-<style>
-    .search-box {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 20px;
-    }
-    
-    .search-box input[type="text"] {
-        flex: 1;
-    }
-    
-    .result-item {
-        background-color: #f8f9fa;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        margin-bottom: 15px;
-    }
-    
-    .result-item h4 {
-        color: #2c3e50;
-        margin-bottom: 10px;
-    }
-    
-    .result-item a {
-        color: #3498db;
-        text-decoration: none;
-        word-break: break-all;
-    }
-    
-    .result-item a:hover {
-        text-decoration: underline;
-    }
-    
-    .status-success {
-        color: #27ae60;
-        font-weight: bold;
-    }
-    
-    .status-error {
-        color: #e74c3c;
-        font-weight: bold;
-    }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/lookup.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -79,8 +36,186 @@
             
             <button type="submit" class="btn btn-success">Search</button>
         </div>
+        
+        <div style="margin-top: 10px;">
+            <label style="margin-right: 20px;">
+                <input type="checkbox" name="search_local" value="true" {% if search_local != false %}checked{% endif %}> 
+                Search Local Dictionary
+            </label>
+            <label>
+                <input type="checkbox" name="search_jworg" value="true" {% if search_jworg != false %}checked{% endif %}> 
+                Search JW.org
+            </label>
+        </div>
     </form>
 </div>
+
+{% if local_results %}
+<div class="card">
+    <h3>📖 Local Dictionary Results for "{{ word }}"</h3>
+    <p style="color: #666; margin-bottom: 20px; font-size: 1.1em;">Found {{ local_results|length }} unique entries in your uploaded dictionaries</p>
+    
+    <div style="display: grid; gap: 20px;">
+    {% for entry in local_results %}
+    <div class="dictionary-entry" style="
+        background: linear-gradient(135deg, #f8fffe 0%, #f0f9ff 100%);
+        border: 1px solid #e0f2fe;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+    " onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.12)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'; this.style.transform='translateY(0)'">
+        
+        <!-- Main Word & Translation -->
+        <div style="border-bottom: 2px solid #e1f5fe; padding-bottom: 16px; margin-bottom: 16px;">
+            <h2 class="entry-title">{{ entry.chuukese_word|highlight(word) }}</h2>
+            
+            <div class="entry-translation">
+                <span class="entry-arrow">→</span>
+                {{ (entry.english_translation or entry.definition or 'No translation available')|highlight(word) }}
+            </div>
+            
+            {% if entry.word_type or entry.inflection_type %}
+            <div style="margin-top: 12px;">
+                {% if entry.word_type %}
+                <span style="
+                    background: #e8f5e8;
+                    color: #2e7d32;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85em;
+                    font-weight: 500;
+                    margin-right: 8px;
+                ">{{ entry.word_type|title }}</span>
+                {% endif %}
+                
+                {% if entry.inflection_type %}
+                <span style="
+                    background: #fff3e0;
+                    color: #f57c00;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85em;
+                    font-weight: 500;
+                ">{{ entry.inflection_type|title }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Additional Information -->
+        {% if entry.definition and entry.definition != entry.english_translation %}
+        <div style="margin-bottom: 16px; padding: 12px; background: #f1f8e9; border-radius: 8px; border-left: 4px solid #689f38;">
+            <strong style="color: #33691e; font-size: 1.05em;">Extended Definition:</strong>
+            <p style="margin: 8px 0 0 0; color: #2e7d32; font-size: 1.05em; line-height: 1.5;">{{ entry.definition|highlight(word) }}</p>
+        </div>
+        {% endif %}
+        
+        {% if entry.examples %}
+        <div class="examples-card">
+            <div class="examples-header">📝 Usage Examples</div>
+            <div class="examples-table-container">
+                <table class="examples-table">
+                    <thead>
+                        <tr>
+                            <th class="examples-th-chuukese">Chuukese</th>
+                            <th class="examples-th-english">English</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for example in entry.examples %}
+                            {% set example_parts = example.split(' - ') %}
+                            {% if example_parts|length > 1 %}
+                            <tr class="example-row">
+                                <td class="example-chuukese">{{ example_parts[0]|highlight(word) }}</td>
+                                <td class="example-english">{{ example_parts[1]|highlight(word) }}</td>
+                            </tr>
+                            {% else %}
+                            <tr class="example-row">
+                                <td class="example-single" colspan="2">{{ example|highlight(word) }}</td>
+                            </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Word Family Info -->
+        {% if entry.base_word and entry.base_word != entry.chuukese_word %}
+        <div style="margin-bottom: 16px; padding: 12px; background: #f3e5f5; border-radius: 8px; border-left: 4px solid #9c27b0;">
+            <strong style="color: #6a1b9a; font-size: 1.05em;">Related to Base Word:</strong>
+            <span style="color: #8e24aa; font-weight: 500; font-size: 1.1em; margin-left: 8px;">{{ entry.base_word|highlight(word) }}</span>
+        </div>
+        {% endif %}
+        
+        <!-- Source Information (Collapsible) -->
+        <details style="margin-top: 16px; border-top: 1px solid #e0f2fe; padding-top: 16px;">
+            <summary style="
+                cursor: pointer;
+                color: #1976d2;
+                font-weight: 500;
+                font-size: 1.05em;
+                padding: 8px;
+                border-radius: 6px;
+                background: #f5f5f5;
+                transition: background 0.2s;
+            " onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background='#f5f5f5'">📋 Source Information & Details</summary>
+            
+            <div style="margin-top: 12px; padding: 12px; background: #fafafa; border-radius: 8px;">
+                <div style="margin-bottom: 8px;">
+                    <strong style="color: #424242;">📖 Citation:</strong>
+                    <span style="color: #666; margin-left: 8px;">{{ entry.citation }}</span>
+                </div>
+                
+                <div style="margin-bottom: 8px;">
+                    <strong style="color: #424242;">📄 Source File:</strong>
+                    <span style="color: #666; margin-left: 8px;">{{ entry.filename }}</span>
+                    {% if entry.page_number %}<span style="color: #999;"> - Page {{ entry.page_number }}</span>{% endif %}
+                </div>
+                
+                {% if entry.confidence %}
+                <div style="margin-bottom: 12px;">
+                    <strong style="color: #424242;">🎯 Confidence:</strong>
+                    <span style="
+                        margin-left: 8px;
+                        padding: 2px 8px;
+                        border-radius: 12px;
+                        font-weight: 500;
+                        {% if entry.confidence > 0.7 %}
+                        background: #c8e6c9; color: #2e7d32;
+                        {% elif entry.confidence > 0.5 %}
+                        background: #fff3e0; color: #f57c00;
+                        {% else %}
+                        background: #ffebee; color: #d32f2f;
+                        {% endif %}
+                    ">{{ "%.0f"|format(entry.confidence * 100) }}%</span>
+                </div>
+                {% endif %}
+                
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #666; font-size: 0.95em;">📝 View Original Dictionary Text</summary>
+                    <div style="
+                        margin-top: 8px;
+                        padding: 12px;
+                        background: #fff;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 6px;
+                        font-family: 'Courier New', monospace;
+                        font-size: 0.9em;
+                        color: #424242;
+                        overflow-wrap: break-word;
+                        white-space: pre-wrap;
+                    ">{{ entry.raw_line|highlight(word) }}</div>
+                </details>
+            </div>
+        </details>
+    </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 {% if results %}
 <div class="card">
@@ -122,9 +257,29 @@
         <li>Click on the links to view full context and usage examples</li>
     </ul>
 </div>
+{% elif word and search_local %}
+<div class="card">
+    <p style="color: #666;">No local dictionary results found. Try uploading dictionary documents with OCR enabled and "Index Dictionary" checked.</p>
+</div>
 {% elif word %}
 <div class="card">
     <p style="color: #666;">No results found. Please try again.</p>
+</div>
+{% endif %}
+
+{% if db_stats %}
+<div class="card">
+    <h3>📊 Local Dictionary Status</h3>
+    {% if db_stats.database_status == 'connected' %}
+    <ul style="margin-left: 20px; margin-top: 10px;">
+        <li><strong>Dictionary Entries:</strong> {{ db_stats.total_entries }}</li>
+        <li><strong>Pages Processed:</strong> {{ db_stats.total_pages }}</li>
+        <li><strong>Publications:</strong> {{ db_stats.publications }}</li>
+    </ul>
+    <p style="margin-top: 15px; color: #27ae60; font-size: 0.9em;">✓ Database connected and ready</p>
+    {% else %}
+    <p style="color: #e74c3c;">Database not available. Install MongoDB to enable local dictionary features.</p>
+    {% endif %}
 </div>
 {% endif %}
 

@@ -1,8 +1,10 @@
 """
-Module for looking up words and phrases from JW.org Chuukese sources
+Module for looking up words and phrases from JW.org Chuukese sources and local publications
 """
 import requests
-from typing import List, Dict
+import os
+import json
+from typing import List, Dict, Optional
 from urllib.parse import quote
 
 
@@ -14,12 +16,13 @@ class JWOrgLookup:
         "https://wol.jw.org/chk/wol/h/r303/lp-te"
     ]
     
-    def __init__(self):
+    def __init__(self, publication_manager=None):
         """Initialize the lookup service"""
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        self.publication_manager = publication_manager
     
     def search_word(self, word: str, language_code: str = 'chk') -> List[Dict[str, str]]:
         """
@@ -75,6 +78,41 @@ class JWOrgLookup:
             })
         
         return results
+    
+    def translate_text(self, text: str, source_lang: str = 'chk', target_lang: str = 'en') -> Optional[Dict[str, str]]:
+        """
+        Translate text from source language to target language using Google Translate
+        
+        Args:
+            text: Text to translate
+            source_lang: Source language code (default: 'chk' for Chuukese)
+            target_lang: Target language code (default: 'en' for English)
+            
+        Returns:
+            Dictionary containing translation result or None if translation fails
+        """
+        if not self.translate_client:
+            return None
+            
+        try:
+            # Note: Google Translate may not directly support Chuukese (chk)
+            # We'll try anyway, and if it fails, we'll return None
+            result = self.translate_client.translate(
+                text,
+                source_language=source_lang if source_lang != 'chk' else None,  # Let Google auto-detect for Chuukese
+                target_language=target_lang
+            )
+            
+            return {
+                'translated_text': result['translatedText'],
+                'detected_source_language': result.get('detectedSourceLanguage', source_lang),
+                'confidence': result.get('confidence'),
+                'source_text': text
+            }
+            
+        except Exception as e:
+            print(f"Translation error: {e}")
+            return None
     
     def get_available_languages(self) -> List[str]:
         """
