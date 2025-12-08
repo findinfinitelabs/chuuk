@@ -107,6 +107,22 @@ class PublicationManager:
         """List all publications"""
         return list(self.publications.values())
     
+    def clear_publications(self) -> bool:
+        """
+        Clear all publications metadata
+        
+        Returns:
+            Success status
+        """
+        try:
+            self.publications = {}
+            self._save_metadata()
+            print("Publications cleared successfully")
+            return True
+        except Exception as e:
+            print(f"Error clearing publications: {e}")
+            return False
+    
     def get_page_path(self, pub_id: str, filename: str) -> str:
         """Get full path to a page file"""
         return os.path.join(self.storage_dir, pub_id, filename)

@@ -1,75 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}{{ publication.title }} - Chuuk Dictionary OCR{% endblock %}
+{% block title %}{{ publication.title }} - Chuuk AI Dictionary{% endblock %}
 
-{% block extra_css %}
-<style>
-    .upload-area {
-        border: 2px dashed #3498db;
-        border-radius: 8px;
-        padding: 40px;
-        text-align: center;
-        background-color: #f8f9fa;
-        cursor: pointer;
-        transition: background-color 0.3s;
-    }
-    
-    .upload-area:hover {
-        background-color: #e9ecef;
-    }
-    
-    .upload-area.dragover {
-        background-color: #d4e9f7;
-        border-color: #2980b9;
-    }
-    
-    .page-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 15px;
-        margin-top: 20px;
-    }
-    
-    .page-item {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 10px;
-        background: white;
-    }
-    
-    .page-item img {
-        width: 100%;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 4px;
-    }
-    
-    .ocr-result {
-        background-color: #f8f9fa;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 10px;
-        margin-top: 10px;
-        max-height: 200px;
-        overflow-y: auto;
-        font-size: 0.85em;
-    }
-</style>
-{% endblock %}
+{% block extra_css %}{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <h2>{{ publication.title }}</h2>
+            <h2 class="mb-2">{{ publication.title }}</h2>
             {% if publication.description %}
-            <p style="color: #666; margin-top: 10px;">{{ publication.description }}</p>
+            <p class="text-muted mb-2">{{ publication.description }}</p>
             {% endif %}
-            <p style="color: #888; margin-top: 5px; font-size: 0.9em;">
+            <p class="text-secondary small mb-0">
                 Created: {{ publication.created_at[:10] }} | Pages: {{ publication.pages|length }}
             </p>
         </div>
-        <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
     </div>
 </div>
 
@@ -77,30 +24,34 @@
     <h3>Upload Pages</h3>
     <p>Upload dictionary pages (PNG, JPG, PDF, etc.). You can upload multiple pages at once.</p>
     
-    <form id="uploadForm" enctype="multipart/form-data" style="margin-top: 20px;">
+    <form id="uploadForm" enctype="multipart/form-data" class="mt-4">
         <div class="upload-area" id="uploadArea">
-            <p style="font-size: 1.2em; margin-bottom: 10px;">📄 Click or drag files here to upload</p>
-            <input type="file" id="fileInput" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.pdf,.docx" multiple style="display: none;">
-            <p style="color: #666; font-size: 0.9em;">Supported formats: PNG, JPG, PDF, DOCX</p>
+            <p class="h5 mb-3">📄 Click or drag files here to upload</p>
+            <input type="file" id="fileInput" name="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.pdf,.docx" multiple class="d-none">
+            <p class="text-muted small">Supported formats: PNG, JPG, PDF, DOCX</p>
         </div>
         
-        <div style="margin-top: 20px;">
-            <label>
-                <input type="checkbox" id="processOcr" name="process_ocr" checked>
-                Process OCR automatically after upload
-            </label>
+        <div class="mt-4">
+            <div class="form-check">
+                <input type="checkbox" id="processOcr" name="process_ocr" class="form-check-input" checked>
+                <label class="form-check-label" for="processOcr">
+                    Process AI recognition automatically after upload
+                </label>
+            </div>
         </div>
         
-        <div style="margin-top: 10px;">
-            <label>
-                <input type="checkbox" id="indexDictionary" name="index_dictionary">
-                Index as dictionary content (extract word translations)
-            </label>
+        <div class="mt-3">
+            <div class="form-check">
+                <input type="checkbox" id="indexDictionary" name="index_dictionary" class="form-check-input">
+                <label class="form-check-label" for="indexDictionary">
+                    Index as dictionary content (extract word translations)
+                </label>
+            </div>
         </div>
         
-        <div class="form-group" style="margin-top: 15px;">
-            <label for="ocrLang">OCR Language</label>
-            <select id="ocrLang" name="ocr_lang">
+        <div class="form-group mt-4">
+            <label for="ocrLang" class="form-label">AI Recognition Language</label>
+            <select id="ocrLang" name="ocr_lang" class="form-select">
                 <option value="eng">English</option>
                 <option value="chk" selected>Chuukese (if available)</option>
                 <option value="eng+chk">English + Chuukese</option>
@@ -108,22 +59,38 @@
         </div>
     </form>
     
-    <div id="uploadStatus" style="margin-top: 15px; display: none;"></div>
+    <div id="uploadStatus" class="mt-3 alert d-none"></div>
     
     <!-- Processing Logs Container -->
-    <div id="processingLogs" style="margin-top: 20px; display: none;">
-        <h4>📊 Processing Progress</h4>
-        <div id="progressBar" style="background: #e9ecef; border-radius: 4px; margin-bottom: 15px;">
-            <div id="progressFill" style="background: #28a745; height: 20px; border-radius: 4px; transition: width 0.3s; width: 0%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.85em;">
-                0%
-            </div>
+    <div id="processingLogs" class="mt-4 d-none">
+        <h4 class="mb-3">📊 Processing Progress</h4>
+        <div class="progress mb-3" style="height: 20px;">
+            <div id="progressFill" class="progress-bar bg-success" style="width: 0%; transition: width 0.3s;"></div>
         </div>
-        <div id="processingStatus" style="margin-bottom: 10px; font-weight: bold;"></div>
-        <div id="processingStats" style="margin-bottom: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;"></div>
-        <div id="logContainer" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em;">
+        <div id="processingStatus" class="mb-2 fw-bold"></div>
+        <div id="processingStats" class="mb-3 d-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;"></div>
+        <div id="logContainer" class="bg-light border rounded p-3" style="max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em;">
             <div id="logEntries"></div>
         </div>
     </div>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <h3>Upload CSV Dictionary</h3>
+    <p>Upload a tab-delimited CSV file with Chuukese dictionary entries. The file should have headers: Entry #, Pseudo-Page, Chuukese Word / Form, Part of Speech, English Definition, Examples, Notes</p>
+    
+    <form id="csvUploadForm" enctype="multipart/form-data" class="mt-4">
+        <div class="upload-area" id="csvUploadArea" style="border-color: #28a745; background: linear-gradient(135deg, #f8fff8 0%, #f0f9f0 100%);">
+            <p class="h5 mb-3 text-success">📊 Click or drag CSV file here</p>
+            <input type="file" id="csvFileInput" name="file" accept=".csv" class="d-none">
+            <p class="text-muted small">Supported format: CSV (tab-delimited)</p>
+            <div class="mt-3 small text-success fw-bold">
+                ✓ Direct database import - no AI recognition processing needed
+            </div>
+        </div>
+    </form>
+    
+    <div id="csvUploadStatus" class="mt-3 alert d-none"></div>
 </div>
 
 {% if publication.pages %}
@@ -132,29 +99,37 @@
     
     <div class="page-grid">
         {% for page in publication.pages %}
-        <div class="page-item">
-            <img src="{{ url_for('static', filename='placeholder.png') }}" alt="{{ page.filename }}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22150%22%3E%3Crect width=%22200%22 height=%22150%22 fill=%22%23ddd%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EImage%3C/text%3E%3C/svg%3E';">
-            <p style="margin-top: 8px; font-size: 0.85em; word-break: break-all;">{{ page.filename }}</p>
-            <p style="font-size: 0.75em; color: #888;">{{ page.added_at[:10] }}</p>
-            
-            {% if page.ocr_results %}
-            <details style="margin-top: 10px;">
-                <summary style="cursor: pointer; color: #3498db;">View OCR Results</summary>
-                <div class="ocr-result">
-                    {% if page.ocr_results.tesseract %}
-                    <strong>Tesseract:</strong>
-                    <pre style="white-space: pre-wrap; margin-top: 5px;">{{ page.ocr_results.tesseract[:200] }}{% if page.ocr_results.tesseract|length > 200 %}...{% endif %}</pre>
-                    {% endif %}
-                    
-                    {% if page.ocr_results.google_vision %}
-                    <strong style="margin-top: 10px; display: block;">Google Vision:</strong>
-                    <pre style="white-space: pre-wrap; margin-top: 5px;">{{ page.ocr_results.google_vision[:200] }}{% if page.ocr_results.google_vision|length > 200 %}...{% endif %}</pre>
-                    {% endif %}
-                </div>
-            </details>
-            {% else %}
-            <button class="btn" style="margin-top: 10px; width: 100%; font-size: 0.85em;" onclick="processPageOcr('{{ page.filename }}')">Process OCR</button>
-            {% endif %}
+        <div class="page-item card">
+            <img src="{{ url_for('static', filename='placeholder.png') }}" alt="{{ page.filename }}" class="card-img-top" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22150%22%3E%3Crect width=%22200%22 height=%22150%22 fill=%22%23ddd%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EImage%3C/text%3E%3C/svg%3E';">
+            <div class="card-body">
+                <p class="card-title mb-2 fw-bold text-dark small" style="word-break: break-all;">{{ page.filename }}</p>
+                <p class="card-text text-secondary small mb-3">{{ page.added_at[:10] }}</p>
+                {% if page.ocr_results %}
+                <details class="mt-3">
+                    <summary class="btn btn-outline-primary btn-sm w-100 text-start">
+                        📄 View OCR Results
+                    </summary>
+                    <div class="ocr-result mt-3">
+                        {% if page.ocr_results.tesseract %}
+                        <strong class="text-primary">Tesseract AI Recognition:</strong>
+                        <pre class="mt-2">{{ page.ocr_results.tesseract[:300] }}{% if page.ocr_results.tesseract|length > 300 %}...{% endif %}</pre>
+                        {% endif %}
+                        
+                        {% if page.ocr_results.google_vision %}
+                        <strong class="text-success mt-3 d-block">Google Vision AI Recognition:</strong>
+                        <pre class="mt-2">{{ page.ocr_results.google_vision[:300] }}{% if page.ocr_results.google_vision|length > 300 %}...{% endif %}</pre>
+                        {% endif %}
+                        
+                        {% if page.type == 'csv' %}
+                        <strong class="text-success mt-3 d-block">📊 CSV Upload Info:</strong>
+                        <p class="mt-2 text-success">{{ page.entries_added }} dictionary entries added to database</p>
+                        {% endif %}
+                    </div>
+                </details>
+                {% else %}
+                <button class="btn btn-outline-primary btn-sm w-100 mt-3" onclick="processPageOcr('{{ page.filename }}')">🔍 Process OCR</button>
+                {% endif %}
+            </div>
         </div>
         {% endfor %}
     </div>
@@ -402,4 +377,77 @@
         });
     }
 </script>
+
+<script>
+    // CSV Upload functionality
+    const csvUploadArea = document.getElementById('csvUploadArea');
+    const csvFileInput = document.getElementById('csvFileInput');
+    const csvUploadForm = document.getElementById('csvUploadForm');
+    const csvUploadStatus = document.getElementById('csvUploadStatus');
+    
+    // Click to upload CSV
+    csvUploadArea.addEventListener('click', () => csvFileInput.click());
+    
+    // Drag and drop for CSV
+    csvUploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        csvUploadArea.classList.add('dragover');
+    });
+    
+    csvUploadArea.addEventListener('dragleave', () => {
+        csvUploadArea.classList.remove('dragover');
+    });
+    
+    csvUploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        csvUploadArea.classList.remove('dragover');
+        csvFileInput.files = e.dataTransfer.files;
+        uploadCsvFile();
+    });
+    
+    // File selection for CSV
+    csvFileInput.addEventListener('change', uploadCsvFile);
+    
+    function uploadCsvFile() {
+        const files = csvFileInput.files;
+        if (files.length === 0) return;
+        
+        if (files.length > 1) {
+            csvUploadStatus.style.display = 'block';
+            csvUploadStatus.innerHTML = '<p style="color: #e74c3c;">Please select only one CSV file at a time.</p>';
+            return;
+        }
+        
+        const file = files[0];
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            csvUploadStatus.style.display = 'block';
+            csvUploadStatus.innerHTML = '<p style="color: #e74c3c;">Please select a CSV file.</p>';
+            return;
+        }
+        
+        csvUploadStatus.style.display = 'block';
+        csvUploadStatus.innerHTML = '<p style="color: #3498db;">Uploading and processing CSV...</p>';
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        fetch(`/publication/${pubId}/upload_csv`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                csvUploadStatus.innerHTML = `<p style="color: #27ae60;">✓ Successfully processed CSV: ${data.entries_added} entries added to database!</p>`;
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                csvUploadStatus.innerHTML = '<p style="color: #e74c3c;">Error: ' + (data.error || 'Unknown error occurred') + '</p>';
+            }
+        })
+        .catch(error => {
+            csvUploadStatus.innerHTML = '<p style="color: #e74c3c;">Error uploading CSV. Please try again.</p>';
+        });
+    }
+</script>
+
 {% endblock %}

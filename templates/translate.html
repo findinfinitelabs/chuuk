@@ -3,153 +3,292 @@
 {% block title %}AI Translation - Chuukese Dictionary OCR{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/translate.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="card">
-    <h2><span class="glyphicon glyphicon-transfer"></span> AI-Powered Chuukese Translation</h2>
-    <p>Use our locally-trained AI model to translate between Chuukese and English. The model learns from your uploaded dictionaries to provide accurate, contextual translations.</p>
+    <h2><i class="fas fa-language me-2"></i>AI-Powered Chuukese Translation</h2>
+    <p class="card-text">Use our locally-trained AI model to translate between Chuukese and English. The model learns from your uploaded dictionaries to provide accurate, contextual translations.</p>
+    
+    <!-- Model Selector -->
+    <div class="mb-4">
+        <h3 class="mb-3"><i class="fas fa-cog me-2"></i>Translation Model</h3>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" id="llm_model" name="model" value="llm" checked>
+                            <label class="form-check-label" for="llm_model">
+                                <i class="fas fa-robot me-2 text-primary"></i><strong>Local LLM (Ollama)</strong>
+                                <small class="text-muted d-block mt-1">General conversational AI trained on your dictionary</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="form-check">
+                            <input type="radio" class="form-check-input" id="helsinki_model" name="model" value="helsinki">
+                            <label class="form-check-label" for="helsinki_model">
+                                <i class="fas fa-language me-2 text-success"></i><strong>Helsinki-NLP</strong>
+                                <small class="text-muted d-block mt-1">Specialized translation model, better for word-to-word translation</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- LLM Status -->
     {% if error_message and 'not available' in error_message %}
-    <div class="llm-status unavailable">
-        <span class="glyphicon glyphicon-remove-circle"></span> <strong>Local AI Model Not Available</strong><br>
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i><strong>Local AI Model Not Available</strong><br>
         The translation model needs to be installed and trained first.
-        <form method="POST" action="{{ url_for('train_llm') }}">
-            <button type="submit" class="train-btn">
-                <span class="glyphicon glyphicon-flash"></span> Train AI Model
+        <form method="POST" action="{{ url_for('train_ollama') }}" class="mt-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-robot me-2"></i>Train AI Model
             </button>
         </form>
     </div>
     {% else %}
-    <div class="llm-status available">
-        <span class="glyphicon glyphicon-ok-circle"></span> <strong>AI Translation Model Ready</strong><br>
-        Local Chuukese translator is trained and ready to use.
-        <form method="POST" action="{{ url_for('train_llm') }}">
-            <button type="submit" class="train-btn">
-                <span class="glyphicon glyphicon-refresh"></span> Retrain with Latest Data
+    <div class="alert alert-success mb-4">
+        <i class="fas fa-check-circle me-2"></i><strong>AI Translation Models Ready</strong><br>
+        Local Chuukese translators are trained and ready to use.
+        <div class="mt-3">
+            <form method="POST" action="{{ url_for('train_ollama') }}" class="d-inline me-2">
+                <button type="submit" class="btn btn-outline-primary">
+                    <i class="fas fa-sync-alt me-2"></i>Retrain Ollama LLM
+                </button>
+            </form>
+            <form method="POST" action="{{ url_for('train_helsinki') }}" class="d-inline me-2">
+                <input type="hidden" name="direction" value="chuukese_to_english">
+                <input type="hidden" name="epochs" value="3">
+                <button type="submit" class="btn btn-outline-success">
+                    <i class="fas fa-graduation-cap me-2"></i>Fine-tune Helsinki-NLP
+                </button>
+            </form>
+            <button onclick="evaluateHelsinki()" class="btn btn-outline-info">
+                <i class="fas fa-chart-bar me-2"></i>Evaluate Models
             </button>
-        </form>
+        </div>
     </div>
     {% endif %}
     
     <form method="POST" class="translate-form">
         <!-- Direction Selector -->
-        <div class="direction-selector">
-            <div class="direction-option">
-                <input type="radio" id="auto" name="direction" value="auto" {% if direction == 'auto' %}checked{% endif %}>
-                <label for="auto">
-                    <span class="glyphicon glyphicon-resize-horizontal"></span> Auto-Detect Language
-                </label>
+        <div class="mb-4">
+            <h4 class="mb-3"><i class="fas fa-arrows-alt-h me-2"></i>Translation Direction</h4>
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input type="radio" class="form-check-input" id="auto" name="direction" value="auto" {% if direction == 'auto' %}checked{% endif %}>
+                        <label class="form-check-label" for="auto">
+                            <i class="fas fa-magic me-2"></i>Auto-Detect Language
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input type="radio" class="form-check-input" id="chk_to_en" name="direction" value="chk_to_en" {% if direction == 'chk_to_en' %}checked{% endif %}>
+                        <label class="form-check-label" for="chk_to_en">
+                            <i class="fas fa-arrow-right me-2"></i>Chuukese → English
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input type="radio" class="form-check-input" id="en_to_chk" name="direction" value="en_to_chk" {% if direction == 'en_to_chk' %}checked{% endif %}>
+                        <label class="form-check-label" for="en_to_chk">
+                            <i class="fas fa-arrow-left me-2"></i>English → Chuukese
+                        </label>
+                    </div>
+                </div>
             </div>
-            <div class="direction-option">
-                <input type="radio" id="chk_to_en" name="direction" value="chk_to_en" {% if direction == 'chk_to_en' %}checked{% endif %}>
-                <label for="chk_to_en">
-                    <span class="glyphicon glyphicon-arrow-right"></span> Chuukese → English
-                </label>
-            </div>
-            <div class="direction-option">
-                <input type="radio" id="en_to_chk" name="direction" value="en_to_chk" {% if direction == 'en_to_chk' %}checked{% endif %}>
-                <label for="en_to_chk">
-                    <span class="glyphicon glyphicon-arrow-left"></span> English → Chuukese
+        </div>
                 </label>
             </div>
         </div>
-        
         <!-- Translation Interface -->
-        <div class="translation-container">
-            <div class="translation-box input">
-                <h3 class="translate-section-title">
-                    <span class="glyphicon glyphicon-edit"></span> Input Text
-                </h3>
-                <textarea 
-                    name="text" 
-                    placeholder="Enter text to translate..."
-                    required
-                    autofocus>{{ text }}</textarea>
+        <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-edit me-2"></i>Input Text</h5>
+                    </div>
+                    <div class="card-body">
+                        <textarea
+                            name="text"
+                            class="form-control"
+                            rows="8"
+                            placeholder="Enter text to translate..."
+                            required
+                            autofocus>{{ text }}</textarea>
+                    </div>
+                </div>
             </div>
-            
-            <div class="translation-box output">
-                <h3 class="translate-section-title output">
-                    <span class="glyphicon glyphicon-comment"></span> Translation Result
-                </h3>
-                {% if translation_result %}
-                <div class="translation-result">{{ translation_result }}</div>
-                {% elif error_message %}
-                <div class="translation-result error">
-                    <span class="glyphicon glyphicon-exclamation-sign"></span> {{ error_message }}
+
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-comment me-2"></i>Translation Result</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if translation_result %}
+                        <div class="alert alert-success">
+                            {{ translation_result }}
+                        </div>
+                        {% elif error_message %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>{{ error_message }}
+                        </div>
+                        {% else %}
+                        <div class="text-muted">
+                            Translation will appear here...
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
-                {% else %}
-                <div class="translation-result placeholder">
-                    Translation will appear here...
-                </div>
-                {% endif %}
             </div>
         </div>
-        
+
         <!-- Translate Button -->
-        <div class="translate-center">
-            <button type="submit" class="translate-btn" {% if error_message and 'not available' in error_message %}disabled{% endif %}>
-                <span class="glyphicon glyphicon-transfer"></span> Translate Text
+        <div class="text-center mb-4">
+            <button type="submit" class="btn btn-primary btn-lg" {% if error_message and 'not available' in error_message %}disabled{% endif %}>
+                <i class="fas fa-exchange-alt me-2"></i>Translate Text
             </button>
         </div>
     </form>
 </div>
 
+<!-- Model Status and Training -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="mb-0"><i class="fas fa-info-circle me-2"></i>Model Status & Training</h3>
+    </div>
+    <div class="card-body">
+        <div class="row" id="model-status-section">
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-robot me-2"></i>Ollama Model Status</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="ollama-status">
+                            <i class="fas fa-spinner fa-spin"></i> Checking status...
+                        </div>
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-success btn-sm" onclick="trainOllamaModel()" id="train-ollama-btn">
+                                <i class="fas fa-graduation-cap me-1"></i>Train Ollama Model
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-language me-2"></i>Helsinki-NLP Status</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="helsinki-status">
+                            <i class="fas fa-spinner fa-spin"></i> Checking status...
+                        </div>
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-success btn-sm" onclick="trainHelsinkiModel('chuukese_to_english')" id="train-helsinki-btn">
+                                <i class="fas fa-graduation-cap me-1"></i>Train Helsinki Model
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    <strong>Training Tips:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Train both models after uploading new dictionary data</li>
+                        <li>Ollama provides conversational AI responses with context</li>
+                        <li>Helsinki-NLP gives precise word-to-word translations</li>
+                        <li>Training runs in the background - check your console for progress</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Model Information -->
-<div class="card">
-    <h3><span class="glyphicon glyphicon-cog"></span> About the AI Translation Model</h3>
-    
-    <div class="feature-grid">
-        <div class="feature-card local">
-            <h4>
-                <span class="glyphicon glyphicon-home"></span> Local Processing
-            </h4>
-            <p>Your translations are processed entirely on your device using <strong>Ollama</strong> - no data is sent to external servers.</p>
-        </div>
-        
-        <div class="feature-card dictionary">
-            <h4>
-                <span class="glyphicon glyphicon-book"></span> Dictionary-Trained
-            </h4>
-            <p>The model learns directly from your uploaded Chuukese dictionaries, ensuring authentic and accurate translations.</p>
-        </div>
-        
-        <div class="feature-card adaptive">
-            <h4>
-                <span class="glyphicon glyphicon-repeat"></span> Adaptive Learning
-            </h4>
-            <p>As you add more dictionary content, you can retrain the model to improve its knowledge and accuracy.</p>
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="mb-0"><i class="fas fa-cog me-2"></i>About the AI Translation Model</h3>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 border-primary">
+                    <div class="card-body text-center">
+                        <i class="fas fa-home fa-2x text-primary mb-3"></i>
+                        <h5 class="card-title">Local Processing</h5>
+                        <p class="card-text">Your translations are processed entirely on your device using <strong>Ollama</strong> and <strong>Helsinki-NLP</strong> - no data is sent to external servers.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 border-success">
+                    <div class="card-body text-center">
+                        <i class="fas fa-book fa-2x text-success mb-3"></i>
+                        <h5 class="card-title">Dictionary-Trained</h5>
+                        <p class="card-text">Both models learn directly from your uploaded Chuukese dictionaries. Helsinki-NLP specializes in translation tasks for better accuracy.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 border-info">
+                    <div class="card-body text-center">
+                        <i class="fas fa-repeat fa-2x text-info mb-3"></i>
+                        <h5 class="card-title">Dual Models</h5>
+                        <p class="card-text">Choose between conversational LLM for context or Helsinki-NLP for precise word-to-word translation. Fine-tune both for optimal results.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Installation Guide -->
 {% if error_message and 'not available' in error_message %}
-<div class="card">
-    <h3><span class="glyphicon glyphicon-wrench"></span> Setup Instructions</h3>
-    
-    <div class="setup-instructions">
-        <h4>
-            <span class="glyphicon glyphicon-list"></span> Prerequisites:
-        </h4>
-        <ol>
-            <li><strong>Install Ollama:</strong> Download from <a href="https://ollama.com/download" target="_blank">ollama.com/download</a></li>
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="mb-0"><i class="fas fa-wrench me-2"></i>Setup Instructions</h3>
+    </div>
+    <div class="card-body">
+        <h4 class="mb-3"><i class="fas fa-list-check me-2"></i>Prerequisites:</h4>
+        <ol class="mb-4">
+            <li><strong>Install Ollama:</strong> Download from <a href="https://ollama.com/download" target="_blank" class="text-decoration-none">ollama.com/download</a></li>
             <li><strong>Add Dictionary Content:</strong> Upload and process Chuukese dictionaries first</li>
             <li><strong>Train the Model:</strong> Click the "Train AI Model" button above</li>
         </ol>
-        
-        <h4 class="command-setup">
-            <span class="glyphicon glyphicon-console"></span> Command Line Setup:
-        </h4>
-        <div class="command-block">
+
+        <h4 class="mb-3"><i class="fas fa-terminal me-2"></i>Command Line Setup:</h4>
+        <div class="bg-light p-3 rounded">
+            <code class="text-dark">
 # Install Ollama<br>
 curl -fsSL https://ollama.com/install.sh | sh<br><br>
 # Pull the base model<br>
 ollama pull llama3.2:3b<br><br>
 # Train with your dictionary data<br>
 python llm_trainer.py
+            </code>
         </div>
     </div>
 </div>
@@ -197,7 +336,305 @@ python llm_trainer.py
         <li><strong>Use Context:</strong> The AI understands context, so full sentences often work better than isolated words</li>
         <li><strong>Check Accuracy:</strong> Cross-reference important translations with your dictionary lookup tool</li>
         <li><strong>Improve Training:</strong> Add more dictionary content and retrain for better accuracy</li>
-        <li><strong>Grammar Assistance:</strong> Ask the AI about word types and grammatical explanations</li>
+        <li><strong>Helsinki vs LLM:</strong> Helsinki-NLP is better for direct word translations, while LLM is better for conversational context</li>
     </ul>
 </div>
+
+<!-- JavaScript for enhanced functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('.translate-form');
+    const modelRadios = document.querySelectorAll('input[name="model"]');
+    const translateBtn = document.querySelector('.translate-btn');
+    
+    // Load model status on page load
+    loadModelStatus();
+    
+    // Handle form submission based on selected model
+    form.addEventListener('submit', function(e) {
+        const selectedModel = document.querySelector('input[name="model"]:checked').value;
+        const text = document.querySelector('textarea[name="text"]').value.trim();
+        const direction = document.querySelector('input[name="direction"]:checked').value;
+        
+        if (selectedModel === 'helsinki') {
+            e.preventDefault();
+            translateWithHelsinki(text, direction);
+        }
+        // For LLM model, let the form submit normally
+    });
+    
+    // Function to translate with Helsinki-NLP
+    function translateWithHelsinki(text, direction) {
+        if (!text) {
+            alert('Please enter text to translate');
+            return;
+        }
+        
+        // Show loading state
+        const resultDiv = document.querySelector('.translation-result');
+        resultDiv.innerHTML = '<span class="glyphicon glyphicon-refresh spinning"></span> Translating with Helsinki-NLP...';
+        translateBtn.disabled = true;
+        
+        // Convert direction format
+        let helsinkiDirection = 'chuukese_to_english';
+        if (direction === 'en_to_chk') {
+            helsinkiDirection = 'english_to_chuukese';
+        } else if (direction === 'auto') {
+            // Simple language detection - if text contains mostly English characters, assume English
+            const englishWords = text.toLowerCase().match(/\\b(the|and|or|but|in|on|at|to|for|of|with|by)\\b/g);
+            if (englishWords && englishWords.length > 0) {
+                helsinkiDirection = 'english_to_chuukese';
+            }
+        }
+        
+        // Send AJAX request
+        const formData = new FormData();
+        formData.append('text', text);
+        formData.append('direction', helsinkiDirection);
+        
+        fetch('/translate_helsinki', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                resultDiv.innerHTML = '<span class="glyphicon glyphicon-exclamation-sign"></span> ' + data.error;
+                resultDiv.className = 'translation-result error';
+            } else {
+                resultDiv.innerHTML = data.translation;
+                resultDiv.className = 'translation-result';
+            }
+        })
+        .catch(error => {
+            resultDiv.innerHTML = '<span class="glyphicon glyphicon-exclamation-sign"></span> Network error: ' + error.message;
+            resultDiv.className = 'translation-result error';
+        })
+        .finally(() => {
+            translateBtn.disabled = false;
+        });
+    }
+    
+    // Make translateWithHelsinki available globally
+    window.translateWithHelsinki = translateWithHelsinki;
+});
+
+// Function to load and display model status
+function loadModelStatus() {
+    fetch('/model_status')
+        .then(response => response.json())
+        .then(data => {
+            updateOllamaStatus(data.ollama);
+            updateHelsinkiStatus(data.helsinki);
+        })
+        .catch(error => {
+            console.error('Error loading model status:', error);
+            document.getElementById('ollama-status').innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Error loading status</span>';
+            document.getElementById('helsinki-status').innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Error loading status</span>';
+        });
+}
+
+// Update Ollama status display
+function updateOllamaStatus(status) {
+    const statusDiv = document.getElementById('ollama-status');
+    if (status.available && status.custom_model) {
+        statusDiv.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Ready - Model: chuukese-translator</span>';
+    } else if (status.available) {
+        statusDiv.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-circle"></i> Ollama running, but chuukese-translator model not found</span>';
+    } else {
+        statusDiv.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Ollama not running</span>';
+    }
+}
+
+// Update Helsinki status display
+function updateHelsinkiStatus(status) {
+    const statusDiv = document.getElementById('helsinki-status');
+    if (status.available && status.data_loaded) {
+        statusDiv.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Ready with ' + status.data_loaded.length + ' training pairs</span>';
+    } else if (status.available) {
+        statusDiv.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-circle"></i> Available, but no training data loaded</span>';
+    } else {
+        statusDiv.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Helsinki-NLP not available</span>';
+    }
+}
+
+// Function to train Ollama model
+function trainOllamaModel() {
+    const button = document.getElementById('train-ollama-btn');
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Training...';
+    button.disabled = true;
+    
+    fetch('/train_ollama', {
+        method: 'POST'
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+        return response.text();
+    })
+    .then(() => {
+        // Refresh status after a delay
+        setTimeout(loadModelStatus, 2000);
+    })
+    .catch(error => {
+        console.error('Training error:', error);
+        alert('Training failed: ' + error.message);
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+
+// Function to train Helsinki model
+function trainHelsinkiModel(direction) {
+    const button = document.getElementById('train-helsinki-btn');
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Training...';
+    button.disabled = true;
+    
+    const formData = new FormData();
+    formData.append('direction', direction);
+    formData.append('epochs', '2');
+    
+    fetch('/train_helsinki', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+        return response.text();
+    })
+    .then(() => {
+        // Refresh status after a delay
+        setTimeout(loadModelStatus, 2000);
+    })
+    .catch(error => {
+        console.error('Training error:', error);
+        alert('Training failed: ' + error.message);
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+
+// Function to evaluate Helsinki models
+function evaluateHelsinki() {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<span class="glyphicon glyphicon-refresh spinning"></span> Evaluating...';
+    button.disabled = true;
+    
+    fetch('/evaluate_helsinki', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Evaluation failed: ' + data.error);
+        } else {
+            const results = data.evaluation_results;
+            let message = 'Helsinki-NLP Evaluation Results:\\n\\n';
+            message += `Chuukese → English BLEU Score: ${results.chuukese_to_english_bleu?.toFixed(2) || 'N/A'}\\n`;
+            message += `English → Chuukese BLEU Score: ${results.english_to_chuukese_bleu?.toFixed(2) || 'N/A'}\\n`;
+            message += `Test Samples: ${results.test_samples || 'N/A'}\\n\\n`;
+            message += 'BLEU Score Guide:\\n';
+            message += '• 0-10: Poor quality\\n';
+            message += '• 10-20: Understandable\\n';
+            message += '• 20-40: Good quality\\n';
+            message += '• 40+: Excellent quality';
+            alert(message);
+        }
+    })
+    .catch(error => {
+        alert('Evaluation failed: ' + error.message);
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+</script>
+
+<style>
+/* Additional styles for new features */
+.model-selector {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.model-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.model-option {
+    display: flex;
+    align-items: flex-start;
+}
+
+.model-option input[type="radio"] {
+    margin-right: 10px;
+    margin-top: 2px;
+}
+
+.model-option label {
+    flex: 1;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.model-option label small {
+    display: block;
+    font-weight: normal;
+    color: #666;
+    margin-top: 3px;
+}
+
+.training-options {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.train-btn.helsinki {
+    background: linear-gradient(135deg, #28a745, #20c997);
+}
+
+.train-btn.evaluate {
+    background: linear-gradient(135deg, #6f42c1, #e83e8c);
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+    .model-options {
+        grid-template-columns: 1fr;
+    }
+    
+    .training-options {
+        flex-direction: column;
+    }
+}
+</style>
 {% endblock %}

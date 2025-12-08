@@ -1,0 +1,132 @@
+/**
+ * Bootswatch Lux Theme Customizations
+ * Custom CSS variables and theme overrides for the Chuuk Dictionary OCR application
+ */
+
+:root {
+    /* Lux Theme Color Variables */
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --info-color: #17a2b8;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    
+    /* Custom Application Colors */
+    --chuuk-primary: #2c3e50;
+    --chuuk-secondary: #3498db;
+    --chuuk-accent: #e74c3c;
+    --chuuk-text: #2c3e50;
+    --chuuk-text-light: #7f8c8d;
+    --chuuk-bg: #ecf0f1;
+    --chuuk-card-bg: #ffffff;
+    
+    /* Typography */
+    --font-family-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-family-mono: 'JetBrains Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+    
+    /* Spacing */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 3rem;
+    
+    /* Border radius */
+    --border-radius: 0.375rem;
+    --border-radius-sm: 0.25rem;
+    --border-radius-lg: 0.5rem;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23);
+}
+
+/* Override Bootstrap variables to match Lux theme */
+body {
+    font-family: var(--font-family-sans);
+    background-color: var(--chuuk-bg);
+    color: var(--chuuk-text);
+}
+
+/* Custom navbar styling to enhance Lux theme */
+.navbar-brand {
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+/* Enhanced card styling */
+.card {
+    box-shadow: var(--shadow-sm);
+    border: none;
+    border-radius: var(--border-radius);
+    background-color: var(--chuuk-card-bg);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+    transition: box-shadow 0.3s ease;
+}
+
+/* Button enhancements */
+.btn {
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn:focus,
+.btn:active {
+    box-shadow: var(--shadow-sm);
+}
+
+/* Form styling */
+.form-control,
+.form-select {
+    border-radius: var(--border-radius);
+    border: 1px solid #dee2e6;
+    background-color: var(--chuuk-card-bg);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Alert customizations */
+.alert {
+    border-radius: var(--border-radius);
+    border: none;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Footer styling */
+.footer {
+    border-top: 1px solid #dee2e6;
+    background-color: var(--light-color);
+}
+
+/* Custom utility classes */
+.text-chuuk {
+    color: var(--chuuk-primary);
+}
+
+.bg-chuuk {
+    background-color: var(--chuuk-primary);
+}
+
+.shadow-custom {
+    box-shadow: var(--shadow-md);
+}
+
+/* Responsive spacing adjustments */
+@media (max-width: 768px) {
+    .container-fluid {
+        padding-left: var(--spacing-md);
+        padding-right: var(--spacing-md);
+    }
+}

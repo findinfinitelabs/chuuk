@@ -5,7 +5,7 @@ Handles indexing and searching of OCR'd dictionary content using MongoDB
 import re
 import os
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from pymongo import MongoClient, TEXT, ASCENDING
 from pymongo.errors import DuplicateKeyError, ConnectionFailure
 
@@ -85,7 +85,7 @@ class DictionaryDB:
             'filename': filename,
             'page_number': page_number,
             'ocr_text': ocr_text,
-            'processed_date': datetime.utcnow(),
+            'processed_date': datetime.now(timezone.utc),
             'entries_extracted': 0
         }
         
@@ -810,3 +810,183 @@ class DictionaryDB:
             return result
         except Exception:
             return None
+    
+    def add_dictionary_from_csv(self, publication_id: str, filename: str, csv_content: str) -> Tuple[str, int]:
+        """
+        Add dictionary entries from CSV content
+        
+        Args:
+            publication_id: ID of the publication
+            filename: Name of the CSV file
+            csv_content: Raw CSV content as string
+            
+        Returns:
+            Tuple of (page_id, number of entries added)
+        """
+        if not self.client:
+            return None, 0
+            
+        # Create a page entry for the CSV upload
+        page_data = {
+            'publication_id': publication_id,
+            'filename': filename,
+            'page_number': 1,
+            'csv_content': csv_content[:1000],  # Store first 1000 chars for reference
+            'processed_date': datetime.now(timezone.utc),
+            'entries_extracted': 0,
+            'source_type': 'csv_upload'
+        }
+        
+        # Insert page
+        result = self.pages_collection.insert_one(page_data)
+        page_id = str(result.inserted_id)
+        
+        # Parse CSV and extract entries
+        entries = self._extract_entries_from_csv(csv_content, page_id, publication_id, filename)
+        
+        # Update page with number of entries extracted
+        self.pages_collection.update_one(
+            {'_id': result.inserted_id},
+            {'$set': {'entries_extracted': len(entries)}}
+        )
+        
+        return page_id, len(entries)
+    
+    def _extract_entries_from_csv(self, csv_content: str, page_id: str, publication_id: str, filename: str) -> List[Dict]:
+        """
+        Extract dictionary entries from CSV content
+        
+        Args:
+            csv_content: Raw CSV content
+            page_id: Page database ID
+            publication_id: Publication ID
+            filename: Source filename
+            
+        Returns:
+            List of extracted entries
+        """
+        import csv
+        import io
+        
+        entries = []
+        
+        try:
+            # Parse CSV content
+            csv_reader = csv.reader(io.StringIO(csv_content), delimiter='\t')
+            
+            # Skip header row
+            next(csv_reader, None)
+            
+            for row_num, row in enumerate(csv_reader, 2):  # Start from row 2 (after header)
+                if len(row) < 5:  # Need at least Entry #, Pseudo-Page, Chuukese, POS, English
+                    continue
+                
+                try:
+                    entry_num = row[0].strip()
+                    pseudo_page = row[1].strip()
+                    chuukese_word = row[2].strip()
+                    part_of_speech = row[3].strip() if len(row) > 3 else ''
+                    english_translation = row[4].strip() if len(row) > 4 else ''
+                    
+                    # Skip empty entries
+                    if not chuukese_word or not english_translation:
+                        continue
+                    
+                    # Create entry
+                    entry = {
+                        'chuukese_word': chuukese_word,
+                        'english_translation': english_translation,
+                        'part_of_speech': part_of_speech,
+                        'entry_number': entry_num,
+                        'pseudo_page': pseudo_page,
+                        'page_id': page_id,
+                        'publication_id': publication_id,
+                        'filename': filename,
+                        'line_number': row_num,
+                        'confidence': 1.0,  # CSV entries are considered highly reliable
+                        'citation': f"{filename}:{row_num}",
+                        'created_date': datetime.now(timezone.utc),
+                        'search_direction': 'chk_to_en',
+                        'primary_language': 'chuukese',
+                        'secondary_language': 'english',
+                        'is_base_word': True,
+                        'source_type': 'csv_upload'
+                    }
+                    
+                    entries.append(entry)
+                    
+                    # Create reverse entry (English to Chuukese)
+                    reverse_entry = entry.copy()
+                    reverse_entry.update({
+                        'search_direction': 'en_to_chk',
+                        'primary_language': 'english',
+                        'secondary_language': 'chuukese'
+                    })
+                    entries.append(reverse_entry)
+                    
+                except (IndexError, ValueError) as e:
+                    print(f"Error parsing CSV row {row_num}: {e}")
+                    continue
+        
+        except Exception as e:
+            print(f"Error parsing CSV content: {e}")
+            return []
+        
+        # Insert entries into database with error handling
+        if entries:
+            try:
+                self.dictionary_collection.insert_many(entries, ordered=False)
+            except Exception as e:
+                print(f"Error bulk inserting entries: {e}")
+                # Insert individually to handle duplicates
+                for entry in entries:
+                    try:
+                        self.dictionary_collection.insert_one(entry)
+                    except DuplicateKeyError:
+                        # Update existing entry with additional source info
+                        self.dictionary_collection.update_one(
+                            {
+                                'chuukese_word': entry['chuukese_word'],
+                                'english_translation': entry['english_translation']
+                            },
+                            {
+                                '$addToSet': {
+                                    'alternative_sources': {
+                                        'page_id': page_id, 
+                                        'filename': filename,
+                                        'citation': entry['citation']
+                                    }
+                                }
+                            }
+                        )
+                    except Exception as insert_error:
+                        print(f"Error inserting individual entry: {insert_error}")
+        
+        return entries
+    
+    def clear_database(self) -> bool:
+        """
+        Clear all dictionary entries, pages, and publications from the database
+        
+        Returns:
+            Success status
+        """
+        if not self.client:
+            print("Database not available for clearing")
+            return False
+        
+        try:
+            # Clear all collections
+            self.dictionary_collection.delete_many({})
+            self.pages_collection.delete_many({})
+            
+            # Also clear publications metadata
+            from .publication_manager import PublicationManager
+            pub_manager = PublicationManager()
+            pub_manager.clear_publications()
+            
+            print("Database and publications cleared successfully")
+            return True
+        except Exception as e:
+            print(f"Error clearing database: {e}")
+            return False

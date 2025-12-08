@@ -5,6 +5,7 @@ Database cleanup script - clears all data and uploads
 import os
 import shutil
 import sys
+import json
 from pymongo import MongoClient
 
 def clear_database():
@@ -26,14 +27,36 @@ def clear_database():
         print(f"❌ Error clearing database: {e}")
         return False
 
+def clear_publications():
+    """Clear publications metadata"""
+    try:
+        publications_file = 'uploads/publications.json'
+        if os.path.exists(publications_file):
+            # Clear the publications dictionary
+            with open(publications_file, 'w') as f:
+                json.dump({}, f, indent=2)
+            print("✅ Publications metadata cleared")
+        else:
+            print("ℹ️ Publications metadata file doesn't exist")
+        return True
+    except Exception as e:
+        print(f"❌ Error clearing publications: {e}")
+        return False
+
 def clear_uploads():
     """Remove all uploaded files"""
     uploads_dir = 'uploads'
     if os.path.exists(uploads_dir):
         try:
-            shutil.rmtree(uploads_dir)
-            os.makedirs(uploads_dir, exist_ok=True)
-            print("✅ Uploads directory cleared and recreated")
+            # Keep the publications.json file but clear everything else
+            for item in os.listdir(uploads_dir):
+                item_path = os.path.join(uploads_dir, item)
+                if item != 'publications.json':
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+            print("✅ Uploads directory cleared (preserving publications.json)")
             return True
         except Exception as e:
             print(f"❌ Error clearing uploads: {e}")
@@ -57,15 +80,19 @@ def main():
     # Clear database
     db_success = clear_database()
     
+    # Clear publications
+    pub_success = clear_publications()
+    
     # Clear uploads
     uploads_success = clear_uploads()
     
     # Summary
     print("\n📊 Cleanup Summary:")
     print(f"Database: {'✅ Cleared' if db_success else '❌ Failed'}")
+    print(f"Publications: {'✅ Cleared' if pub_success else '❌ Failed'}")
     print(f"Uploads: {'✅ Cleared' if uploads_success else '❌ Failed'}")
     
-    if db_success and uploads_success:
+    if db_success and pub_success and uploads_success:
         print("\n🎉 Cleanup completed successfully!")
         print("You can now start fresh with new uploads.")
     else:
