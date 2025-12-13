@@ -4,7 +4,7 @@ Flask application for Chuuk Dictionary OCR and Lookup
 import os
 import re
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from markupsafe import Markup
@@ -830,6 +830,97 @@ def api_get_entry(entry_id):
             return jsonify({'error': 'Entry not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# API Routes for React frontend
+@app.route('/api/publications', methods=['GET'])
+def api_get_publications():
+    """API: Get all publications"""
+    try:
+        publications = pub_manager.list_publications()
+        return jsonify(publications)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/publications', methods=['POST'])
+def api_create_publication():
+    """API: Create new publication"""
+    try:
+        data = request.get_json()
+        title = data.get('title')
+        description = data.get('description', '')
+        
+        if not title:
+            return jsonify({'error': 'Title is required'}), 400
+        
+        pub_id = pub_manager.create_publication(title, description)
+        return jsonify({'id': pub_id, 'message': 'Publication created'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/publications/<pub_id>', methods=['GET'])
+def api_get_publication(pub_id):
+    """API: Get publication details"""
+    try:
+        # Validate publication ID format
+        import re
+        if not re.match(r'^\d{14}_[a-f0-9]{8}$', pub_id):
+            return jsonify({'error': 'Invalid publication ID'}), 400
+        
+        publication = pub_manager.get_publication(pub_id)
+        if not publication:
+            return jsonify({'error': 'Publication not found'}), 404
+        
+        return jsonify(publication)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/lookup', methods=['GET'])
+def api_lookup_get():
+    """API: Search dictionary (GET version for simple queries)"""
+    try:
+        word = request.args.get('word', '')
+        lang = request.args.get('lang', 'chk')
+        
+        if not word:
+            return jsonify({'results': []})
+        
+        results = dict_db.search_word(word, limit=10)
+        return jsonify({'word': word, 'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/lookup/jworg', methods=['POST'])
+def api_lookup_jworg_post():
+    """API: Search JW.org (POST version)"""
+    try:
+        data = request.get_json()
+        word = data.get('word')
+        lang = data.get('lang', 'chk')
+        
+        if not word:
+            return jsonify({'error': 'Word is required'}), 400
+        
+        results = jworg_lookup.search_word(word, lang)
+        return jsonify({'word': word, 'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Serve React app
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    """Serve React app for all non-API routes"""
+    if path.startswith('api/'):
+        return jsonify({'error': 'API route not found'}), 404
+    
+    # Serve index.html for React routing
+    return send_from_directory('../frontend/dist', 'index.html')
 
 
 if __name__ == '__main__':
