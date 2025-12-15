@@ -15,54 +15,122 @@ class DictionaryDB:
     
     def __init__(self, connection_string: str = None):
         """Initialize database connection"""
-        self.connection_string = connection_string or os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-        self.db_name = 'chuuk_dictionary'
-        self.client = None
-        self.db = None
-        self.dictionary_collection = None
-        self.pages_collection = None
+        from .db_factory import get_database_client, get_database_config
+        
+        self.config = get_database_config()
+        self.db_type = self.config['type']
+        
+        if self.db_type == 'cosmos':
+            # Use Cosmos DB with MongoDB API
+            self.client = get_database_client()
+            self.db = self.client[self.config['database_name']]
+            self.dictionary_collection = self.db[self.config['container_name']]
+            self.pages_collection = self.db[self.config['pages_container']]
+            self.words_collection = self.db[self.config['words_container']]
+            self.phrases_collection = self.db[self.config['phrases_container']]
+            self.paragraphs_collection = self.db[self.config['paragraphs_container']]
+        else:
+            # Fallback to MongoDB (not used in this setup)
+            self.connection_string = connection_string or os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+            self.db_name = 'chuuk_dictionary'
+            self.client = None
+            self.db = None
+            self.dictionary_collection = None
+            self.pages_collection = None
+            
         self._connect()
     
     def _connect(self):
-        """Connect to MongoDB"""
+        """Connect to database"""
         try:
-            self.client = MongoClient(self.connection_string, serverSelectionTimeoutMS=5000)
-            # Test connection
-            self.client.admin.command('ping')
-            self.db = self.client[self.db_name]
-            self.dictionary_collection = self.db.dictionary_entries
-            self.pages_collection = self.db.dictionary_pages
-            self._create_indexes()
-            print("Connected to MongoDB successfully")
-        except ConnectionFailure:
-            print("MongoDB connection failed. Running without database indexing.")
+            if self.db_type == 'cosmos':
+                # Test Cosmos DB connection with MongoDB API
+                try:
+                    # Test connection
+                    self.client.admin.command('ismaster')
+                    print("Connected to Azure Cosmos DB with MongoDB API successfully")
+                    self._create_indexes()
+                except Exception as e:
+                    print(f"Azure Cosmos DB connection failed: {e}")
+                    self.client = None
+            else:
+                # MongoDB connection (fallback)
+                from pymongo import MongoClient, TEXT, ASCENDING
+                self.client = MongoClient(self.connection_string, serverSelectionTimeoutMS=5000)
+                # Test connection
+                self.client.admin.command('ping')
+                self.db = self.client[self.db_name]
+                self.dictionary_collection = self.db.dictionary_entries
+                self.pages_collection = self.db.dictionary_pages
+                self.words_collection = self.db.words
+                self.phrases_collection = self.db.phrases
+                self.paragraphs_collection = self.db.paragraphs
+                self._create_indexes()
+                print("Connected to MongoDB successfully")
+        except Exception as e:
+            print(f"Database connection failed: {e}. Running without database indexing.")
             self.client = None
     
     def _create_indexes(self):
-        """Create database indexes for efficient searching"""
+        """Create database indexes for efficient searching on all collections"""
         if not self.client:
             return
             
         try:
-            # Text indexes for searching
+            # Create indexes for dictionary_entries (legacy)
             self.dictionary_collection.create_index([
-                ('chuukese_word', TEXT),
-                ('english_translation', TEXT),
-                ('definition', TEXT),
-                ('examples', TEXT)
+                ('chuukese_word', 'text'),
+                ('english_translation', 'text'),
+                ('definition', 'text'),
+                ('examples', 'text')
             ])
+            self.dictionary_collection.create_index([('chuukese_word', 1)])
+            self.dictionary_collection.create_index([('english_translation', 1)])
+            self.dictionary_collection.create_index([('source_page', 1)])
             
-            # Regular indexes
-            self.dictionary_collection.create_index([('chuukese_word', ASCENDING)])
-            self.dictionary_collection.create_index([('english_translation', ASCENDING)])
-            self.dictionary_collection.create_index([('source_page', ASCENDING)])
+            # Create indexes for pages collection
+            self.pages_collection.create_index([('publication_id', 1)])
+            self.pages_collection.create_index([('filename', 1)])
             
-            # Pages collection indexes
-            self.pages_collection.create_index([('publication_id', ASCENDING)])
-            self.pages_collection.create_index([('filename', ASCENDING)])
+            # Create indexes for words collection with full text search
+            self.words_collection.create_index([
+                ('chuukese', 'text'),
+                ('english_translation', 'text'),
+                ('grammar', 'text')
+            ])
+            self.words_collection.create_index([('chuukese', 1)])
+            self.words_collection.create_index([('english_translation', 1)])
+            self.words_collection.create_index([('grammar', 1)])
+            self.words_collection.create_index([('date_added', -1)])
+            
+            # Create indexes for phrases collection with full text search
+            self.phrases_collection.create_index([
+                ('chuukese_phrase', 'text'),
+                ('english_translation', 'text'),
+                ('source', 'text')
+            ])
+            self.phrases_collection.create_index([('chuukese_phrase', 1)])
+            self.phrases_collection.create_index([('english_translation', 1)])
+            self.phrases_collection.create_index([('source', 1)])
+            self.phrases_collection.create_index([('date_added', -1)])
+            
+            # Create indexes for paragraphs collection with full text search
+            self.paragraphs_collection.create_index([
+                ('chuukese_paragraph', 'text'),
+                ('english_paragraph', 'text'),
+                ('source', 'text')
+            ])
+            self.paragraphs_collection.create_index([('chuukese_paragraph', 1)])
+            self.paragraphs_collection.create_index([('english_paragraph', 1)])
+            self.paragraphs_collection.create_index([('source', 1)])
+            self.paragraphs_collection.create_index([('date_added', -1)])
+            
+            print("Database indexes created successfully for all collections")
             
         except Exception as e:
             print(f"Error creating indexes: {e}")
+
+
     
     def add_dictionary_page(self, publication_id: str, filename: str, ocr_text: str, page_number: int = 1) -> str:
         """
@@ -990,3 +1058,387 @@ class DictionaryDB:
         except Exception as e:
             print(f"Error clearing database: {e}")
             return False
+
+    # ===== WORDS COLLECTION METHODS =====
+    
+    def add_word(self, chuukese: str, english_translation: str, grammar: str = None, **kwargs) -> Optional[str]:
+        """
+        Add a word to the words collection
+        
+        Args:
+            chuukese: Chuukese word
+            english_translation: English translation
+            grammar: Grammar type (verb, noun, adjective, etc.)
+            **kwargs: Additional fields
+            
+        Returns:
+            Word ID if successful
+        """
+        if not self.client:
+            return None
+            
+        word_data = {
+            '_id': f"word_{chuukese}_{hash(english_translation) & 0x7FFFFFFF}",
+            'chuukese': chuukese.strip(),
+            'english_translation': english_translation.strip(),
+            'grammar': grammar or 'unknown',
+            'date_added': datetime.now(timezone.utc),
+            'date_modified': datetime.now(timezone.utc),
+            **kwargs
+        }
+        
+        try:
+            result = self.words_collection.insert_one(word_data)
+            return str(result.inserted_id)
+        except Exception as e:
+            print(f"Error adding word: {e}")
+            return None
+    
+    def search_words(self, query: str, limit: int = 50) -> List[Dict]:
+        """
+        Search words by Chuukese word or English translation
+        
+        Args:
+            query: Search query
+            limit: Maximum results to return
+            
+        Returns:
+            List of matching word documents
+        """
+        if not self.client:
+            return []
+            
+        try:
+            # Use regex search for MongoDB API
+            results = list(self.words_collection.find({
+                "$or": [
+                    {"chuukese": {"$regex": query, "$options": "i"}},
+                    {"english_translation": {"$regex": query, "$options": "i"}}
+                ]
+            }).limit(limit))
+                
+            return results
+        except Exception as e:
+            print(f"Error searching words: {e}")
+            return []
+    
+    def update_word(self, word_id: str, **updates) -> bool:
+        """
+        Update a word entry
+        
+        Args:
+            word_id: Word ID to update
+            **updates: Fields to update
+            
+        Returns:
+            Success status
+        """
+        if not self.client:
+            return False
+            
+        updates['date_modified'] = datetime.now(timezone.utc)
+        
+        try:
+            if self.db_type == 'cosmos':
+                # Read current item
+                current_item = self.words_collection.read_item(item=word_id, partition_key=word_id)
+                current_item.update(updates)
+                self.words_collection.replace_item(item=word_id, body=current_item)
+            else:
+                self.words_collection.update_one(
+                    {"id": word_id},
+                    {"$set": updates}
+                )
+            return True
+        except Exception as e:
+            print(f"Error updating word: {e}")
+            return False
+    
+    # ===== PHRASES COLLECTION METHODS =====
+    
+    def add_phrase(self, chuukese_phrase: str, english_translation: str, source: str = None, **kwargs) -> Optional[str]:
+        """
+        Add a phrase to the phrases collection
+        
+        Args:
+            chuukese_phrase: Chuukese phrase
+            english_translation: English translation
+            source: Source of the phrase
+            **kwargs: Additional fields
+            
+        Returns:
+            Phrase ID if successful
+        """
+        if not self.client:
+            return None
+            
+        phrase_data = {
+            '_id': f"phrase_{hash(chuukese_phrase) & 0x7FFFFFFF}_{hash(english_translation) & 0x7FFFFFFF}",
+            'chuukese_phrase': chuukese_phrase.strip(),
+            'english_translation': english_translation.strip(),
+            'source': source or 'unknown',
+            'date_added': datetime.now(timezone.utc),
+            'date_modified': datetime.now(timezone.utc),
+            **kwargs
+        }
+        
+        try:
+            result = self.phrases_collection.insert_one(phrase_data)
+            return str(result.inserted_id)
+        except Exception as e:
+            print(f"Error adding phrase: {e}")
+            return None
+    
+    def search_phrases(self, query: str, limit: int = 50) -> List[Dict]:
+        """
+        Search phrases by Chuukese phrase or English translation
+        
+        Args:
+            query: Search query
+            limit: Maximum results to return
+            
+        Returns:
+            List of matching phrase documents
+        """
+        if not self.client:
+            return []
+            
+        try:
+            if self.db_type == 'cosmos':
+                # Cosmos DB SQL query
+                sql_query = """
+                SELECT * FROM c 
+                WHERE CONTAINS(c.chuukese_phrase, @query, true) 
+                   OR CONTAINS(c.english_translation, @query, true)
+                   OR CONTAINS(c.source, @query, true)
+                ORDER BY c.date_added DESC
+                """
+                results = list(self.phrases_collection.query_items(
+                    query=sql_query,
+                    parameters=[{"name": "@query", "value": query}],
+                    enable_cross_partition_query=True,
+                    max_item_count=limit
+                ))
+            else:
+                # MongoDB query
+                results = list(self.phrases_collection.find(
+                    {"$or": [
+                        {"chuukese_phrase": {"$regex": query, "$options": "i"}},
+                        {"english_translation": {"$regex": query, "$options": "i"}},
+                        {"source": {"$regex": query, "$options": "i"}}
+                    ]}
+                ).limit(limit))
+                
+            return results
+        except Exception as e:
+            print(f"Error searching phrases: {e}")
+            return []
+    
+    def update_phrase(self, phrase_id: str, **updates) -> bool:
+        """
+        Update a phrase entry
+        
+        Args:
+            phrase_id: Phrase ID to update
+            **updates: Fields to update
+            
+        Returns:
+            Success status
+        """
+        if not self.client:
+            return False
+            
+        updates['date_modified'] = datetime.now(timezone.utc)
+        
+        try:
+            if self.db_type == 'cosmos':
+                # Read current item
+                current_item = self.phrases_collection.read_item(item=phrase_id, partition_key=phrase_id)
+                current_item.update(updates)
+                self.phrases_collection.replace_item(item=phrase_id, body=current_item)
+            else:
+                self.phrases_collection.update_one(
+                    {"id": phrase_id},
+                    {"$set": updates}
+                )
+            return True
+        except Exception as e:
+            print(f"Error updating phrase: {e}")
+            return False
+    
+    # ===== PARAGRAPHS COLLECTION METHODS =====
+    
+    def add_paragraph(self, chuukese_paragraph: str, english_paragraph: str, source: str = None, **kwargs) -> Optional[str]:
+        """
+        Add a paragraph pair to the paragraphs collection
+        
+        Args:
+            chuukese_paragraph: Chuukese paragraph
+            english_paragraph: Corresponding English paragraph
+            source: Source of the paragraph
+            **kwargs: Additional fields
+            
+        Returns:
+            Paragraph ID if successful
+        """
+        if not self.client:
+            return None
+            
+        paragraph_data = {
+            'id': f"paragraph_{hash(chuukese_paragraph) & 0x7FFFFFFF}_{hash(english_paragraph) & 0x7FFFFFFF}",
+            'chuukese_paragraph': chuukese_paragraph.strip(),
+            'english_paragraph': english_paragraph.strip(),
+            'source': source or 'unknown',
+            'date_added': datetime.now(timezone.utc),
+            'date_modified': datetime.now(timezone.utc),
+            **kwargs
+        }
+        
+        try:
+            if self.db_type == 'cosmos':
+                self.paragraphs_collection.create_item(body=paragraph_data)
+            else:
+                self.paragraphs_collection.insert_one(paragraph_data)
+            return paragraph_data['id']
+        except Exception as e:
+            print(f"Error adding paragraph: {e}")
+            return None
+    
+    def search_paragraphs(self, query: str, limit: int = 20) -> List[Dict]:
+        """
+        Search paragraphs by content or source
+        
+        Args:
+            query: Search query
+            limit: Maximum results to return
+            
+        Returns:
+            List of matching paragraph documents
+        """
+        if not self.client:
+            return []
+            
+        try:
+            if self.db_type == 'cosmos':
+                # Cosmos DB SQL query
+                sql_query = """
+                SELECT * FROM c 
+                WHERE CONTAINS(c.chuukese_paragraph, @query, true) 
+                   OR CONTAINS(c.english_paragraph, @query, true)
+                   OR CONTAINS(c.source, @query, true)
+                ORDER BY c.date_added DESC
+                """
+                results = list(self.paragraphs_collection.query_items(
+                    query=sql_query,
+                    parameters=[{"name": "@query", "value": query}],
+                    enable_cross_partition_query=True,
+                    max_item_count=limit
+                ))
+            else:
+                # MongoDB query
+                results = list(self.paragraphs_collection.find(
+                    {"$or": [
+                        {"chuukese_paragraph": {"$regex": query, "$options": "i"}},
+                        {"english_paragraph": {"$regex": query, "$options": "i"}},
+                        {"source": {"$regex": query, "$options": "i"}}
+                    ]}
+                ).limit(limit))
+                
+            return results
+        except Exception as e:
+            print(f"Error searching paragraphs: {e}")
+            return []
+    
+    def update_paragraph(self, paragraph_id: str, **updates) -> bool:
+        """
+        Update a paragraph entry
+        
+        Args:
+            paragraph_id: Paragraph ID to update
+            **updates: Fields to update
+            
+        Returns:
+            Success status
+        """
+        if not self.client:
+            return False
+            
+        updates['date_modified'] = datetime.now(timezone.utc)
+        
+        try:
+            if self.db_type == 'cosmos':
+                # Read current item
+                current_item = self.paragraphs_collection.read_item(item=paragraph_id, partition_key=paragraph_id)
+                current_item.update(updates)
+                self.paragraphs_collection.replace_item(item=paragraph_id, body=current_item)
+            else:
+                self.paragraphs_collection.update_one(
+                    {"id": paragraph_id},
+                    {"$set": updates}
+                )
+            return True
+        except Exception as e:
+            print(f"Error updating paragraph: {e}")
+            return False
+    
+    # ===== BULK OPERATIONS =====
+    
+    def bulk_add_words(self, words_data: List[Dict]) -> int:
+        """
+        Bulk add multiple words
+        
+        Args:
+            words_data: List of word dictionaries with chuukese, english_translation, grammar fields
+            
+        Returns:
+            Number of words successfully added
+        """
+        if not self.client or not words_data:
+            return 0
+            
+        added_count = 0
+        for word_data in words_data:
+            if self.add_word(**word_data):
+                added_count += 1
+                
+        return added_count
+    
+    def bulk_add_phrases(self, phrases_data: List[Dict]) -> int:
+        """
+        Bulk add multiple phrases
+        
+        Args:
+            phrases_data: List of phrase dictionaries with chuukese_phrase, english_translation, source fields
+            
+        Returns:
+            Number of phrases successfully added
+        """
+        if not self.client or not phrases_data:
+            return 0
+            
+        added_count = 0
+        for phrase_data in phrases_data:
+            if self.add_phrase(**phrase_data):
+                added_count += 1
+                
+        return added_count
+    
+    def bulk_add_paragraphs(self, paragraphs_data: List[Dict]) -> int:
+        """
+        Bulk add multiple paragraphs
+        
+        Args:
+            paragraphs_data: List of paragraph dictionaries with chuukese_paragraph, english_paragraph, source fields
+            
+        Returns:
+            Number of paragraphs successfully added
+        """
+        if not self.client or not paragraphs_data:
+            return 0
+            
+        added_count = 0
+        for paragraph_data in paragraphs_data:
+            if self.add_paragraph(**paragraph_data):
+                added_count += 1
+                
+        return added_count

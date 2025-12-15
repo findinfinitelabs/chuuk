@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+# from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from markupsafe import Markup
@@ -35,6 +36,9 @@ if not secret_key:
 app.config['SECRET_KEY'] = secret_key
 app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))  # 16MB default
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
+
+# Enable CORS for React frontend
+# CORS(app, origins=["http://localhost:5173"])
 
 # Initialize services
 pub_manager = PublicationManager(app.config['UPLOAD_FOLDER'])
@@ -97,45 +101,26 @@ def allowed_file(filename):
 
 @app.route('/')
 def index():
-    """Home page"""
-    publications = pub_manager.list_publications()
-    return render_template('index.html', publications=publications)
+    """Serve React app"""
+    return send_from_directory('frontend/dist', 'index.html')
+
+
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serve static files from React build"""
+    return send_from_directory('frontend/dist', path)
 
 
 @app.route('/publication/new', methods=['GET', 'POST'])
 def new_publication():
-    """Create a new publication"""
-    if request.method == 'POST':
-        title = request.form.get('title')
-        description = request.form.get('description', '')
-        
-        if not title:
-            flash('Title is required', 'error')
-            return render_template('new_publication.html')
-        
-        pub_id = pub_manager.create_publication(title, description)
-        flash('Publication created successfully', 'success')
-        return redirect(url_for('view_publication', pub_id=pub_id))
-    
-    return render_template('new_publication.html')
+    """Redirect to React app"""
+    return redirect('/')
 
 
 @app.route('/publication/<pub_id>')
 def view_publication(pub_id):
-    """View a publication and its pages"""
-    # Validate publication ID format (timestamp + UUID)
-    import re
-    if not re.match(r'^\d{14}_[a-f0-9]{8}$', pub_id):
-        flash('Invalid publication ID', 'error')
-        return redirect(url_for('index'))
-    
-    publication = pub_manager.get_publication(pub_id)
-    
-    if not publication:
-        flash('Publication not found', 'error')
-        return redirect(url_for('index'))
-    
-    return render_template('publication.html', publication=publication)
+    """Redirect to React app"""
+    return redirect('/')
 
 
 @app.route('/publication/<pub_id>/upload', methods=['POST'])
@@ -440,60 +425,8 @@ def process_ocr():
 
 @app.route('/translate', methods=['GET', 'POST'])
 def translate():
-    """AI Translation page using local LLM"""
-    translation_result = None
-    error_message = None
-    
-    if request.method == 'POST':
-        text = request.form.get('text', '').strip()
-        direction = request.form.get('direction', 'auto')
-        model_type = request.form.get('model', 'llm')  # Get selected model type
-        
-        if not text:
-            error_message = 'Please enter text to translate'
-        else:
-            try:
-                if model_type == 'helsinki':
-                    # Use Helsinki model
-                    if not helsinki_translator:
-                        error_message = 'Helsinki translator not available. Please check model installation.'
-                    else:
-                        if direction == 'chk_to_en' or (direction == 'auto' and not any(c.isascii() and c.isalpha() for c in text)):
-                            translation_result = helsinki_translator.translate_chuukese_to_english(text)
-                        else:
-                            translation_result = helsinki_translator.translate_english_to_chuukese(text)
-                else:
-                    # Use Ollama model (default)
-                    from src.translation.llm_trainer import ChuukeseLLMTrainer
-                    trainer = ChuukeseLLMTrainer()
-                    
-                    # Check if Ollama is available
-                    if not trainer.check_ollama_installation():
-                        error_message = 'Local LLM not available. Please install Ollama and train the model first.'
-                    else:
-                        # Check if our trained model exists
-                        import subprocess
-                        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
-                        if 'chuukese-translator' not in result.stdout:
-                            error_message = 'Chuukese translator model not found. Please train the model first.'
-                        else:
-                            translation_result = trainer.translate_text(text, direction)
-                            if translation_result.startswith('Error:') or translation_result.startswith('Network error:'):
-                                error_message = translation_result
-                                translation_result = None
-            except Exception as e:
-                error_message = f'Translation error: {str(e)}'
-    
-    # Get database stats for the page
-    db_stats = dict_db.get_statistics() if dict_db.client else {'database_status': 'disconnected'}
-    
-    return render_template('translate.html',
-                         text=request.form.get('text', '') if request.method == 'POST' else '',
-                         direction=request.form.get('direction', 'auto') if request.method == 'POST' else 'auto',
-                         model_type=request.form.get('model', 'llm') if request.method == 'POST' else 'llm',
-                         translation_result=translation_result,
-                         error_message=error_message,
-                         db_stats=db_stats)
+    """Redirect to React app"""
+    return redirect('/')
 
 @app.route('/translate_helsinki', methods=['POST'])
 def translate_helsinki():
@@ -667,40 +600,8 @@ def model_status():
 
 @app.route('/lookup', methods=['GET', 'POST'])
 def lookup():
-    """Word/phrase lookup page"""
-    if request.method == 'POST':
-        word = request.form.get('word')
-        lang = request.form.get('lang', 'chk')
-        search_local = request.form.get('search_local', 'true') == 'true'
-        search_jworg = request.form.get('search_jworg', 'true') == 'true'
-        
-        if not word:
-            flash('Please enter a word or phrase', 'error')
-            return render_template('lookup.html')
-        
-        local_results = []
-        
-        # Search local dictionary database immediately
-        if search_local:
-            try:
-                local_results = dict_db.search_word(word, limit=10)
-            except Exception as e:
-                flash(f'Error searching local dictionary: {str(e)}', 'warning')
-        
-        # Return immediately with local results
-        # JW.org results will be loaded via AJAX
-        return render_template('lookup.html', 
-                             word=word, 
-                             results=[], # JW.org results empty initially
-                             local_results=local_results,
-                             lang=lang,
-                             search_local=search_local,
-                             search_jworg=search_jworg,
-                             loading_jworg=search_jworg)  # Flag for JS to load JW.org results
-    
-    available_langs = jworg_lookup.get_available_languages()
-    db_stats = dict_db.get_statistics()
-    return render_template('lookup.html', available_langs=available_langs, db_stats=db_stats)
+    """Redirect to React app"""
+    return redirect('/')
 
 
 @app.route('/api/lookup/<word>')
@@ -772,27 +673,8 @@ def get_processing_status(session_id):
 
 @app.route('/database')
 def database_viewer():
-    """Database viewer page"""
-    try:
-        # Get database statistics
-        stats = dict_db.get_statistics()
-        
-        # Get recent entries
-        recent_entries = dict_db.get_recent_entries(20)
-        
-        # Get processed pages summary
-        pages_summary = dict_db.get_pages_summary()
-        
-        return render_template('database.html', 
-                             stats=stats, 
-                             recent_entries=recent_entries,
-                             pages_summary=pages_summary)
-    except Exception as e:
-        flash(f'Error accessing database: {str(e)}', 'error')
-        return render_template('database.html', 
-                             stats={'error': str(e)}, 
-                             recent_entries=[],
-                             pages_summary=[])
+    """Serve React app for database viewer"""
+    return send_from_directory('frontend/dist', 'index.html')
 
 
 @app.route('/api/database/entries')

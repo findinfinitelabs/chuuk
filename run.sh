@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Chuuk Dictionary OCR Complete Setup and Run Script
-# This script handles both setup and running the Flask application
+# Chuuk Dictionary OCR Complete Startup Script
+# Starts all services: MongoDB, React frontend, Flask backend
+# Provides real-time status monitoring
 
 set -e  # Exit on any error
 
@@ -11,7 +12,24 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Service ports and paths
+COSMOS_PORT=8081
+FLASK_PORT=5002
+REACT_PORT=5173
+PROJECT_DIR="$(pwd)"
+FRONTEND_DIR="$PROJECT_DIR/frontend"
+VENV_DIR="$PROJECT_DIR/.venv"
+
+# Database type - using Cosmos DB only
+DB_TYPE="cosmos"
+
+# PID files for background processes
+COSMOS_PID_FILE="/tmp/chuuk_cosmos.pid"
+FLASK_PID_FILE="/tmp/chuuk_flask.pid"
+REACT_PID_FILE="/tmp/chuuk_react.pid"
 
 # Function to print colored output
 print_status() {
@@ -30,422 +48,396 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-print_header() {
-    echo -e "${PURPLE}[SETUP]${NC} $1"
+print_service() {
+    echo -e "${CYAN}[SERVICE]${NC} $1"
 }
 
-# Setup function
-setup_environment() {
-    print_header "🚀 Chuuk Dictionary OCR with AI Translation Setup"
-    print_status "Setting up complete environment with Helsinki-NLP and Ollama..."
-    
-    # Check if Python 3 is available
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python 3 is required but not installed. Please install Python 3.8+ first."
-        exit 1
-    fi
-    
-    print_status "Python version: $(python3 --version)"
-    
-    # Create virtual environment if it doesn't exist
-    if [ ! -d "venv" ]; then
-        print_status "Creating Python virtual environment..."
-        python3 -m venv venv
-        print_success "Virtual environment created"
+# Function to check if a port is in use
+check_port() {
+    local port=$1
+    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        return 0  # Port is in use
     else
-        print_status "Virtual environment already exists"
+        return 1  # Port is free
     fi
+}
+
+# Function to wait for service to start
+wait_for_service() {
+    local port=$1
+    local service_name=$2
+    local max_attempts=30
+    local attempt=1
     
-    # Activate virtual environment
-    print_status "Activating virtual environment..."
-    source venv/bin/activate
+    print_status "Waiting for $service_name to start on port $port..."
     
-    # Upgrade pip
-    print_status "Upgrading pip..."
-    python -m pip install --upgrade pip
-    
-    # Install requirements
-    print_status "Installing Python packages (this may take several minutes)..."
-    pip install -r requirements.txt
-    
-    # Check if Ollama is installed
-    if command -v ollama &> /dev/null; then
-        print_success "Ollama is already installed"
+    while [ $attempt -le $max_attempts ]; do
+        if check_port $port; then
+            print_success "$service_name is ready on port $port"
+            return 0
+        fi
         
-        # Check if Ollama service is running
-        if pgrep -f "ollama" > /dev/null; then
-            print_success "Ollama service is running"
-        else
-            print_status "Starting Ollama service..."
-            if command -v brew &> /dev/null; then
-                brew services start ollama
-            else
-                print_warning "Please start Ollama service manually: ollama serve"
-            fi
-        fi
-    else
-        print_status "Installing Ollama..."
-        if command -v brew &> /dev/null; then
-            brew install ollama
-            brew services start ollama
-            print_success "Ollama installed and started via Homebrew"
-        else
-            print_warning "Homebrew not found. Please install Ollama manually:"
-            print_warning "Visit https://ollama.com/download"
-        fi
-    fi
-    
-    # Wait for Ollama to be ready
-    print_status "Waiting for Ollama service to be ready..."
-    for i in {1..30}; do
-        if curl -s http://localhost:11434/api/version > /dev/null 2>&1; then
-            print_success "Ollama service is ready"
-            break
-        fi
-        if [ $i -eq 30 ]; then
-            print_warning "Ollama service not responding. You may need to start it manually."
-            break
-        fi
-        sleep 2
+        sleep 1
+        ((attempt++))
     done
     
-    # Pull Llama model
-    print_status "Pulling Llama 3.2 3B model (this will take several minutes)..."
-    if command -v ollama &> /dev/null; then
-        ollama pull llama3.2:3b || print_warning "Failed to pull Llama model. You can do this later with: ollama pull llama3.2:3b"
-    else
-        print_warning "Ollama not available. Please install and run: ollama pull llama3.2:3b"
-    fi
-    
-    # Create necessary directories
-    print_status "Creating project directories..."
-    mkdir -p uploads
-    mkdir -p models
-    mkdir -p training_data
-    mkdir -p logs
-    
-    # Create .env file if it doesn't exist
-    if [ ! -f ".env" ]; then
-        print_status "Creating .env configuration file..."
-        cat > .env << EOF
-# Flask configuration
-FLASK_ENV=development
-MAX_CONTENT_LENGTH=16777216
-UPLOAD_FOLDER=uploads
-
-# Database configuration
-MONGODB_URI=mongodb://localhost:27017/chuuk_dictionary
-
-# Training configuration
-TRAINING_DATA_DIR=training_data
-MODELS_DIR=models
-
-# JW.org API settings
-JWORG_BASE_URL=https://www.jw.org
-JWORG_LANGUAGES=chk,en
-
-# Helsinki-NLP model settings
-HELSINKI_BASE_MODEL=Helsinki-NLP/opus-mt-mul-en
-HELSINKI_REVERSE_MODEL=Helsinki-NLP/opus-mt-en-mul
-EOF
-        print_success ".env file created"
-    else
-        print_status ".env file already exists"
-    fi
-    
-    # Test Helsinki-NLP models
-    print_status "Testing Helsinki-NLP model availability..."
-    python3 << 'PYTHON_EOF'
-try:
-    from transformers import AutoTokenizer
-    print("✅ Helsinki-NLP libraries available")
-    tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-mul-en")
-    print("✅ Helsinki-NLP models accessible")
-except Exception as e:
-    print(f"💡 Helsinki-NLP models will download when needed: {e}")
-PYTHON_EOF
-
-    print_success "Setup completed successfully!"
+    print_error "$service_name failed to start within 30 seconds"
+    return 1
 }
 
-# Clear database function
-clear_database() {
-    print_status "Clearing MongoDB database..."
-    # Only try to clear if pymongo is available
-    if python -c "import pymongo" 2>/dev/null; then
-        python3 << 'PYTHON_EOF'
-import pymongo
-try:
-    client = pymongo.MongoClient('mongodb://localhost:27017/')
-    client.drop_database('chuuk_dictionary')
-    print("✅ Database cleared successfully")
-except Exception as e:
-    print(f"⚠️ Failed to clear database: {e}")
-PYTHON_EOF
+# Function to stop all services
+stop_services() {
+    print_status "Stopping all services..."
+    
+    # Stop React dev server
+    if [ -f "$REACT_PID_FILE" ]; then
+        local react_pid=$(cat "$REACT_PID_FILE")
+        if ps -p $react_pid > /dev/null 2>&1; then
+            kill $react_pid 2>/dev/null || true
+            print_status "Stopped React dev server"
+        fi
+        rm -f "$REACT_PID_FILE"
+    fi
+    
+    # Stop Flask server
+    if [ -f "$FLASK_PID_FILE" ]; then
+        local flask_pid=$(cat "$FLASK_PID_FILE")
+        if ps -p $flask_pid > /dev/null 2>&1; then
+            kill $flask_pid 2>/dev/null || true
+            print_status "Stopped Flask server"
+        fi
+        rm -f "$FLASK_PID_FILE"
+    fi
+    
+    # Stop Cosmos DB Emulator (Docker container)
+    if [ -f "$COSMOS_PID_FILE" ]; then
+        local container_id=$(cat "$COSMOS_PID_FILE")
+        if docker ps -q -f id="$container_id" | grep -q "$container_id"; then
+            docker stop "$container_id" > /dev/null 2>&1 || true
+            docker rm "$container_id" > /dev/null 2>&1 || true
+            print_status "Stopped Cosmos DB Emulator"
+        fi
+        rm -f "$COSMOS_PID_FILE"
+    fi
+    
+    # Also stop by name if PID file method fails
+    if docker ps | grep -q "azure-cosmos-emulator"; then
+        docker stop azure-cosmos-emulator > /dev/null 2>&1 || true
+        docker rm azure-cosmos-emulator > /dev/null 2>&1 || true
+    fi
+    
+    # Kill any remaining processes
+    pkill -f "flask" 2>/dev/null || true
+    pkill -f "vite" 2>/dev/null || true
+    
+    print_success "All services stopped"
+}
+
+# Function to check service status
+check_service_status() {
+    echo -e "\n${PURPLE}=== SERVICE STATUS ===${NC}"
+    
+    # Azure Cosmos DB status
+    local cosmos_uri=$(grep COSMOS_DB_URI .env | cut -d'=' -f2)
+    if [[ "$cosmos_uri" == *"azure.com"* ]]; then
+        print_success "Azure Cosmos DB: Connected to $cosmos_uri"
     else
-        print_status "Skipping database clear - pymongo not yet installed"
+        print_error "Azure Cosmos DB: Not configured"
+    fi
+    
+    # Flask status
+    if check_port $FLASK_PORT; then
+        print_success "Flask API: Running on port $FLASK_PORT"
+        echo -e "  ${CYAN}URL:${NC} http://localhost:$FLASK_PORT"
+    else
+        print_error "Flask API: Not running"
+    fi
+    
+    # React status
+    if check_port $REACT_PORT; then
+        print_success "React App: Running on port $REACT_PORT"
+        echo -e "  ${CYAN}URL:${NC} http://localhost:$REACT_PORT"
+    else
+        print_error "React App: Not running"
+    fi
+    
+    echo ""
+}
+
+# Function to connect to Azure Cosmos DB
+start_database() {
+    print_service "Using Azure Cosmos DB..."
+    
+    # Check if we can connect to Azure Cosmos DB
+    local cosmos_uri=$(grep COSMOS_DB_URI .env | cut -d'=' -f2)
+    if [[ "$cosmos_uri" == *"azure.com"* ]]; then
+        print_success "Azure Cosmos DB configured: $cosmos_uri"
+        print_status "Database: chuuk-dictionary-cosmos"
+        print_status "Resource Group: rg-chuuk-beta-eastus2"
+        print_status "Region: East US 2"
+        return 0
+    else
+        print_error "Azure Cosmos DB not configured in .env file"
+        return 1
     fi
 }
 
-echo "🚀 Starting Chuuk Dictionary OCR Application..."
-echo "==============================================="
-
-# Check if we're in the right directory
-if [ ! -f "app.py" ]; then
-    print_error "app.py not found. Please run this script from the project root directory."
-    exit 1
-fi
-
-# Run setup if virtual environment doesn't exist
-if [ ! -d "venv" ]; then
-    print_header "🛠️ First time setup detected - running full setup..."
-    setup_environment
-    # Clear database after setup
-    clear_database
-else
-    # Clear database on subsequent runs
-    clear_database
-fi
-
-# Activate virtual environment
-print_status "Activating Python virtual environment..."
-source venv/bin/activate
-
-# Load environment variables
-print_status "Loading environment variables..."
-if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
-# Check MongoDB connection
-print_status "Checking MongoDB connection..."
-if ! python -c "
-import pymongo
-try:
-    client = pymongo.MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
-    client.admin.command('ping')
-except Exception as e:
-    print(f'MongoDB connection failed: {e}')
-    exit(1)
-" > /dev/null 2>&1; then
-    print_warning "MongoDB connection failed. Attempting to start MongoDB..."
+# Function to start Cosmos DB Emulator
+start_cosmos_db() {
+    print_service "Starting Cosmos DB Emulator..."
     
-    # Try to start MongoDB service
-    if command -v brew &> /dev/null; then
-        brew services start mongodb/brew/mongodb-community
-        sleep 3
-        
-        # Test again
-        if python -c "
-import pymongo
-try:
-    client = pymongo.MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
-    client.admin.command('ping')
-except:
-    exit(1)
-" > /dev/null 2>&1; then
-            print_success "MongoDB started successfully"
-        else
-            print_error "Failed to start MongoDB. Please check your installation."
-            exit 1
-        fi
-    else
-        print_error "MongoDB is not running and Homebrew is not available to start it."
-        exit 1
+    if check_port $COSMOS_PORT; then
+        print_warning "Cosmos DB Emulator already running on port $COSMOS_PORT"
+        return 0
     fi
-else
-    print_success "MongoDB is running"
-fi
-
-# Test Helsinki-NLP integration
-print_status "Testing Helsinki-NLP translator integration..."
-python -c "
-try:
-    from src.translation.helsinki_translator_v2 import HelsinkiChuukeseTranslator
-    translator = HelsinkiChuukeseTranslator()
-    print('✅ Helsinki-NLP translator ready')
-except Exception as e:
-    print(f'⚠️ Helsinki-NLP translator warning: {e}')
-    print('💡 Models will download when first used')
-"
-
-# Create uploads directory if it doesn't exist
-mkdir -p uploads
-
-# Find available port
-PORT=5002
-while lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; do
-    print_warning "Port $PORT is in use, trying $((PORT + 1))"
-    PORT=$((PORT + 1))
-done
-
-print_success "Using port $PORT"
-
-# Set Flask environment
-export FLASK_ENV=development
-export FLASK_DEBUG=1
-
-print_status "Starting Flask development server..."
-echo ""
-echo "🌐 Application will be available at:"
-echo "   http://127.0.0.1:$PORT"
-echo "   http://localhost:$PORT"
-echo ""
-echo "📖 Features available:"
-echo "   • Upload dictionary documents (PDF, images)"
-echo "   • OCR processing with Tesseract"
-echo "   • Helsinki-NLP translation models for Chuukese"
-echo "   • Ollama LLM for conversational AI"
-echo "   • Automatic word pair extraction and indexing"
-echo "   • MongoDB-powered search with citations"
-echo ""
-echo "⏹️  Press Ctrl+C to stop the server"
-echo ""
-
-# Trap Ctrl+C to provide clean shutdown message
-trap 'echo -e "\n🛑 Shutting down application..."; exit 0' INT
-
-# Start the Flask application
-python -c "
-import os
-from app import app
-
-# Override port from environment or use detected port
-port = int(os.environ.get('PORT', $PORT))
-
-print('Connected to MongoDB successfully' if app else '')
-print(f'🚀 Starting server on port {port}...')
-
-try:
-    app.run(
-        debug=True,
-        host='0.0.0.0',
-        port=port,
-        threaded=True,
-        use_reloader=True
-    )
-except KeyboardInterrupt:
-    print('\n🛑 Application stopped by user')
-except Exception as e:
-    print(f'❌ Error starting application: {e}')
-    exit(1)
-"
-
-# Activate virtual environment
-print_status "Activating Python virtual environment..."
-source .venv/bin/activate
-
-# Load environment variables
-print_status "Loading environment variables..."
-if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
-# Check MongoDB connection
-print_status "Checking MongoDB connection..."
-if ! .venv/bin/python -c "
-import pymongo
-try:
-    client = pymongo.MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
-    client.admin.command('ping')
-except Exception as e:
-    print(f'MongoDB connection failed: {e}')
-    exit(1)
-" > /dev/null 2>&1; then
-    print_warning "MongoDB connection failed. Attempting to start MongoDB..."
     
-    # Try to start MongoDB service
-    if command -v brew &> /dev/null; then
-        brew services start mongodb/brew/mongodb-community
-        sleep 3
-        
-        # Test again
-        if .venv/bin/python -c "
-import pymongo
-try:
-    client = pymongo.MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
-    client.admin.command('ping')
-except:
-    exit(1)
-" > /dev/null 2>&1; then
-            print_success "MongoDB started successfully"
-        else
-            print_error "Failed to start MongoDB. Please check your installation."
-            print_error "Try running: brew services restart mongodb/brew/mongodb-community"
-            exit 1
-        fi
-    else
-        print_error "MongoDB is not running and Homebrew is not available to start it."
-        exit 1
+    # Check if Docker is available for Cosmos DB Emulator
+    if ! command -v docker &> /dev/null; then
+        print_error "Docker not found. Cosmos DB Emulator requires Docker on macOS/Linux."
+        print_status "Install Docker Desktop: https://www.docker.com/products/docker-desktop"
+        return 1
     fi
-else
-    print_success "MongoDB is running"
-fi
+    
+    # Check if Cosmos DB container is already running
+    if docker ps | grep -q "azure-cosmos-emulator"; then
+        print_warning "Cosmos DB Emulator container already running"
+        return 0
+    fi
+    
+    print_warning "⚠️  Apple Silicon (ARM64) Detected - Cosmos DB Emulator Compatibility Issue"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    print_status "The official Cosmos DB Emulator has stability issues on ARM64 Macs."
+    print_status "For the best development experience, consider these options:"
+    echo ""
+    print_info "🚀 RECOMMENDED: Use Azure Cosmos DB Free Tier"
+    print_status "   • Create a free Cosmos DB account in Azure"
+    print_status "   • 1000 RU/s and 25GB storage - completely free"
+    print_status "   • Same API as production, no compatibility issues"
+    print_status "   • Guide: https://docs.microsoft.com/azure/cosmos-db/free-tier"
+    echo ""
+    print_info "🔧 ALTERNATIVE: Use MongoDB for local development"
+    print_status "   • Install: brew install mongodb-community"
+    print_status "   • Same document database concepts"
+    print_status "   • Easy migration path to Cosmos DB later"
+    echo ""
+    print_info "💻 FOR TESTING: Try Docker with Rosetta 2 (may be unstable)"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    
+    read -p "Would you like to try Docker anyway? (y/N): " -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Skipping Cosmos DB Emulator startup."
+        print_info "You can manually set COSMOS_DB_URI in .env to use Azure Cosmos DB"
+        return 1
+    fi
+    
+    # Start Cosmos DB Emulator using Docker
+    print_status "Starting Cosmos DB Emulator with Docker (this may take a moment to download/start)..."
+    
+    # Try with platform flag for ARM64, without for x86
+    local docker_cmd="docker run -d \
+        --name azure-cosmos-emulator \
+        $docker_platform \
+        -p 8081:8081 -p 10251:10251 -p 10252:10252 -p 10253:10253 -p 10254:10254 \
+        -e AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10 \
+        -e AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true \
+        $cosmos_image"
+    
+    if eval "$docker_cmd" > /tmp/cosmos.log 2>&1; then
+        # Get container ID for PID file
+        local container_id=$(docker ps -q -f name=azure-cosmos-emulator)
+        echo "$container_id" > "$COSMOS_PID_FILE"
+    else
+        print_error "Failed to start Cosmos DB Emulator with Docker"
+        print_status "Check logs with: docker logs azure-cosmos-emulator"
+        if [[ "$arch" == "arm64" ]]; then
+            print_warning "ARM64 compatibility issue detected. Consider these alternatives:"
+            print_status "1. Enable Rosetta 2 emulation in Docker Desktop settings"
+            print_status "2. Use a cloud Cosmos DB instance for development"
+            print_status "3. Use MongoDB as a local alternative"
+        fi
+        return 1
+    fi
+    
+    # Cosmos DB takes longer to start
+    print_status "Waiting for Cosmos DB Emulator to initialize..."
+    local max_attempts=60
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if check_port $COSMOS_PORT; then
+            print_success "Cosmos DB Emulator is ready on port $COSMOS_PORT"
+            return 0
+        fi
+        
+        sleep 2
+        ((attempt++))
+    done
+    
+    print_error "Cosmos DB Emulator failed to start within 2 minutes"
+    return 1
+}
 
-# Create uploads directory if it doesn't exist
-mkdir -p uploads
+# Function to start Flask backend
+start_flask() {
+    print_service "Starting Flask backend..."
+    
+    if check_port $FLASK_PORT; then
+        print_warning "Flask already running on port $FLASK_PORT"
+        return 0
+    fi
+    
+    # Check if virtual environment exists
+    if [ ! -d "$VENV_DIR" ]; then
+        print_error "Virtual environment not found at $VENV_DIR"
+        print_status "Please run setup first or create virtual environment"
+        return 1
+    fi
+    
+    # Set Cosmos DB environment variables
+    export DB_TYPE="cosmos"
+    export COSMOS_DB_URI="https://localhost:$COSMOS_PORT"
+    export COSMOS_DB_KEY="C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+    
+    # Start Flask in background
+    cd "$PROJECT_DIR"
+    
+    # Start Flask in background with proper environment
+    "$VENV_DIR/bin/python" app.py > /tmp/flask.log 2>&1 &
+    local flask_pid=$!
+    echo $flask_pid > "$FLASK_PID_FILE"
+    
+    wait_for_service $FLASK_PORT "Flask"
+}
 
-# Check for Google Cloud credentials
-if [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-    print_success "Google Cloud Vision API credentials found"
-else
-    print_warning "Google Cloud Vision API credentials not found. Using Tesseract OCR only."
-fi
+# Function to start React frontend
+start_react() {
+    print_service "Starting React frontend..."
+    
+    if check_port $REACT_PORT; then
+        print_warning "React already running on port $REACT_PORT"
+        return 0
+    fi
+    
+    # Check if frontend directory exists
+    if [ ! -d "$FRONTEND_DIR" ]; then
+        print_error "Frontend directory not found at $FRONTEND_DIR"
+        return 1
+    fi
+    
+    # Check if node_modules exists
+    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+        print_error "Node modules not found. Installing dependencies..."
+        cd "$FRONTEND_DIR"
+        npm install
+    fi
+    
+    # Build React app first
+    cd "$FRONTEND_DIR"
+    print_status "Building React application..."
+    npm run build
+    
+    # Start React dev server in background
+    npm run dev > /tmp/react.log 2>&1 &
+    local react_pid=$!
+    echo $react_pid > "$REACT_PID_FILE"
+    
+    wait_for_service $REACT_PORT "React"
+}
 
-# Find available port
-PORT=5001
-while lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; do
-    print_warning "Port $PORT is in use, trying $((PORT + 1))"
-    PORT=$((PORT + 1))
-done
+# Function to show logs
+show_logs() {
+    echo -e "\n${PURPLE}=== RECENT LOGS ===${NC}"
+    
+    # Cosmos DB logs
+    if [ -f "/tmp/cosmos.log" ]; then
+        echo -e "\n${CYAN}Cosmos DB Emulator logs:${NC}"
+        tail -5 /tmp/cosmos.log 2>/dev/null || echo "No Cosmos DB logs"
+    fi
+    
+    if [ -f "/tmp/flask.log" ]; then
+        echo -e "\n${CYAN}Flask logs:${NC}"
+        tail -5 /tmp/flask.log 2>/dev/null || echo "No Flask logs"
+    fi
+    
+    if [ -f "/tmp/react.log" ]; then
+        echo -e "\n${CYAN}React logs:${NC}"
+        tail -5 /tmp/react.log 2>/dev/null || echo "No React logs"
+    fi
+}
 
-print_success "Using port $PORT"
+# Main execution
+main() {
+    echo -e "${PURPLE}================================================================${NC}"
+    echo -e "${PURPLE}           Chuuk Dictionary OCR - Service Manager               ${NC}"
+    echo -e "${PURPLE}================================================================${NC}"
+    
+    # Handle command line arguments
+    case "${1:-start}" in
+        "start")
+            print_status "Starting all services..."
+            
+            # Start services in order
+            start_database || exit 1
+            start_flask || exit 1
+            start_react || exit 1
+            
+            check_service_status
+            show_logs
+            
+            echo -e "\n${GREEN}🚀 All services are running!${NC}"
+            echo -e "${CYAN}Main Application:${NC} http://localhost:$REACT_PORT"
+            echo -e "${CYAN}API Backend:${NC} http://localhost:$FLASK_PORT"
+            echo -e "\n${YELLOW}Press Ctrl+C to stop all services${NC}"
+            
+            # Keep script running and monitor services
+            trap stop_services EXIT INT TERM
+            
+            while true; do
+                sleep 30
+                if ! check_port $FLASK_PORT || ! check_port $REACT_PORT; then
+                    print_error "One or more services stopped unexpectedly"
+                    check_service_status
+                    break
+                fi
+            done
+            ;;
+            
+        "stop")
+            stop_services
+            ;;
+            
+        "status")
+            check_service_status
+            ;;
+            
+        "logs")
+            show_logs
+            ;;
+            
+        "restart")
+            stop_services
+            sleep 2
+            main start
+            ;;
+            
+        *)
+            echo "Usage: $0 [start|stop|status|logs|restart]"
+            echo "  start   - Start all services (default)"
+            echo "  stop    - Stop all services"
+            echo "  status  - Show service status"
+            echo "  logs    - Show recent logs"
+            echo "  restart - Restart all services"
+            echo ""
+            echo "Database:"
+            echo "  Uses Azure Cosmos DB Emulator (localhost:8081)"
+            echo "  Data Explorer: https://localhost:8081/_explorer/"
+            echo ""
+            echo "Example:"
+            echo "  ./run.sh start     # Start all services with Cosmos DB"
+            exit 1
+            ;;
+    esac
+}
 
-# Set Flask environment
-export FLASK_ENV=development
-export FLASK_DEBUG=1
-
-print_status "Starting Flask development server..."
-echo ""
-echo "🌐 Application will be available at:"
-echo "   http://127.0.0.1:$PORT"
-echo "   http://localhost:$PORT"
-echo ""
-echo "📖 Features available:"
-echo "   • Upload dictionary documents (PDF, images)"
-echo "   • OCR processing with Tesseract and Google Vision"
-echo "   • Automatic word pair extraction and indexing"
-echo "   • Search local dictionary and JW.org"
-echo "   • MongoDB-powered search with citations"
-echo ""
-echo "⏹️  Press Ctrl+C to stop the server"
-echo ""
-
-# Trap Ctrl+C to provide clean shutdown message
-trap 'echo -e "\n🛑 Shutting down application..."; exit 0' INT
-
-# Start the Flask application
-.venv/bin/python -c "
-import os
-from app import app
-
-# Override port from environment or use detected port
-port = int(os.environ.get('PORT', $PORT))
-
-print('Connected to MongoDB successfully' if app else '')
-print(f'🚀 Starting server on port {port}...')
-
-try:
-    app.run(
-        debug=True,
-        host='0.0.0.0',
-        port=port,
-        threaded=True,
-        use_reloader=True
-    )
-except KeyboardInterrupt:
-    print('\n🛑 Application stopped by user')
-except Exception as e:
-    print(f'❌ Error starting application: {e}')
-    exit(1)
-"
+# Run main function with all arguments
+main "$@"

@@ -21,18 +21,20 @@ A web application for digitizing and cross-referencing Chuukese dictionary pages
 ### 1. Install Tesseract OCR
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt-get update
 sudo apt-get install tesseract-ocr
 ```
 
 **macOS:**
+
 ```bash
 brew install tesseract
 ```
 
 **Windows:**
-Download and install from: https://github.com/UB-Mannheim/tesseract/wiki
+Download and install from: <https://github.com/UB-Mannheim/tesseract/wiki>
 
 ### 2. Install Python Dependencies
 
@@ -50,11 +52,13 @@ pip install -r requirements.txt
 ### 4. Configure Environment Variables
 
 Copy the example environment file:
+
 ```bash
 cp .env.example .env
 ```
 
 Edit `.env` and update the following:
+
 - `GOOGLE_APPLICATION_CREDENTIALS`: Path to your Google Cloud service account JSON key (optional)
 - `FLASK_SECRET_KEY`: A random secret key for Flask sessions
 - `UPLOAD_FOLDER`: Directory for storing uploaded files (default: uploads)
@@ -67,7 +71,7 @@ Edit `.env` and update the following:
 python app.py
 ```
 
-The application will be available at: http://localhost:5002
+The application will be available at: <http://localhost:5002>
 
 ### Upload a Dictionary Publication
 
@@ -88,7 +92,7 @@ The application will be available at: http://localhost:5002
 
 ## Project Structure
 
-```
+```js
 chuuk/
 ├── app.py                    # Main Flask application
 ├── ocr_processor.py          # OCR processing module
