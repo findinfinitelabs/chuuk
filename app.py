@@ -99,16 +99,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@app.route('/')
-def index():
-    """Serve React app"""
-    return send_from_directory('frontend/dist', 'index.html')
-
-
-@app.route('/<path:path>')
-def serve_static(path):
-    """Serve static files from React build"""
-    return send_from_directory('frontend/dist', path)
+# Removed conflicting index route - handled by serve_react below
 
 
 @app.route('/publication/new', methods=['GET', 'POST'])
@@ -795,16 +786,21 @@ def api_lookup_jworg_post():
 
 # Serve React app
 @app.route('/assets/<path:path>')
-def serve_static(path):
+def serve_assets(path):
     """Serve React app static assets"""
     return send_from_directory('frontend/dist/assets', path)
 
+# React app routes - handle all non-API routes
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
     """Serve React app for all non-API routes"""
     if path.startswith('api/'):
         return jsonify({'error': 'API route not found'}), 404
+    
+    # Handle static assets
+    if path.startswith('assets/'):
+        return send_from_directory('frontend/dist', path)
     
     # Check if it's a static file request
     if '.' in path and not path.startswith('api/'):
