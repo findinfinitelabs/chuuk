@@ -1,42 +1,107 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* Chuuk Dictionary App Styles */
+
+/* Card animations and styling */
+.dictionary-card {
+  transition: all 0.3s ease;
+  border: 1px solid #e0e7ff;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.dictionary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 161, 255, 0.15);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+/* Publication grid styling */
+.publication-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+/* OCR result styling */
+.ocr-result {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  font-family: "Noto Sans", monospace;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Search result highlighting */
+.search-results {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  padding: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.2s ease;
+}
+
+.search-result-item:hover {
+  background-color: rgba(0, 161, 255, 0.05);
+}
+
+/* Cultural context styling */
+.cultural-context {
+  background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%);
+  border-left: 4px solid #f59e0b;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 6px;
+  font-style: italic;
+}
+
+/* Chuukese word styling with accent support */
+.chuukese-word {
+  font-weight: 600;
+  color: #0ea5e9;
+  font-family: "Noto Sans", "Arial Unicode MS", sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Loading states */
+.loading-overlay {
+  position: relative;
+}
+
+.loading-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(2px);
+  border-radius: inherit;
+  z-index: 10;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .publication-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
-  to {
-    transform: rotate(360deg);
+  
+  .dictionary-card {
+    margin: 0 0.5rem;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+/* Print styles for dictionary entries */
+@media print {
+  .no-print {
+    display: none !important;
   }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+  
+  .dictionary-entry {
+    page-break-inside: avoid;
+    margin-bottom: 1rem;
+  }
 }
