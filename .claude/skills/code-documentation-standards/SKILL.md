@@ -7,7 +7,24 @@ description: Comprehensive code documentation standards and guidelines for maint
 
 ## Core Principle
 
-**ALWAYS maintain up-to-date documentation when creating or modifying code. Documentation must be updated simultaneously with code changes. ALWAYS fix markdown validation errors promptly.**
+**ALWAYS maintain up-to-date documentation when creating or modifying code.**
+**Documentation must be updated simultaneously with code changes.**
+**ALWAYS fix markdown validation errors promptly before committing any changes.**
+
+### Pre-Commit Markdown Validation
+
+Before any commit, ALWAYS:
+
+1. **Run markdown validation** on all .md files in the repository
+2. **Fix all markdown syntax errors** including:
+   - Unclosed code blocks
+   - Missing link destinations
+   - Invalid heading structures
+   - Broken table formatting
+   - Incorrect list indentation
+3. **Validate code block syntax** in documentation
+4. **Check internal links** are properly formatted
+5. **Ensure consistent formatting** across all markdown files
 
 ## Documentation Requirements
 
@@ -185,7 +202,8 @@ def translate_text():
             "text": "string - Text to translate (required)",
             "source_language": "string - Source language code (required)",
             "target_language": "string - Target language code (required)",
-            "include_cultural_context": "boolean - Include cultural notes (optional, default: false)"
+            "include_cultural_context": "boolean - Include cultural notes
+                                        (optional, default: false)"
         }
     
     Response:
@@ -228,6 +246,7 @@ def translate_text():
 - Maintain uniform documentation formatting
 - Follow established patterns for each language/framework
 - Update documentation immediately when code changes
+- **Fix all markdown validation errors before committing**
 
 ### 2. Content Guidelines
 
@@ -249,6 +268,7 @@ def translate_text():
 - Update documentation in the same commit as code changes
 - Mark deprecated functions with alternatives
 - Remove documentation for deleted code
+- **Validate markdown syntax before each commit**
 
 ### 5. Quality Checks
 
@@ -256,6 +276,40 @@ def translate_text():
 - Ensure examples are current and functional
 - Check that return types match actual implementation
 - Validate that error conditions are accurately described
+- **Run markdown linting tools on all documentation**
+
+### 6. Markdown Validation Process
+
+**MANDATORY before every commit:**
+
+1. **Syntax Validation:**
+
+   ```bash
+   # Check for markdown syntax errors
+   markdownlint **/*.md
+   ```
+
+2. **Code Block Validation:**
+   - Ensure all code blocks have proper opening/closing backticks
+   - Verify language tags are correct (python, javascript, html, css)
+   - Test that code examples are syntactically valid
+
+3. **Link Validation:**
+   - Check all internal links reference existing files/sections
+   - Verify external links are accessible
+   - Ensure proper markdown link syntax: `[text](url)`
+
+4. **Structure Validation:**
+   - Confirm heading hierarchy is logical (h1 → h2 → h3)
+   - Verify lists have consistent indentation
+   - Check table formatting is complete
+
+5. **Common Fixes:**
+   - Close unclosed code blocks with proper backticks
+   - Fix malformed tables with proper pipe alignment
+   - Correct broken link references
+   - Standardize heading styles (#, ##, ###)
+   - Fix list item indentation and nesting
 
 ## Templates
 
@@ -329,3 +383,24 @@ Proper documentation should:
 - ✅ Use consistent formatting and style
 - ✅ Stay current with code changes
 - ✅ Provide cultural context for Chuukese-specific terms
+- ✅ **Pass markdown validation without errors**
+- ✅ **Have properly formatted code blocks and links**
+- ✅ **Use consistent heading structure and list formatting**
+
+## Pre-Commit Workflow
+
+**MANDATORY checklist before every commit:**
+
+1. ✅ **Code documentation updated**
+2. ✅ **Markdown files validated and errors fixed**
+3. ✅ **Code blocks properly formatted with language tags**
+4. ✅ **All links functional and properly formatted**
+5. ✅ **Heading hierarchy follows logical structure**
+6. ✅ **Examples tested and verified working**
+
+**Tools for validation:**
+
+- `markdownlint` for syntax checking
+- VS Code markdown preview for visual verification
+- Link checkers for external references
+- Code syntax validators for embedded examples
