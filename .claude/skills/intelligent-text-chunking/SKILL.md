@@ -6,9 +6,11 @@ description: Split large texts into meaningful, AI-optimized chunks while preser
 # Intelligent Text Chunking
 
 ## Overview
+
 A sophisticated text segmentation skill that splits large texts into meaningful, AI-optimized chunks while preserving semantic coherence, document structure, and contextual relationships. Essential for processing large documents for AI training, RAG systems, and memory-constrained applications.
 
 ## Capabilities
+
 - **Semantic Awareness**: Respects topic boundaries and meaning transitions
 - **Structure Preservation**: Maintains document hierarchy and formatting context
 - **Multi-language Support**: Handles accented characters and diverse writing systems
@@ -19,20 +21,25 @@ A sophisticated text segmentation skill that splits large texts into meaningful,
 ## Chunking Strategies
 
 ### 1. Semantic Chunking
+
 Split text based on meaning and topic boundaries rather than arbitrary size limits.
 
 ### 2. Structural Chunking
+
 Follow document organization (headings, sections, lists) for natural divisions.
 
 ### 3. Fixed-Size Chunking
+
 Create consistent-sized chunks with intelligent boundary selection.
 
 ### 4. Sliding Window Chunking
+
 Create overlapping chunks for enhanced context preservation.
 
 ## Implementation Examples
 
 ### Language-Aware Processing
+
 ```python
 # Multi-language sentence detection
 sentence_patterns = {
@@ -47,6 +54,7 @@ def detect_language_patterns(text):
 ```
 
 ### Basic Usage
+
 ```python
 from .intelligent_chunker import IntelligentTextChunker, ChunkType
 
@@ -60,6 +68,7 @@ chunks = chunker.chunk_document(text, ChunkType.SEMANTIC)
 ```
 
 ## Best Practices
+
 1. **Size Balancing**: Balance chunk size with content coherence
 2. **Context Preservation**: Use appropriate overlap for your use case
 3. **Language Awareness**: Configure for specific languages when known
@@ -67,6 +76,7 @@ chunks = chunker.chunk_document(text, ChunkType.SEMANTIC)
 5. **Use Case Optimization**: Choose strategy based on downstream use
 
 ## Dependencies
+
 - `re`: Regular expression pattern matching
 - `spacy`: Advanced sentence segmentation
 - `nltk`: Natural language processing utilities

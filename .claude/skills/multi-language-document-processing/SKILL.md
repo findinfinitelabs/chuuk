@@ -6,9 +6,11 @@ description: Process documents in multiple languages with focus on low-resource 
 # Multi-Language Document Processing
 
 ## Overview
+
 A specialized skill for processing documents in multiple languages, with particular focus on low-resource languages, accented character systems, and cross-linguistic content analysis. Designed to handle the unique challenges of processing minority languages alongside major languages.
 
 ## Capabilities
+
 - **Low-Resource Language Support**: Optimized for languages with limited digital resources
 - **Accent Character Handling**: Proper processing of diacritical marks and special characters
 - **Cross-Linguistic Analysis**: Identify and separate content in different languages
@@ -19,15 +21,18 @@ A specialized skill for processing documents in multiple languages, with particu
 ## Core Components
 
 ### 1. Language Detection and Separation
+
 Identify and categorize content by language within mixed-language documents.
 
 **Detection Methods**:
+
 - **Character pattern analysis**: Accented characters, script systems
 - **Word frequency analysis**: Common words in each language
 - **Grammatical pattern recognition**: Language-specific structures
 - **Dictionary-based lookup**: Known vocabulary matching
 
 **Implementation**:
+
 ```python
 class MultiLanguageDetector:
     def __init__(self):
@@ -51,6 +56,7 @@ class MultiLanguageDetector:
 ### 2. Processing Strategies
 
 #### Segmented Processing
+
 ```python
 def process_multilingual_document(document):
     # Detect language segments
@@ -71,6 +77,7 @@ def process_multilingual_document(document):
 ```
 
 #### Unicode Normalization
+
 ```python
 import unicodedata
 
@@ -92,6 +99,7 @@ def normalize_chuukese_accents(text):
 ```
 
 ## Best Practices
+
 1. **Encoding consistency**: Always use UTF-8 for internal processing
 2. **Normalization**: Apply Unicode normalization early in the pipeline
 3. **Validation**: Multiple validation methods for language detection
@@ -99,6 +107,7 @@ def normalize_chuukese_accents(text):
 5. **Fallback strategies**: Graceful degradation for unrecognized content
 
 ## Dependencies
+
 - `unicodedata`: Unicode text normalization
 - `chardet`: Character encoding detection
 - `langdetect`: Language identification support
