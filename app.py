@@ -794,6 +794,11 @@ def api_lookup_jworg_post():
 
 
 # Serve React app
+@app.route('/assets/<path:path>')
+def serve_static(path):
+    """Serve React app static assets"""
+    return send_from_directory('frontend/dist/assets', path)
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
@@ -801,8 +806,15 @@ def serve_react(path):
     if path.startswith('api/'):
         return jsonify({'error': 'API route not found'}), 404
     
+    # Check if it's a static file request
+    if '.' in path and not path.startswith('api/'):
+        try:
+            return send_from_directory('frontend/dist', path)
+        except:
+            pass
+    
     # Serve index.html for React routing
-    return send_from_directory('../frontend/dist', 'index.html')
+    return send_from_directory('frontend/dist', 'index.html')
 
 
 if __name__ == '__main__':
