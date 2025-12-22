@@ -38,7 +38,7 @@ function NewPublication() {
   return (
     <Card withBorder>
       <Title order={2} mb="md">
-        <IconPlus size={24} style={{ marginRight: 8 }} />
+        <IconPlus size={24} className="title-icon" />
         Create New Publication
       </Title>
       <Text color="dimmed" mb="lg">
@@ -68,7 +68,7 @@ function NewPublication() {
             <Button type="submit" loading={loading} leftSection={<IconPlus size={16} />}>
               Create Publication
             </Button>
-            <Button variant="outline" leftSection={<IconX size={16} />} onClick={() => navigate('/')}>
+            <Button variant="outline" leftSection={<IconX size={16} />} onClick={() => navigate('/publications')}>
               Cancel
             </Button>
           </Group>

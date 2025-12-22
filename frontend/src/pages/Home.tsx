@@ -32,7 +32,7 @@ function Home() {
             </ThemeIcon>
             <div>
               <Title order={1} size="h1">
-                🏝️ Chuuk Dictionary AI Copilot
+                🏝️ Chuuk AI Language Dictionary
               </Title>
               <Text size="xl" c="gray.7" mt="sm">
                 Advanced AI tools for digitizing Chuukese language resources
@@ -74,10 +74,10 @@ function Home() {
                 <ThemeIcon color="blue" size={40} radius="md">
                   <IconEye size={20} />
                 </ThemeIcon>
-                <Title order={3}>OCR Processing</Title>
+                <Title order={3}>AI Text Processing</Title>
               </Group>
               <Text c="gray.7" mb="md">
-                Advanced OCR with Tesseract and Google Vision API 
+                Advanced AI text recognition with Google Vision API 
                 for Chuukese texts and handwritten content.
               </Text>
               <Badge color="blue" variant="light">AI-Powered</Badge>
@@ -107,7 +107,7 @@ function Home() {
             <Group justify="space-between" align="center" mb="md">
               <Title order={2}>Recent Publications</Title>
               <Button 
-                variant="light" 
+                variant="outline" 
                 size="sm" 
                 component={Link} 
                 to="/publications"
@@ -150,7 +150,7 @@ function Home() {
               <Text><strong>Upload Publication:</strong> Start by uploading a dictionary publication</Text>
             </List.Item>
             <List.Item icon={<ThemeIcon color="green" size={24} radius="xl"><IconEye size={16} /></ThemeIcon>}>
-              <Text><strong>OCR Processing:</strong> Extract text with high accuracy for Chuukese characters</Text>
+              <Text><strong>AI Text Processing:</strong> Extract text with high accuracy for Chuukese characters</Text>
             </List.Item>
             <List.Item icon={<ThemeIcon color="teal" size={24} radius="xl"><IconWorld size={16} /></ThemeIcon>}>
               <Text><strong>Cross-Reference:</strong> Match words with JW.org resources</Text>
