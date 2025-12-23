@@ -54,7 +54,7 @@ function Publications() {
         <Grid>
           {publications.map((pub) => (
             <Grid.Col key={pub.id} span={4}>
-              <Card withBorder shadow="sm" component={Link} to={`/publications/${pub.id}`} style={{ textDecoration: 'none' }}>
+              <Card withBorder shadow="sm" component={Link} to={`/publications/${pub.id}`} className="link-no-decoration">
                 <Title order={4}>{pub.title}</Title>
                 {pub.description && <Text size="sm" color="dimmed">{pub.description}</Text>}
                 <Text size="xs" mt="sm">Created: {new Date(pub.created_date).toLocaleDateString()}</Text>
