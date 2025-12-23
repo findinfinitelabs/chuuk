@@ -77,27 +77,28 @@ class DictionaryDB:
             return
             
         try:
-            # Create indexes for dictionary_entries (legacy)
-            self.dictionary_collection.create_index([
-                ('chuukese_word', 'text'),
-                ('english_translation', 'text'),
-                ('definition', 'text'),
-                ('examples', 'text')
-            ])
-            self.dictionary_collection.create_index([('chuukese_word', 1)])
-            self.dictionary_collection.create_index([('english_translation', 1)])
-            self.dictionary_collection.create_index([('source_page', 1)])
+            # Cosmos DB MongoDB API doesn't support text indexes
+            # Create regular indexes for common search fields
+            self.dictionary_collection.create_index([('chuukese_word', ASCENDING)])
+            self.dictionary_collection.create_index([('english_translation', ASCENDING)])
+            self.dictionary_collection.create_index([('source_page', ASCENDING)])
             
             # Create indexes for pages collection
-            self.pages_collection.create_index([('publication_id', 1)])
-            self.pages_collection.create_index([('filename', 1)])
+            self.pages_collection.create_index([('publication_id', ASCENDING)])
+            self.pages_collection.create_index([('filename', ASCENDING)])
             
-            # Create indexes for words collection with full text search
-            self.words_collection.create_index([
-                ('chuukese', 'text'),
-                ('english_translation', 'text'),
-                ('grammar', 'text')
-            ])
+            # Create indexes for words collection
+            self.words_collection.create_index([('chuukese', ASCENDING)])
+            self.words_collection.create_index([('english_translation', ASCENDING)])
+            self.words_collection.create_index([('grammar', ASCENDING)])
+            
+            # Create indexes for phrases collection
+            self.phrases_collection.create_index([('chuukese', ASCENDING)])
+            self.phrases_collection.create_index([('english', ASCENDING)])
+            
+            print("✓ Created indexes for Cosmos DB")
+        except Exception as e:
+            print(f"Error creating indexes: {str(e)}")
             self.words_collection.create_index([('chuukese', 1)])
             self.words_collection.create_index([('english_translation', 1)])
             self.words_collection.create_index([('grammar', 1)])
@@ -130,6 +131,10 @@ class DictionaryDB:
         except Exception as e:
             print(f"Error creating indexes: {e}")
 
+    @property
+    def collection(self):
+        """Property to access the main dictionary collection for API compatibility"""
+        return self.dictionary_collection
 
     
     def add_dictionary_page(self, publication_id: str, filename: str, ocr_text: str, page_number: int = 1) -> str:
@@ -220,10 +225,19 @@ class DictionaryDB:
             if not line or len(line) < 5:
                 continue
                 
-            # Skip lines that are clearly not dictionary entries
+            # Skip header lines (common dictionary headers)
             if any(skip_pattern in line.lower() for skip_pattern in [
-                'page ', 'see page', '(pronouns', '(directionals', 'pg.', 'see pg'
+                'page ', 'see page', '(pronouns', '(directionals', 'pg.', 'see pg',
+                'chuukese phrase', 'english translation', 'definition', 'notes',
+                'type', 'direction', 'chuukese-english', 'english-chuukese',
+                'dictionary', 'table of contents', 'index', 'appendix',
+                'chapter ', 'section '
             ]):
+                continue
+            
+            # Skip lines that look like column headers (all caps, short words)
+            words_in_line = line.split()
+            if len(words_in_line) <= 5 and all(w.isupper() or w.istitle() for w in words_in_line if len(w) > 1):
                 continue
                 
             for pattern_num, pattern in enumerate(patterns, 1):
@@ -263,24 +277,8 @@ class DictionaryDB:
                     try:
                         self.dictionary_collection.insert_one(entry)
                     except DuplicateKeyError:
-                        # Update existing entry with additional source info
-                        self.dictionary_collection.update_one(
-                            {
-                                'chuukese_word': entry['chuukese_word'],
-                                'english_translation': entry['english_translation']
-                            },
-                            {
-                                '$addToSet': {
-                                    'alternative_sources': {
-                                        'page_id': page_id, 
-                                        'filename': filename,
-                                        'page_number': page_number,
-                                        'citation': entry['citation']
-                                    }
-                                },
-                                '$max': {'confidence': entry['confidence']}
-                            }
-                        )
+                        # Update existing entry with better/missing fields
+                        self._merge_duplicate_entry(entry, page_id, filename, page_number)
                     except Exception as insert_error:
                         print(f"Error inserting individual entry: {insert_error}")
         
@@ -432,16 +430,88 @@ class DictionaryDB:
                 chuukese_word.replace('-', '').replace('*', '').replace(' ', '').isalpha() and
                 chuukese_word not in ['v', 'n', 'adj', 'adv', 'prep'])  # Exclude grammatical markers
     
+    def _extract_word_type(self, line: str, english_translation: str) -> str:
+        """Extract grammatical type from dictionary line with abbreviation mapping"""
+        # Comprehensive grammatical marker patterns with abbreviations
+        type_patterns = [
+            # Verbs
+            (r'\bv\.(?!\w)', 'verb'),  # v. but not part of a word
+            (r'\bverb\b', 'verb'),
+            (r'\bvt\.(?!\w)', 'transitive verb'),
+            (r'\btransitive verb\b', 'transitive verb'),
+            (r'\bvi\.(?!\w)', 'intransitive verb'),
+            (r'\bintransitive verb\b', 'intransitive verb'),
+            (r'\bvtr\.(?!\w)', 'transitive verb'),
+            (r'\bvintr\.(?!\w)', 'intransitive verb'),
+            
+            # Nouns
+            (r'\bn\.(?!\w)', 'noun'),
+            (r'\bnoun\b', 'noun'),
+            (r'\bnp\.(?!\w)', 'proper noun'),
+            (r'\bproper noun\b', 'proper noun'),
+            
+            # Adjectives
+            (r'\badj\.(?!\w)', 'adjective'),
+            (r'\badjective\b', 'adjective'),
+            
+            # Adverbs
+            (r'\badv\.(?!\w)', 'adverb'),
+            (r'\badverb\b', 'adverb'),
+            
+            # Prepositions
+            (r'\bprep\.(?!\w)', 'preposition'),
+            (r'\bpreposition\b', 'preposition'),
+            
+            # Pronouns
+            (r'\bpron\.(?!\w)', 'pronoun'),
+            (r'\bpronoun\b', 'pronoun'),
+            
+            # Conjunctions
+            (r'\bconj\.(?!\w)', 'conjunction'),
+            (r'\bconjunction\b', 'conjunction'),
+            
+            # Other
+            (r'\binterj\.(?!\w)', 'interjection'),
+            (r'\binterjection\b', 'interjection'),
+            (r'\bdet\.(?!\w)', 'determiner'),
+            (r'\bdeterminer\b', 'determiner'),
+            (r'\baux\.(?!\w)', 'auxiliary'),
+            (r'\bauxiliary\b', 'auxiliary'),
+            (r'\bpart\.(?!\w)', 'particle'),
+            (r'\bparticle\b', 'particle'),
+        ]
+        
+        # Search in the entire line first (case-insensitive)
+        for pattern, word_type in type_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                return word_type
+        
+        # Search in the translation
+        for pattern, word_type in type_patterns:
+            if re.search(pattern, english_translation, re.IGNORECASE):
+                return word_type
+        
+        # Try to infer from context
+        if re.search(r'\bto\s+\w+', english_translation.lower()):
+            return 'verb'  # "to do something" pattern
+        
+        return 'unknown'  # Default if no type detected
+    
     def _build_entry(self, chuukese_word: str, english_translation: str, line: str, 
                     pattern_num: int, page_id: str, publication_id: str, filename: str, 
                     page_number: int, line_number: int, base_word: str, is_base_word: bool = False) -> Dict:
         """Build a complete dictionary entry"""
         confidence = self._calculate_confidence(line, pattern_num, chuukese_word, english_translation)
         
+        # Extract grammatical type from the line
+        word_type = self._extract_word_type(line, english_translation)
+        
         entry = {
             'chuukese_word': chuukese_word.lower(),
             'english_translation': english_translation,
             'definition': english_translation,
+            'word_type': word_type,  # Added word type extraction
+            'type': word_type,  # Alias for compatibility
             'source_page_id': page_id,
             'publication_id': publication_id,
             'filename': filename,
@@ -456,7 +526,10 @@ class DictionaryDB:
             'base_word': base_word.lower() if base_word else chuukese_word.lower(),
             'is_base_word': is_base_word,
             'entry_type': 'dictionary_pair',
-            'reverse_lookup': True
+            'reverse_lookup': True,
+            'search_direction': 'chk_to_eng',  # Default direction
+            'primary_language': 'chuukese',
+            'secondary_language': 'english'
         }
         
         # Add word tokens for better searching
@@ -537,6 +610,147 @@ class DictionaryDB:
         
         return meaningful_words
     
+    def _merge_duplicate_entry(self, new_entry: Dict, page_id: str, filename: str, page_number: int):
+        """Intelligently merge duplicate entry with existing one, updating missing or better fields"""
+        try:
+            # Find existing entry
+            existing = self.dictionary_collection.find_one({
+                'chuukese_word': new_entry['chuukese_word'],
+                'english_translation': new_entry['english_translation']
+            })
+            
+            if not existing:
+                return
+            
+            # Build update with smart field merging
+            update_fields = {}
+            
+            # Update type/word_type if missing or was 'unknown'
+            if new_entry.get('type') and new_entry['type'] != 'unknown':
+                if not existing.get('type') or existing.get('type') == 'unknown':
+                    update_fields['type'] = new_entry['type']
+                    update_fields['word_type'] = new_entry['type']
+            
+            # Update direction fields if missing
+            if not existing.get('search_direction'):
+                update_fields['search_direction'] = new_entry.get('search_direction', 'chk_to_eng')
+            if not existing.get('primary_language'):
+                update_fields['primary_language'] = new_entry.get('primary_language', 'chuukese')
+            if not existing.get('secondary_language'):
+                update_fields['secondary_language'] = new_entry.get('secondary_language', 'english')
+            
+            # Update definition if new one is longer/better
+            if new_entry.get('definition') and len(new_entry['definition']) > len(existing.get('definition', '')):
+                update_fields['definition'] = new_entry['definition']
+            
+            # Update tokens if missing
+            if not existing.get('chuukese_tokens') and new_entry.get('chuukese_tokens'):
+                update_fields['chuukese_tokens'] = new_entry['chuukese_tokens']
+            if not existing.get('english_tokens') and new_entry.get('english_tokens'):
+                update_fields['english_tokens'] = new_entry['english_tokens']
+            
+            # Always update if confidence is higher
+            if new_entry.get('confidence', 0) > existing.get('confidence', 0):
+                update_fields['confidence'] = new_entry['confidence']
+            
+            # Build the update operation
+            update_operation = {}
+            
+            # Add new source to alternative_sources
+            update_operation['$addToSet'] = {
+                'alternative_sources': {
+                    'page_id': page_id,
+                    'filename': filename,
+                    'page_number': page_number,
+                    'citation': new_entry['citation']
+                }
+            }
+            
+            # Set updated fields
+            if update_fields:
+                update_fields['last_updated'] = datetime.utcnow()
+                update_operation['$set'] = update_fields
+            
+            # Apply update
+            self.dictionary_collection.update_one(
+                {'_id': existing['_id']},
+                update_operation
+            )
+            
+            print(f"Updated entry '{new_entry['chuukese_word']}' with {len(update_fields)} field(s)")
+            
+        except Exception as e:
+            print(f"Error merging duplicate entry: {e}")
+    
+    def reprocess_page(self, publication_id: str, filename: str, page_number: int = 1) -> Dict:
+        """
+        Reprocess an existing page, updating entries with better field values
+        
+        Args:
+            publication_id: ID of the publication
+            filename: Name of the image file
+            page_number: Page number within the document
+            
+        Returns:
+            Dict with statistics about updates
+        """
+        if not self.client:
+            return {'error': 'No database connection'}
+        
+        # Find existing page
+        existing_page = self.pages_collection.find_one({
+            'publication_id': publication_id,
+            'filename': filename,
+            'page_number': page_number
+        })
+        
+        if not existing_page:
+            return {'error': 'Page not found', 'success': False}
+        
+        page_id = str(existing_page['_id'])
+        ocr_text = existing_page.get('ocr_text', '')
+        
+        if not ocr_text:
+            return {'error': 'No OCR text available', 'success': False}
+        
+        # Re-extract entries with current (improved) extraction logic
+        entries = self._extract_dictionary_entries(ocr_text, page_id, publication_id, filename, page_number)
+        
+        stats = {
+            'success': True,
+            'entries_processed': len(entries),
+            'new_entries': 0,
+            'updated_entries': 0,
+            'unchanged_entries': 0
+        }
+        
+        # Process each entry
+        for entry in entries:
+            try:
+                # Try to insert (will fail if duplicate)
+                self.dictionary_collection.insert_one(entry)
+                stats['new_entries'] += 1
+            except DuplicateKeyError:
+                # Merge with existing
+                self._merge_duplicate_entry(entry, page_id, filename, page_number)
+                stats['updated_entries'] += 1
+            except Exception as e:
+                print(f"Error processing entry: {e}")
+                stats['unchanged_entries'] += 1
+        
+        # Update page's processed date
+        self.pages_collection.update_one(
+            {'_id': existing_page['_id']},
+            {
+                '$set': {
+                    'reprocessed_date': datetime.now(timezone.utc),
+                    'entries_extracted': len(entries)
+                }
+            }
+        )
+        
+        return stats
+    
     def _find_examples(self, lines: List[str], current_line: int) -> List[str]:
         """Find example sentences in nearby lines"""
         examples = []
@@ -568,18 +782,23 @@ class DictionaryDB:
         if not self.client:
             return []
         
+        # Build Cosmos DB compatible query using regex (no $text support)
+        # Optimize by checking exact match first, then regex
         word_lower = word.lower().strip()
         
-        # Primary search query - look for exact matches first, then partial matches
-        # Exclude reverse lookup entries from main search
         query = {
             '$and': [
                 {
                     '$or': [
+                        # Exact match (uses index)
                         {'chuukese_word': word_lower},
-                        {'english_translation': {'$regex': word, '$options': 'i'}},
-                        {'chuukese_word': {'$regex': word_lower, '$options': 'i'}},
-                        {'$text': {'$search': word}}
+                        # Starts with (more efficient than contains)
+                        {'chuukese_word': {'$regex': f'^{re.escape(word_lower)}', '$options': 'i'}},
+                        {'english_translation': {'$regex': f'^{re.escape(word)}', '$options': 'i'}},
+                        # Contains match (fallback)
+                        {'chuukese_word': {'$regex': re.escape(word_lower), '$options': 'i'}},
+                        {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
+                        {'definition': {'$regex': re.escape(word), '$options': 'i'}}
                     ]
                 },
                 {
@@ -750,6 +969,56 @@ class DictionaryDB:
             'publications': len(self.pages_collection.distinct('publication_id')),
             'database_status': 'connected'
         }
+    
+    def get_stats(self) -> Dict:
+        """Get enhanced database statistics for API"""
+        if not self.client:
+            return {
+                'total_entries': 0,
+                'total_chuukese_words': 0,
+                'total_english_words': 0,
+                'last_updated': None
+            }
+        
+        try:
+            total_entries = self.dictionary_collection.count_documents({})
+            
+            # Count unique Chuukese words (avoiding order-by issues)
+            chuukese_words_pipeline = [
+                {"$group": {"_id": "$chuukese_word"}},
+                {"$count": "total"}
+            ]
+            chuukese_result = list(self.dictionary_collection.aggregate(chuukese_words_pipeline))
+            chuukese_words = chuukese_result[0]["total"] if chuukese_result else 0
+            
+            # Count unique English translations
+            english_words_pipeline = [
+                {"$group": {"_id": "$english_translation"}},
+                {"$count": "total"}
+            ]
+            english_result = list(self.dictionary_collection.aggregate(english_words_pipeline))
+            english_words = english_result[0]["total"] if english_result else 0
+            
+            # Get last updated timestamp (avoid sorting by created_date due to Cosmos DB issues)
+            last_updated = None
+            sample_entry = self.dictionary_collection.find_one({})
+            if sample_entry and 'created_date' in sample_entry:
+                last_updated = sample_entry['created_date'].isoformat() if hasattr(sample_entry['created_date'], 'isoformat') else str(sample_entry['created_date'])
+            
+            return {
+                'total_entries': total_entries,
+                'total_chuukese_words': chuukese_words,
+                'total_english_words': english_words,
+                'last_updated': last_updated
+            }
+        except Exception as e:
+            print(f"Error getting database stats: {e}")
+            return {
+                'total_entries': 0,
+                'total_chuukese_words': 0,
+                'total_english_words': 0,
+                'last_updated': None
+            }
     
     def get_recent_entries(self, limit: int = 20) -> List[Dict]:
         """Get recently added dictionary entries"""

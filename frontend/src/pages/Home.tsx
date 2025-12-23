@@ -17,7 +17,11 @@ function Home() {
 
   useEffect(() => {
     axios.get('/api/publications')
-      .then(response => setPublications(response.data))
+      .then(response => {
+        // Ensure response.data is an array
+        const data = Array.isArray(response.data) ? response.data : response.data.publications || []
+        setPublications(data)
+      })
       .catch(error => console.error('Error fetching publications:', error))
   }, [])
 

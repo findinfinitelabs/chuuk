@@ -63,7 +63,7 @@ class PublicationManager:
             'id': pub_id,
             'title': title,
             'description': description,
-            'created_at': datetime.now().isoformat(),
+            'created_date': datetime.now().isoformat(),
             'pages': []
         }
         
@@ -74,7 +74,7 @@ class PublicationManager:
         self._save_metadata()
         return pub_id
     
-    def add_page(self, pub_id: str, filename: str, ocr_results: Optional[Dict] = None) -> bool:
+    def add_page(self, pub_id: str, filename: str, ocr_results: Optional[Dict] = None, processed: bool = False, entries_count: int = 0) -> bool:
         """
         Add a page to a publication
         
@@ -82,6 +82,8 @@ class PublicationManager:
             pub_id: Publication ID
             filename: Filename of the page image
             ocr_results: Optional OCR results for the page
+            processed: Whether the page has been processed for dictionary entries
+            entries_count: Number of dictionary entries extracted
             
         Returns:
             Success status
@@ -89,10 +91,19 @@ class PublicationManager:
         if pub_id not in self.publications:
             return False
         
+        # Extract OCR text from results
+        ocr_text = ''
+        if ocr_results:
+            ocr_text = ocr_results.get('text', '')
+        
         page_data = {
+            'id': f"{pub_id}_{filename}",
             'filename': filename,
             'added_at': datetime.now().isoformat(),
-            'ocr_results': ocr_results or {}
+            'ocr_results': ocr_results or {},
+            'ocr_text': ocr_text,
+            'processed': processed,
+            'entries_count': entries_count
         }
         
         self.publications[pub_id]['pages'].append(page_data)
