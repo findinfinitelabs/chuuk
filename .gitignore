@@ -210,3 +210,12 @@ __marimo__/
 uploads/
 *.json
 !requirements.txt
+
+# Model files - keeping config files only
+models/*/checkpoint-*/
+models/*/finetuned/
+models/*/*.safetensors
+models/*/*.pt
+models/*/*.pth
+models/*/*.bin
+models/*/*.spm

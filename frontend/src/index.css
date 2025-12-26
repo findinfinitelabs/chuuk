@@ -1,54 +1,92 @@
+/* Chuukese Language Support CSS */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  /* Modern system font stack */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Sans Emoji";
+  line-height: 1.6;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  
+  /* Light theme optimized for readability */
+  color-scheme: light;
+  color: #1a1a1a;
+  background-color: #fafafa;
+  
+  /* Improved text rendering */
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* Better letter spacing */
+  letter-spacing: -0.011em;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+/* Ensure proper display of Chuukese accented characters */
+.chuukese-text {
+  font-family: "Noto Sans", "Arial Unicode MS", sans-serif;
+  font-size: 1.1em;
+  line-height: 1.7;
+  direction: ltr;
+  letter-spacing: -0.011em;
 }
-a:hover {
-  color: #535bf2;
+
+/* Enhanced readability for dictionary entries */
+.dictionary-entry {
+  font-family: "Noto Sans", "Arial Unicode MS", sans-serif;
+  line-height: 1.8;
+  letter-spacing: -0.011em;
+}
+
+/* Mobile responsive font scaling for accented text */
+@media (max-width: 768px) {
+  .chuukese-text {
+    font-size: 1.15em;
+    line-height: 1.8;
+  }
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* Remove default app centering - let Mantine handle layout */
+#root {
+  width: 100%;
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Improved button styling for accessibility */
+button {
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-family: inherit;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
+/* Custom styling for cultural content */
+.cultural-note {
+  background: linear-gradient(90deg, rgba(0, 161, 255, 0.1) 0%, rgba(255, 175, 128, 0.1) 100%);
+  border-left: 4px solid #00a1ff;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 4px;
 }
-button:hover {
-  border-color: #646cff;
+
+/* Pronunciation guide styling */
+.pronunciation {
+  font-style: italic;
+  color: #666;
+  font-size: 0.9em;
 }
+
+/* Highlight search results */
+.search-highlight {
+  background-color: rgba(255, 255, 0, 0.3);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;

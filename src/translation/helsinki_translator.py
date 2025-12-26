@@ -99,7 +99,7 @@ class HelsinkiChuukeseTranslator:
                 logger.warning("⚠️ Safetensors not available, using secure loading")
                 self.model = AutoModelForSeq2SeqLM.from_pretrained(
                     self.model_name,
-                    torch_dtype=torch.float32,
+                    dtype=torch.float32,
                     trust_remote_code=False
                 )
             
@@ -115,7 +115,7 @@ class HelsinkiChuukeseTranslator:
             except Exception:
                 self.reverse_model = AutoModelForSeq2SeqLM.from_pretrained(
                     self.reverse_model_name,
-                    torch_dtype=torch.float32,
+                    dtype=torch.float32,
                     trust_remote_code=False
                 )
             

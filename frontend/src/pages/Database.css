@@ -1,0 +1,25 @@
+/* Database page specific styles */
+
+.search-input-wrapper {
+  flex: 1;
+}
+
+.accent-label {
+  min-width: fit-content;
+}
+
+.accent-button {
+  min-width: 28px;
+  padding: 4px 8px;
+}
+
+.text-max-width-200 {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-overflow {
+  overflow-x: auto;
+}

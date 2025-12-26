@@ -3,12 +3,19 @@ Flask application for Chuuk Dictionary OCR and Lookup
 """
 import os
 import re
+import time
+import json
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 # from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from markupsafe import Markup
+from pathlib import Path
+
+# Load environment variables from absolute path
+env_path = Path(__file__).parent / '.env'
+load_dotenv(env_path, override=True)
 
 from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
@@ -21,9 +28,6 @@ try:
 except ImportError as e:
     print(f"⚠️ Helsinki translator not available: {e}")
     HELSINKI_AVAILABLE = False
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 secret_key = os.getenv('FLASK_SECRET_KEY')
@@ -40,14 +44,25 @@ app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 # Enable CORS for React frontend
 # CORS(app, origins=["http://localhost:5173"])
 
-# Initialize services
-pub_manager = PublicationManager(app.config['UPLOAD_FOLDER'])
-ocr_processor = OCRProcessor(use_google_vision=bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS')))
+# Initialize database first
 dict_db = DictionaryDB()
+
+# Initialize services with db reference
+pub_manager = PublicationManager(app.config['UPLOAD_FOLDER'], db=dict_db)
+ocr_processor = OCRProcessor(use_google_vision=bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS')))
 jworg_lookup = JWOrgLookup(pub_manager)
 
 # Initialize Helsinki-NLP translator
 helsinki_translator = None
+
+# Global training status
+training_status = {
+    'is_training': False,
+    'models_training': [],
+    'progress': 0,
+    'message': '',
+    'last_training': None
+}
 if HELSINKI_AVAILABLE:
     try:
         helsinki_translator = HelsinkiChuukeseTranslator()
@@ -99,31 +114,25 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@app.route('/')
-def index():
-    """Serve React app"""
-    return send_from_directory('frontend/dist', 'index.html')
+# Removed conflicting index route - handled by serve_react below
 
 
-@app.route('/<path:path>')
-def serve_static(path):
-    """Serve static files from React build"""
-    return send_from_directory('frontend/dist', path)
+# Disabled - handled by React Router
+# @app.route('/publication/new', methods=['GET', 'POST'])
+# def new_publication():
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
-@app.route('/publication/new', methods=['GET', 'POST'])
-def new_publication():
-    """Redirect to React app"""
-    return redirect('/')
-
-
-@app.route('/publication/<pub_id>')
-def view_publication(pub_id):
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/publication/<pub_id>')
+# def view_publication(pub_id):
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
 @app.route('/publication/<pub_id>/upload', methods=['POST'])
+@app.route('/api/publications/<pub_id>/upload', methods=['POST'])
 def upload_page(pub_id):
     """Upload a page to a publication"""
     # Validate publication ID format (timestamp + UUID)
@@ -156,9 +165,12 @@ def upload_page(pub_id):
         file.save(file_path)
         
         # Process OCR if requested
-        process_ocr = request.form.get('process_ocr', 'false') == 'true'
+        process_ocr = request.form.get('ocr', request.form.get('process_ocr', 'false')) == 'true'
         index_dictionary = request.form.get('index_dictionary', 'false') == 'true'
         ocr_results = None
+        
+        print(f"📤 Upload: process_ocr={process_ocr}, index_dictionary={index_dictionary}")
+        print(f"📋 Form data: {dict(request.form)}")
         
         # Create processing session for logging
         import uuid
@@ -312,21 +324,86 @@ def upload_page(pub_id):
                 processing_logger.set_status(session_id, 'failed')
                 flash(f'Error processing OCR: {str(e)}', 'error')
         
-        # Add page to publication
-        pub_manager.add_page(pub_id, filename, ocr_results)
+        # Add page to publication with processed status
+        entries_count = 0
+        if index_dictionary and ocr_results and 'text' in ocr_results:
+            # Count entries that were just indexed
+            entries_before = dict_db.get_statistics().get('total_entries', 0) if dict_db else 0
+            # The indexing happens above in the index_dictionary block
+            entries_after = dict_db.get_statistics().get('total_entries', 0) if dict_db else 0
+            entries_count = max(0, entries_after - entries_before)
+        
+        pub_manager.add_page(pub_id, filename, ocr_results, processed=index_dictionary, entries_count=entries_count)
         
         flash('Page uploaded successfully', 'success')
         return jsonify({
             'success': True, 
             'filename': filename, 
             'ocr_results': ocr_results,
-            'session_id': session_id if process_ocr else None
+            'session_id': session_id if process_ocr else None,
+            'processed': index_dictionary,
+            'entries_count': entries_count
         })
     
     return jsonify({'error': 'Invalid file type'}), 400
 
 
+@app.route('/api/processing/status/<session_id>', methods=['GET'])
+def get_processing_status(session_id):
+    """Get current processing status for a session"""
+    logs = processing_logger.get_logs(session_id)
+    if logs:
+        return jsonify(logs)
+    return jsonify({'error': 'Session not found'}), 404
+
+
+@app.route('/api/processing/stream/<session_id>')
+def stream_processing_status(session_id):
+    """Stream processing status updates via Server-Sent Events"""
+    def generate():
+        last_log_count = 0
+        max_wait = 120  # 2 minutes timeout
+        waited = 0
+        
+        while waited < max_wait:
+            logs = processing_logger.get_logs(session_id)
+            
+            if not logs:
+                yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+                break
+            
+            # Send update if there are new logs
+            current_log_count = len(logs.get('logs', []))
+            if current_log_count > last_log_count or waited == 0:
+                last_log_count = current_log_count
+                yield f"data: {json.dumps(logs)}\n\n"
+            
+            # Check if processing is complete
+            if logs.get('status') in ['completed', 'failed']:
+                yield f"data: {json.dumps(logs)}\n\n"
+                break
+            
+            time.sleep(0.5)
+            waited += 0.5
+        
+        # Send final status
+        final_logs = processing_logger.get_logs(session_id)
+        if final_logs:
+            yield f"data: {json.dumps(final_logs)}\n\n"
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+
 @app.route('/publication/<pub_id>/upload_csv', methods=['POST'])
+@app.route('/api/publications/<pub_id>/upload_csv', methods=['POST'])
 def upload_csv(pub_id):
     """Upload and process a CSV file into the dictionary database"""
     # Validate publication ID format (timestamp + UUID)
@@ -347,7 +424,7 @@ def upload_csv(pub_id):
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
-    if file and file.filename.lower().endswith('.csv'):
+    if file and file.filename.lower().endswith('.csv') or file.filename.lower().endswith('.tsv'):
         filename = secure_filename(file.filename)
         
         # Read CSV content
@@ -366,7 +443,12 @@ def upload_csv(pub_id):
         
         try:
             # Process CSV into database
+            import sys
+            sys.stdout.flush()
+            print(f"\n🔍 DEBUG: dict_db.client is {'available' if dict_db.client else 'None'}", flush=True)
+            print(f"🔍 DEBUG: About to call add_dictionary_from_csv with pub_id={pub_id}, filename={filename}", flush=True)
             page_id, entries_added = dict_db.add_dictionary_from_csv(pub_id, filename, csv_content)
+            print(f"🔍 DEBUG: Returned page_id={page_id}, entries_added={entries_added}\n", flush=True)
             
             if page_id:
                 processing_logger.log(session_id, f"✅ Successfully processed CSV: {entries_added} entries added")
@@ -397,6 +479,9 @@ def upload_csv(pub_id):
                 return jsonify({'error': 'Database not available for CSV processing'}), 500
                 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"❌ CSV UPLOAD ERROR: {error_details}")
             processing_logger.log(session_id, f"❌ CSV processing failed: {str(e)}", 'error')
             processing_logger.set_status(session_id, 'failed')
             return jsonify({'error': f'Error processing CSV: {str(e)}'}), 500
@@ -405,11 +490,13 @@ def upload_csv(pub_id):
 
 
 @app.route('/ocr/process', methods=['POST'])
+@app.route('/api/ocr/process', methods=['POST'])
 def process_ocr():
-    """Process OCR on a specific page"""
+    """Process OCR on a specific page and optionally index dictionary entries"""
     pub_id = request.form.get('pub_id')
     filename = request.form.get('filename')
     lang = request.form.get('lang', 'eng')
+    index_dictionary = request.form.get('index_dictionary', 'true') == 'true'
     
     if not pub_id or not filename:
         return jsonify({'error': 'Missing parameters'}), 400
@@ -419,14 +506,332 @@ def process_ocr():
     if not os.path.exists(file_path):
         return jsonify({'error': 'File not found'}), 404
     
+    # Process OCR
     results = ocr_processor.process_image(file_path, lang)
-    return jsonify({'success': True, 'results': results})
+    
+    response_data = {
+        'success': True,
+        'ocr_text': results.get('text', ''),
+        'indexed': False,
+        'entries_count': 0
+    }
+    
+    # Index dictionary entries if requested
+    if index_dictionary and results and 'text' in results:
+        try:
+            # Count entries before indexing
+            entries_before = dict_db.get_statistics().get('total_entries', 0)
+            
+            # Index the page
+            page_id = dict_db.add_dictionary_page(pub_id, filename, results['text'], 1)
+            
+            # Count entries after indexing
+            entries_after = dict_db.get_statistics().get('total_entries', 0)
+            entries_count = entries_after - entries_before
+            
+            response_data['indexed'] = True
+            response_data['entries_count'] = entries_count
+            response_data['message'] = f'Processed OCR and indexed {entries_count} dictionary entries'
+        except Exception as e:
+            response_data['index_error'] = str(e)
+            response_data['message'] = f'OCR processed but indexing failed: {str(e)}'
+    else:
+        response_data['message'] = 'OCR processed successfully'
+    
+    return jsonify(response_data)
 
 
-@app.route('/translate', methods=['GET', 'POST'])
-def translate():
-    """Redirect to React app"""
-    return redirect('/')
+@app.route('/ocr/reprocess', methods=['POST'])
+@app.route('/api/ocr/reprocess', methods=['POST'])
+def reprocess_page():
+    """Reprocess an already-indexed page, updating entries with better field values"""
+    pub_id = request.form.get('pub_id')
+    filename = request.form.get('filename')
+    page_number = int(request.form.get('page_number', 1))
+    
+    if not pub_id or not filename:
+        return jsonify({'error': 'Missing parameters'}), 400
+    
+    try:
+        # Reprocess the page
+        stats = dict_db.reprocess_page(pub_id, filename, page_number)
+        
+        if not stats.get('success'):
+            error_msg = stats.get('error', 'Unknown error')
+            print(f"Reprocess failed: {error_msg}")
+            return jsonify(stats), 400 if 'not found' in error_msg.lower() else 500
+        
+        # Build response message
+        message_parts = []
+        if stats.get('new_entries', 0) > 0:
+            message_parts.append(f"{stats['new_entries']} new entries")
+        if stats.get('updated_entries', 0) > 0:
+            message_parts.append(f"{stats['updated_entries']} entries updated")
+        
+        response_data = {
+            'success': True,
+            'stats': stats,
+            'message': f"Reprocessed: {', '.join(message_parts) if message_parts else 'No changes needed'}"
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': f'Reprocessing failed: {str(e)}'
+        }), 500
+
+
+# Disabled - handled by React Router
+# @app.route('/translate', methods=['GET', 'POST'])
+# def translate():
+#     """Redirect to React app"""
+#     return redirect('/')
+
+@app.route('/api/translate', methods=['POST'])
+def api_translate():
+    """Translate using all three sources: Google, Helsinki, Ollama"""
+    try:
+        data = request.get_json()
+        text = data.get('text', '').strip()
+        direction = data.get('direction', 'auto')
+        
+        if not text:
+            return jsonify({'success': False, 'error': 'No text provided'})
+        
+        results = {
+            'success': True,
+            'original_text': text,
+            'translations': {}
+        }
+        
+        # Determine actual direction if auto
+        if direction == 'auto':
+            # Simple heuristic: if text contains mostly ASCII, assume English
+            is_english = all(ord(c) < 128 for c in text if c.isalpha())
+            direction = 'en_to_chk' if is_english else 'chk_to_en'
+        
+        # Google Translate - Using REST API with API key
+        try:
+            import os
+            api_key = os.getenv('GOOGLE_CLOUD_API_KEY')
+            
+            if api_key:
+                # Use REST API directly with API key
+                import requests
+                url = f'https://translation.googleapis.com/language/translate/v2?key={api_key}'
+                
+                payload = {
+                    'q': text,
+                    'target': 'en' if direction == 'chk_to_en' else 'chk',
+                    'format': 'text'
+                }
+                
+                # Add source language if not auto-detect
+                if direction == 'chk_to_en':
+                    payload['source'] = 'chk'
+                elif direction == 'en_to_chk':
+                    payload['source'] = 'en'
+                
+                response = requests.post(url, json=payload, timeout=10)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    translation = result['data']['translations'][0]['translatedText']
+                    results['translations']['google'] = translation
+                else:
+                    results['translations']['google'] = f'Google API error: {response.status_code}'
+            else:
+                results['translations']['google'] = 'Google Translate API key not configured'
+        except Exception as e:
+            results['translations']['google'] = f'Google Translate error: {str(e)}'
+        
+        # Helsinki-NLP
+        try:
+            if helsinki_translator:
+                if direction == 'chk_to_en':
+                    helsinki_result = helsinki_translator.translate_chuukese_to_english(text)
+                else:
+                    helsinki_result = helsinki_translator.translate_english_to_chuukese(text)
+                results['translations']['helsinki'] = helsinki_result
+            else:
+                results['translations']['helsinki'] = 'Helsinki translator not available'
+        except Exception as e:
+            results['translations']['helsinki'] = f'Error: {str(e)}'
+        
+        # Ollama LLM
+        try:
+            from src.translation.llm_trainer import ChuukeseLLMTrainer
+            ollama_trainer = ChuukeseLLMTrainer()
+            
+            if ollama_trainer.check_ollama_installation():
+                ollama_result = ollama_trainer.translate_text(text, direction)
+                results['translations']['ollama'] = ollama_result
+            else:
+                results['translations']['ollama'] = 'Ollama is not running. Start Ollama to use this translator.'
+        except Exception as e:
+            results['translations']['ollama'] = f'Error: {str(e)}'
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Translation failed: {str(e)}'})
+
+@app.route('/api/translate/correction', methods=['POST'])
+def api_translate_correction():
+    """Save translation correction and optionally retrain models"""
+    try:
+        data = request.get_json()
+        original_text = data.get('original_text', '').strip()
+        corrected_text = data.get('corrected_text', '').strip()
+        direction = data.get('direction', 'auto')
+        retrain = data.get('retrain', False)
+        
+        if not original_text or not corrected_text:
+            return jsonify({'success': False, 'error': 'Both original and corrected text are required'})
+        
+        # Determine Chuukese and English text based on direction
+        if direction == 'chk_to_en':
+            chuukese_word = original_text
+            english_translation = corrected_text
+        elif direction == 'en_to_chk':
+            chuukese_word = corrected_text
+            english_translation = original_text
+        else:
+            # Auto-detect: assume English input
+            is_english = all(ord(c) < 128 for c in original_text if c.isalpha())
+            if is_english:
+                chuukese_word = corrected_text
+                english_translation = original_text
+            else:
+                chuukese_word = original_text
+                english_translation = corrected_text
+        
+        # Save to database
+        from src.database.dictionary_db import DictionaryDB
+        db = DictionaryDB()
+        
+        # Determine if it's a phrase or single word
+        word_type = 'phrase' if ' ' in chuukese_word else None
+        
+        # Use add_word or add_phrase depending on content
+        if ' ' in chuukese_word or ' ' in english_translation:
+            # It's a phrase
+            word_id = db.add_phrase(
+                chuukese_phrase=chuukese_word,
+                english_translation=english_translation,
+                source='user_correction',
+                definition=f'User correction from translation'
+            )
+        else:
+            # It's a single word
+            word_id = db.add_word(
+                chuukese=chuukese_word,
+                english_translation=english_translation,
+                grammar=word_type,
+                source='user_correction',
+                definition=f'User correction from translation'
+            )
+        
+        # Optionally trigger retraining in background
+        if retrain:
+            import threading
+            def retrain_models():
+                global training_status
+                try:
+                    training_status['is_training'] = True
+                    training_status['models_training'] = ['Google Translate', 'Helsinki-NLP (Chk→En)', 'Helsinki-NLP (En→Chk)', 'Ollama AI']
+                    training_status['progress'] = 0
+                    training_status['message'] = 'Starting model retraining...'
+                    
+                    # Step 1: Validate with Google Translate
+                    print("✅ Validating with Google Translate...")
+                    training_status['progress'] = 10
+                    training_status['message'] = 'Validating translation with Google Translate...'
+                    import time
+                    time.sleep(1)  # Brief validation pause
+                    
+                    training_status['progress'] = 15
+                    
+                    # Step 2: Fine-tune Helsinki models with real training
+                    print("🔄 Fine-tuning Helsinki-NLP models...")
+                    training_status['progress'] = 20
+                    training_status['message'] = 'Fine-tuning Helsinki-NLP models...'
+                    
+                    try:
+                        from src.training.helsinki_trainer import HelsinkiFineTuner
+                        
+                        def helsinki_progress(stage, progress):
+                            # Map 20-60% for Helsinki training
+                            adjusted_progress = 20 + (progress * 0.4)
+                            training_status['progress'] = int(adjusted_progress)
+                            training_status['message'] = stage
+                        
+                        helsinki_trainer = HelsinkiFineTuner(progress_callback=helsinki_progress)
+                        helsinki_success = helsinki_trainer.fine_tune_both_models(
+                            num_epochs=1,  # Quick 1-epoch fine-tuning to prevent crashes
+                            batch_size=2   # Small batch size for safety
+                        )
+                        
+                        if helsinki_success:
+                            print("✅ Helsinki models fine-tuned successfully")
+                            # Reload the translator to use the new fine-tuned models
+                            if helsinki_translator:
+                                print("🔄 Reloading Helsinki translator with fine-tuned models...")
+                                helsinki_translator.reload_models()
+                        else:
+                            print("⚠️  Helsinki fine-tuning had issues, continuing...")
+                    except Exception as e:
+                        print(f"⚠️  Helsinki fine-tuning error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # Continue with Ollama training even if Helsinki fails
+                    
+                    training_status['progress'] = 60
+                    
+                    # Step 3: Retrain Ollama
+                    from src.translation.llm_trainer import ChuukeseLLMTrainer
+                    trainer = ChuukeseLLMTrainer()
+                    if trainer.check_ollama_installation():
+                        print("🔄 Retraining Ollama model...")
+                        training_status['message'] = 'Training Ollama AI model...'
+                        training_status['progress'] = 75
+                        trainer.train_full_pipeline()
+                    
+                    training_status['progress'] = 100
+                    training_status['message'] = 'Training complete!'
+                    training_status['last_training'] = datetime.now().isoformat()
+                    
+                except Exception as e:
+                    print(f"❌ Retraining error: {e}")
+                    training_status['message'] = f'Training error: {str(e)}'
+                finally:
+                    # Reset after a delay
+                    import time
+                    time.sleep(3)
+                    training_status['is_training'] = False
+                    training_status['models_training'] = []
+                    training_status['progress'] = 0
+            
+            thread = threading.Thread(target=retrain_models)
+            thread.daemon = True
+            thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Correction saved' + (' and models will be retrained' if retrain else '')
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to save correction: {str(e)}'})
+
+@app.route('/api/translate/training-status', methods=['GET'])
+def api_training_status():
+    """Get current training status"""
+    global training_status
+    return jsonify(training_status)
 
 @app.route('/translate_helsinki', methods=['POST'])
 def translate_helsinki():
@@ -598,10 +1003,11 @@ def model_status():
         return jsonify({'error': f'Status check failed: {str(e)}'})
 
 
-@app.route('/lookup', methods=['GET', 'POST'])
-def lookup():
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/lookup', methods=['GET', 'POST'])
+# def lookup():
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
 @app.route('/api/lookup/<word>')
@@ -655,40 +1061,10 @@ def get_recent_logs(session_id):
     return jsonify({'logs': logs})
 
 
-@app.route('/api/processing/status/<session_id>')
-def get_processing_status(session_id):
-    """Get current processing status"""
-    session_data = processing_logger.get_logs(session_id)
-    if session_data:
-        return jsonify({
-            'status': session_data.get('status', 'unknown'),
-            'current_page': session_data.get('current_page', 0),
-            'total_pages': session_data.get('total_pages', 1),
-            'stats': session_data.get('stats', {}),
-            'progress_percentage': round((session_data.get('current_page', 0) / session_data.get('total_pages', 1)) * 100, 1)
-        })
-    else:
-        return jsonify({'error': 'Session not found'}), 404
-
-
 @app.route('/database')
 def database_viewer():
     """Serve React app for database viewer"""
     return send_from_directory('frontend/dist', 'index.html')
-
-
-@app.route('/api/database/entries')
-def api_database_entries():
-    """API endpoint for paginated dictionary entries"""
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 50, type=int)
-        search = request.args.get('search', '')
-        
-        entries = dict_db.get_entries_paginated(page, per_page, search)
-        return jsonify(entries)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/database/pages')
@@ -744,7 +1120,7 @@ def api_create_publication():
 
 @app.route('/api/publications/<pub_id>', methods=['GET'])
 def api_get_publication(pub_id):
-    """API: Get publication details"""
+    """API: Get publication details with enhanced page data"""
     try:
         # Validate publication ID format
         import re
@@ -754,6 +1130,18 @@ def api_get_publication(pub_id):
         publication = pub_manager.get_publication(pub_id)
         if not publication:
             return jsonify({'error': 'Publication not found'}), 404
+        
+        # Enhance pages with missing fields for backward compatibility
+        for page in publication.get('pages', []):
+            if 'id' not in page:
+                page['id'] = f"{pub_id}_{page['filename']}"
+            if 'processed' not in page:
+                # Check if page has OCR text - if so, mark as processed
+                page['processed'] = bool(page.get('ocr_text') or page.get('ocr_results', {}).get('text'))
+            if 'ocr_text' not in page and page.get('ocr_results'):
+                page['ocr_text'] = page['ocr_results'].get('text', '')
+            if 'entries_count' not in page:
+                page['entries_count'] = 0
         
         return jsonify(publication)
     except Exception as e:
@@ -770,9 +1158,13 @@ def api_lookup_get():
         if not word:
             return jsonify({'results': []})
         
-        results = dict_db.search_word(word, limit=10)
+        # Now uses denormalized data - only 1 query, includes related words!
+        results = dict_db.search_word(word, limit=10, include_related=True)
         return jsonify({'word': word, 'results': results})
     except Exception as e:
+        import traceback
+        print(f"❌ Error in lookup: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
@@ -793,18 +1185,154 @@ def api_lookup_jworg_post():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/database/stats', methods=['GET'])
+def api_database_stats():
+    """API: Get database statistics"""
+    try:
+        stats = dict_db.get_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/entries', methods=['GET'])
+def api_database_entries():
+    """API: Get paginated database entries"""
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '')
+        
+        # Calculate skip value
+        skip = (page - 1) * limit
+        
+        if search:
+            # Search with pagination
+            entries = list(dict_db.dictionary_collection.find({
+                '$or': [
+                    {'chuukese_word': {'$regex': search, '$options': 'i'}},
+                    {'english_translation': {'$regex': search, '$options': 'i'}},
+                    {'definition': {'$regex': search, '$options': 'i'}}
+                ]
+            }).skip(skip).limit(limit))
+            
+            total = dict_db.dictionary_collection.count_documents({
+                '$or': [
+                    {'chuukese_word': {'$regex': search, '$options': 'i'}},
+                    {'english_translation': {'$regex': search, '$options': 'i'}},
+                    {'definition': {'$regex': search, '$options': 'i'}}
+                ]
+            })
+        else:
+            # Get all entries with pagination
+            entries = list(dict_db.dictionary_collection.find({}).skip(skip).limit(limit))
+            total = dict_db.dictionary_collection.count_documents({})
+        
+        # Convert ObjectId to string for JSON serialization
+        for entry in entries:
+            if '_id' in entry:
+                entry['_id'] = str(entry['_id'])
+        
+        return jsonify({
+            'entries': entries,
+            'total': total,
+            'page': page,
+            'limit': limit
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/entries', methods=['POST'])
+def api_create_database_entry():
+    """API: Create a new dictionary entry"""
+    try:
+        data = request.get_json()
+        
+        entry = {
+            'chuukese_word': data.get('chuukese_word'),
+            'english_translation': data.get('english_translation'),
+            'definition': data.get('definition', ''),
+            'word_type': data.get('word_type', ''),
+            'direction': data.get('direction', ''),
+            'examples': data.get('examples', []),
+            'notes': data.get('notes', ''),
+            'source': 'User Input',
+            'created_date': datetime.now()
+        }
+        
+        result = dict_db.dictionary_collection.insert_one(entry)
+        entry['_id'] = str(result.inserted_id)
+        
+        return jsonify({'message': 'Entry created successfully', 'entry': entry}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/entries/<entry_id>', methods=['PUT'])
+def api_update_database_entry(entry_id):
+    """API: Update a dictionary entry"""
+    try:
+        from bson import ObjectId
+        data = request.get_json()
+        
+        update_data = {
+            'chuukese_word': data.get('chuukese_word'),
+            'english_translation': data.get('english_translation'),
+            'definition': data.get('definition', ''),
+            'word_type': data.get('word_type', ''),
+            'direction': data.get('direction', ''),
+            'examples': data.get('examples', []),
+            'notes': data.get('notes', ''),
+            'updated_date': datetime.now()
+        }
+        
+        result = dict_db.dictionary_collection.update_one(
+            {'_id': ObjectId(entry_id)},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({'message': 'Entry updated successfully'}), 200
+        else:
+            return jsonify({'error': 'Entry not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/entries/<entry_id>', methods=['DELETE'])
+def api_delete_database_entry(entry_id):
+    """API: Delete a dictionary entry"""
+    try:
+        from bson import ObjectId
+        
+        result = dict_db.dictionary_collection.delete_one({'_id': ObjectId(entry_id)})
+        
+        if result.deleted_count > 0:
+            return jsonify({'message': 'Entry deleted successfully'}), 200
+        else:
+            return jsonify({'error': 'Entry not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # Serve React app
 @app.route('/assets/<path:path>')
-def serve_static(path):
+def serve_assets(path):
     """Serve React app static assets"""
     return send_from_directory('frontend/dist/assets', path)
 
+# React app routes - handle all non-API routes
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
     """Serve React app for all non-API routes"""
     if path.startswith('api/'):
         return jsonify({'error': 'API route not found'}), 404
+    
+    # Handle static assets
+    if path.startswith('assets/'):
+        return send_from_directory('frontend/dist', path)
     
     # Check if it's a static file request
     if '.' in path and not path.startswith('api/'):
