@@ -769,21 +769,20 @@ class DictionaryDB:
     
     def search_word(self, word: str, limit: int = 10, include_related: bool = True) -> List[Dict]:
         """
-        Search for a word in the dictionary
+        Search for a word in the dictionary (uses denormalized related_words for efficiency)
         
         Args:
             word: Word to search for (Chuukese or English)
             limit: Maximum number of results
-            include_related: Whether to include related words from the same word family
+            include_related: Whether to include related words (now using denormalized data - no extra queries!)
             
         Returns:
-            List of matching dictionary entries with related words
+            List of matching dictionary entries with related words embedded
         """
         if not self.client:
             return []
         
         # Build Cosmos DB compatible query using regex (no $text support)
-        # Optimize by checking exact match first, then regex
         word_lower = word.lower().strip()
         
         query = {
@@ -810,88 +809,39 @@ class DictionaryDB:
             ]
         }
         
+        # Single query gets everything including related_words!
         results = list(self.dictionary_collection.find(query).limit(limit))
         
-        # Use a dictionary to track unique entries by word+translation combination and avoid duplicates
+        # Use a dictionary to track unique entries by word+translation combination
         unique_entries = {}
-        seen_ids = set()
         
-        # Process primary results first
         for result in results:
-            result_id = str(result['_id'])
-            if result_id not in seen_ids:
-                # Skip reverse lookup entries (English to Chuukese direction)
-                if result.get('search_direction') == 'en_to_chk':
-                    continue
-                
-                # Create unique key based on word and translation
-                word = result.get('chuukese_word', '').lower().strip()
-                translation = result.get('english_translation', '').strip()
-                unique_key = f"{word}|{translation}"
-                
-                # Keep the entry with highest confidence if duplicate
-                if unique_key not in unique_entries or result.get('confidence', 0) > unique_entries[unique_key].get('confidence', 0):
-                    unique_entries[unique_key] = result
-                    seen_ids.add(result_id)
-        
-        # If include_related is True, also search for word family members
-        if include_related:
-            # Find if the search word is a base word or has a base word
-            base_word_queries = [
-                {'base_word': word_lower},  # Search word is a base word
-                {'chuukese_word': word_lower, 'is_base_word': True}  # Search word is itself a base word
-            ]
+            # Skip reverse lookup entries
+            if result.get('search_direction') == 'en_to_chk':
+                continue
             
-            base_word_results = []
-            for base_query in base_word_queries:
-                base_results = list(self.dictionary_collection.find(base_query))
-                base_word_results.extend(base_results)
+            # Create unique key based on word and translation
+            word = result.get('chuukese_word', '').lower().strip()
+            translation = result.get('english_translation', '').strip()
+            unique_key = f"{word}|{translation}"
             
-            # If we found base word info, get all related words
-            if base_word_results:
-                base_words = set()
-                for result in base_word_results:
-                    if result.get('base_word'):
-                        base_words.add(result['base_word'])
-                    if result.get('is_base_word'):
-                        base_words.add(result['chuukese_word'])
-                
-                # Search for all words in the same word families
-                for base_word in base_words:
-                    family_query = {
-                        '$or': [
-                            {'base_word': base_word},
-                            {'word_family': base_word},
-                            {'chuukese_word': base_word}
-                        ]
-                    }
-                    family_results = list(self.dictionary_collection.find(family_query))
-                    
-                    # Add family results, avoiding duplicates by word+translation
-                    for family_result in family_results:
-                        result_id = str(family_result['_id'])
-                        if result_id not in seen_ids:
-                            # Skip reverse lookup entries
-                            if family_result.get('search_direction') == 'en_to_chk':
-                                continue
-                                
-                            # Create unique key based on word and translation
-                            word = family_result.get('chuukese_word', '').lower().strip()
-                            translation = family_result.get('english_translation', '').strip()
-                            unique_key = f"{word}|{translation}"
-                            
-                            # Keep the entry with highest confidence if duplicate
-                            if unique_key not in unique_entries or family_result.get('confidence', 0) > unique_entries[unique_key].get('confidence', 0):
-                                unique_entries[unique_key] = family_result
-                                seen_ids.add(result_id)
+            # Keep the entry with highest confidence if duplicate
+            if unique_key not in unique_entries or result.get('confidence', 0) > unique_entries[unique_key].get('confidence', 0):
+                unique_entries[unique_key] = result
         
-        # Convert unique entries back to list
+        # Convert to list
         results = list(unique_entries.values())
         
         # Convert ObjectId to string and add relevance scoring
         for result in results:
             result['_id'] = str(result['_id'])
             result['relevance'] = self._calculate_relevance(word_lower, result)
+            
+            # Related words are already embedded in the document!
+            # No additional queries needed - denormalized data wins!
+            if not include_related and 'related_words' in result:
+                # Optionally remove related words if user doesn't want them
+                result.pop('related_words', None)
             
             # Convert datetime objects to strings for template rendering
             if 'created_date' in result and result['created_date']:
@@ -918,7 +868,7 @@ class DictionaryDB:
             -x.get('confidence', 0)  # Higher confidence first
         ), reverse=True)
         
-        return results[:limit * 2]  # Allow more results when including related words
+        return results[:limit]
     
     def _calculate_relevance(self, search_word: str, entry: Dict) -> float:
         """Calculate relevance score for search results"""
@@ -1205,101 +1155,335 @@ class DictionaryDB:
         import csv
         import io
         
-        entries = []
+        # Collections for different types
+        words = []
+        phrases = []
+        sentences = []
+        paragraphs = []
         
         try:
-            # Parse CSV content
-            csv_reader = csv.reader(io.StringIO(csv_content), delimiter='\t')
+            # Parse CSV content - detect delimiter
+            delimiter = '\t' if '\t' in csv_content else ','
+            csv_reader = csv.reader(io.StringIO(csv_content), delimiter=delimiter)
             
-            # Skip header row
-            next(csv_reader, None)
+            # Read header row to identify format
+            header = next(csv_reader, None)
+            if not header:
+                print(f"⚠️ No header found in CSV")
+                return []
             
-            for row_num, row in enumerate(csv_reader, 2):  # Start from row 2 (after header)
-                if len(row) < 5:  # Need at least Entry #, Pseudo-Page, Chuukese, POS, English
+            print(f"📋 CSV Header: {header}")
+            print(f"📋 Header length: {len(header)}")
+            
+            # Normalize headers and build column index map
+            header_lower = [h.lower().strip().replace('\ufeff', '').replace(' ', '_').replace('/', '_') for h in header]
+            print(f"📋 Normalized headers: {header_lower}")
+            
+            col_map = {h: i for i, h in enumerate(header_lower)}
+            
+            # Check for new standard format: chuukese_phrase, english_translation, type, direction, definition_notes
+            is_standard_format = 'chuukese_phrase' in col_map and 'english_translation' in col_map
+            
+            entries_processed = 0
+            for row_num, row in enumerate(csv_reader, 2):
+                if len(row) < 2:
                     continue
                 
+                if entries_processed < 3:
+                    print(f"📝 Row {row_num}: {row}")
+                entries_processed += 1
+                
                 try:
-                    entry_num = row[0].strip()
-                    pseudo_page = row[1].strip()
-                    chuukese_word = row[2].strip()
-                    part_of_speech = row[3].strip() if len(row) > 3 else ''
-                    english_translation = row[4].strip() if len(row) > 4 else ''
+                    if is_standard_format:
+                        # Standard format: chuukese_phrase, english_translation, type, grammar, search_direction, definition_notes
+                        chuukese_text = row[col_map.get('chuukese_phrase', 0)].strip()
+                        english_text = row[col_map.get('english_translation', 1)].strip()
+                        entry_type = row[col_map.get('type', 2)].strip().lower() if len(row) > col_map.get('type', 2) else 'word'
+                        grammar = row[col_map.get('grammar', 3)].strip().lower() if len(row) > col_map.get('grammar', 3) else ''
+                        search_direction = row[col_map.get('search_direction', 4)].strip() if len(row) > col_map.get('search_direction', 4) else 'chk_to_en'
+                        definition = row[col_map.get('definition_notes', 5)].strip() if len(row) > col_map.get('definition_notes', 5) else ''
+                        
+                        if not chuukese_text or not english_text:
+                            continue
+                        
+                        # Base entry data
+                        base_entry = {
+                            'chuukese': chuukese_text,
+                            'english': english_text,
+                            'type': entry_type,
+                            'grammar': grammar,
+                            'search_direction': search_direction,
+                            'definition': definition,
+                            'page_id': page_id,
+                            'publication_id': publication_id,
+                            'filename': filename,
+                            'line_number': row_num,
+                            'source_type': 'csv_upload',
+                            'created_date': datetime.now(timezone.utc)
+                        }
+                        
+                        # Grammar abbreviation mapping table
+                        grammar_mapping = {
+                            'n.': 'noun', 'n': 'noun', 'noun': 'noun',
+                            'v.': 'verb', 'v': 'verb', 'verb': 'verb',
+                            'vt.': 'transitive verb', 'vt': 'transitive verb', 'transitive verb': 'transitive verb',
+                            'vi.': 'intransitive verb', 'vi': 'intransitive verb', 'intransitive verb': 'intransitive verb',
+                            'adj.': 'adjective', 'adj': 'adjective', 'adjective': 'adjective',
+                            'adv.': 'adverb', 'adv': 'adverb', 'adverb': 'adverb',
+                            'pron.': 'pronoun', 'pron': 'pronoun', 'pronoun': 'pronoun',
+                            'prep.': 'preposition', 'prep': 'preposition', 'preposition': 'preposition',
+                            'conj.': 'conjunction', 'conj': 'conjunction', 'conjunction': 'conjunction',
+                            'aux.': 'auxiliary', 'aux': 'auxiliary', 'auxiliary': 'auxiliary',
+                            'interj.': 'interjection', 'interj': 'interjection', 'interjection': 'interjection',
+                            'det.': 'determiner', 'det': 'determiner', 'determiner': 'determiner',
+                            'part.': 'particle', 'part': 'particle', 'particle': 'particle',
+                            'art.': 'article', 'art': 'article', 'article': 'article',
+                            'word': 'word'
+                        }
+                        
+                        # Helper function to expand grammar abbreviations in compound types
+                        def expand_grammar(grammar_str):
+                            if not grammar_str:
+                                return ''
+                            # Check for exact match first
+                            if grammar_str in grammar_mapping:
+                                return grammar_mapping[grammar_str]
+                            
+                            # Handle compound types like "v., vt. + suffix" or "v., vt., adj. + suffix"
+                            # First, separate the main part from the suffix (after +)
+                            suffix_part = ''
+                            main_part = grammar_str
+                            if '+' in grammar_str:
+                                parts = grammar_str.split('+', 1)
+                                main_part = parts[0].strip()
+                                suffix_part = parts[1].strip() if len(parts) > 1 else ''
+                            
+                            # Expand each comma-separated abbreviation in the main part
+                            expanded_types = []
+                            for abbrev in main_part.split(','):
+                                abbrev = abbrev.strip().rstrip('.')  # Remove trailing period for matching
+                                abbrev_with_dot = abbrev + '.'
+                                if abbrev_with_dot in grammar_mapping:
+                                    expanded_types.append(grammar_mapping[abbrev_with_dot])
+                                elif abbrev in grammar_mapping:
+                                    expanded_types.append(grammar_mapping[abbrev])
+                                elif abbrev:  # Keep as-is if not found
+                                    expanded_types.append(abbrev)
+                            
+                            # Combine expanded types
+                            result = ', '.join(expanded_types)
+                            
+                            # Add suffix if present
+                            if suffix_part:
+                                result = f"{result} + {suffix_part}"
+                            
+                            return result if result else grammar_str
+                        
+                        # Route to appropriate collection based on type
+                        # If type is a grammar type (noun, verb, etc.), treat as word and use type as grammar
+                        if entry_type == 'word' or entry_type in grammar_mapping or '+' in entry_type:
+                            # Map the grammar abbreviation to full form using expand_grammar
+                            mapped_grammar = expand_grammar(grammar) if grammar else ''
+                            # If entry_type is a grammar abbreviation or compound, use it as grammar if grammar column is empty
+                            if not mapped_grammar and entry_type != 'word':
+                                mapped_grammar = expand_grammar(entry_type)
+                            
+                            word_entry = {
+                                'chuukese_word': chuukese_text.lower(),
+                                'english_translation': english_text,
+                                'definition': definition if definition else english_text,
+                                'grammar': mapped_grammar,  # noun, verb, adjective, etc. (full form)
+                                'type': 'word',  # Always 'word' for words collection
+                                'search_direction': search_direction,
+                                'page_id': page_id,
+                                'publication_id': publication_id,
+                                'filename': filename,
+                                'line_number': row_num,
+                                'confidence': 1.0,
+                                'citation': f"{filename}:{row_num}",
+                                'created_date': datetime.now(timezone.utc),
+                                'source_type': 'csv_upload'
+                            }
+                            words.append(word_entry)
+                        
+                        elif entry_type == 'phrase':
+                            phrase_entry = {
+                                'chuukese_phrase': chuukese_text,
+                                'english_translation': english_text,
+                                'type': entry_type,
+                                'grammar': grammar,
+                                'search_direction': search_direction,
+                                'definition': definition,
+                                'page_id': page_id,
+                                'publication_id': publication_id,
+                                'filename': filename,
+                                'line_number': row_num,
+                                'source_type': 'csv_upload',
+                                'created_date': datetime.now(timezone.utc)
+                            }
+                            phrases.append(phrase_entry)
+                        
+                        elif entry_type == 'sentence':
+                            sentence_entry = {
+                                'chuukese_sentence': chuukese_text,
+                                'english_translation': english_text,
+                                'type': entry_type,
+                                'grammar': grammar,
+                                'search_direction': search_direction,
+                                'definition': definition,
+                                'page_id': page_id,
+                                'publication_id': publication_id,
+                                'filename': filename,
+                                'line_number': row_num,
+                                'source_type': 'csv_upload',
+                                'created_date': datetime.now(timezone.utc)
+                            }
+                            sentences.append(sentence_entry)
+                        
+                        elif entry_type == 'paragraph':
+                            paragraph_entry = {
+                                'chuukese_paragraph': chuukese_text,
+                                'english_translation': english_text,
+                                'type': entry_type,
+                                'grammar': grammar,
+                                'search_direction': search_direction,
+                                'definition': definition,
+                                'page_id': page_id,
+                                'publication_id': publication_id,
+                                'filename': filename,
+                                'line_number': row_num,
+                                'source_type': 'csv_upload',
+                                'created_date': datetime.now(timezone.utc)
+                            }
+                            paragraphs.append(paragraph_entry)
+                        
+                        else:
+                            # Default to words collection for unknown types
+                            word_entry = {
+                                'chuukese_word': chuukese_text.lower(),
+                                'english_translation': english_text,
+                                'definition': definition if definition else english_text,
+                                'grammar': grammar if grammar else entry_type,
+                                'type': 'word',
+                                'search_direction': search_direction,
+                                'page_id': page_id,
+                                'publication_id': publication_id,
+                                'filename': filename,
+                                'line_number': row_num,
+                                'confidence': 1.0,
+                                'citation': f"{filename}:{row_num}",
+                                'created_date': datetime.now(timezone.utc),
+                                'source_type': 'csv_upload'
+                            }
+                            words.append(word_entry)
                     
-                    # Skip empty entries
-                    if not chuukese_word or not english_translation:
-                        continue
-                    
-                    # Create entry
-                    entry = {
-                        'chuukese_word': chuukese_word,
-                        'english_translation': english_translation,
-                        'part_of_speech': part_of_speech,
-                        'entry_number': entry_num,
-                        'pseudo_page': pseudo_page,
-                        'page_id': page_id,
-                        'publication_id': publication_id,
-                        'filename': filename,
-                        'line_number': row_num,
-                        'confidence': 1.0,  # CSV entries are considered highly reliable
-                        'citation': f"{filename}:{row_num}",
-                        'created_date': datetime.now(timezone.utc),
-                        'search_direction': 'chk_to_en',
-                        'primary_language': 'chuukese',
-                        'secondary_language': 'english',
-                        'is_base_word': True,
-                        'source_type': 'csv_upload'
-                    }
-                    
-                    entries.append(entry)
-                    
-                    # Create reverse entry (English to Chuukese)
-                    reverse_entry = entry.copy()
-                    reverse_entry.update({
-                        'search_direction': 'en_to_chk',
-                        'primary_language': 'english',
-                        'secondary_language': 'chuukese'
-                    })
-                    entries.append(reverse_entry)
+                    else:
+                        # Legacy format handling - treat as words
+                        chuukese_word = row[0].strip() if len(row) > 0 else ''
+                        english_translation = row[1].strip() if len(row) > 1 else ''
+                        part_of_speech = row[2].strip() if len(row) > 2 else ''
+                        
+                        if not chuukese_word or not english_translation:
+                            continue
+                        
+                        word_type = self._extract_word_type(part_of_speech, english_translation) if part_of_speech else None
+                        
+                        entry = {
+                            'chuukese_word': chuukese_word.lower(),
+                            'english_translation': english_translation,
+                            'definition': english_translation,
+                            'part_of_speech': part_of_speech,
+                            'word_type': word_type,
+                            'type': word_type or 'word',
+                            'direction': 'chk_to_en',
+                            'page_id': page_id,
+                            'publication_id': publication_id,
+                            'filename': filename,
+                            'line_number': row_num,
+                            'confidence': 1.0,
+                            'citation': f"{filename}:{row_num}",
+                            'created_date': datetime.now(timezone.utc),
+                            'source_type': 'csv_upload'
+                        }
+                        words.append(entry)
                     
                 except (IndexError, ValueError) as e:
                     print(f"Error parsing CSV row {row_num}: {e}")
                     continue
         
         except Exception as e:
-            print(f"Error parsing CSV content: {e}")
+            print(f"❌ Error parsing CSV content: {e}")
+            import traceback
+            traceback.print_exc()
             return []
         
-        # Insert entries into database with error handling
-        if entries:
-            try:
-                self.dictionary_collection.insert_many(entries, ordered=False)
-            except Exception as e:
-                print(f"Error bulk inserting entries: {e}")
-                # Insert individually to handle duplicates
-                for entry in entries:
-                    try:
-                        self.dictionary_collection.insert_one(entry)
-                    except DuplicateKeyError:
-                        # Update existing entry with additional source info
-                        self.dictionary_collection.update_one(
-                            {
-                                'chuukese_word': entry['chuukese_word'],
-                                'english_translation': entry['english_translation']
-                            },
-                            {
-                                '$addToSet': {
-                                    'alternative_sources': {
-                                        'page_id': page_id, 
-                                        'filename': filename,
-                                        'citation': entry['citation']
-                                    }
-                                }
-                            }
-                        )
-                    except Exception as insert_error:
-                        print(f"Error inserting individual entry: {insert_error}")
+        print(f"✅ Extracted: {len(words)} words, {len(phrases)} phrases, {len(sentences)} sentences, {len(paragraphs)} paragraphs")
         
-        return entries
+        import time
+        batch_size = 10  # Small batches to avoid Cosmos DB rate limiting
+        all_entries = []
+        
+        # Insert words into dictionary_collection
+        if words:
+            inserted_count = self._batch_insert(self.dictionary_collection, words, batch_size, "words")
+            all_entries.extend(words)
+        
+        # Insert phrases into phrases_collection
+        if phrases:
+            inserted_count = self._batch_insert(self.phrases_collection, phrases, batch_size, "phrases")
+            all_entries.extend(phrases)
+        
+        # Insert sentences into phrases_collection (sentences are stored with phrases)
+        if sentences:
+            inserted_count = self._batch_insert(self.phrases_collection, sentences, batch_size, "sentences")
+            all_entries.extend(sentences)
+        
+        # Insert paragraphs into paragraphs_collection
+        if paragraphs:
+            inserted_count = self._batch_insert(self.paragraphs_collection, paragraphs, batch_size, "paragraphs")
+            all_entries.extend(paragraphs)
+        
+        return all_entries
+    
+    def _batch_insert(self, collection, items, batch_size, item_type):
+        """Insert items in batches with rate limiting handling"""
+        import time
+        inserted_count = 0
+        
+        for i in range(0, len(items), batch_size):
+            batch = items[i:i + batch_size]
+            retries = 3
+            
+            while retries > 0:
+                try:
+                    collection.insert_many(batch, ordered=False)
+                    inserted_count += len(batch)
+                    print(f"  ✓ {item_type} batch {i//batch_size + 1}/{(len(items) + batch_size - 1)//batch_size} ({len(batch)} items)")
+                    break
+                except DuplicateKeyError:
+                    for item in batch:
+                        try:
+                            collection.insert_one(item)
+                            inserted_count += 1
+                        except DuplicateKeyError:
+                            pass  # Skip duplicates
+                        except Exception as e:
+                            print(f"  ⚠️ Error inserting {item_type}: {e}")
+                    break
+                except Exception as e:
+                    error_str = str(e)
+                    if '16500' in error_str or 'RetryAfterMs' in error_str:
+                        retries -= 1
+                        print(f"  ⏳ Rate limited, waiting 1s ({retries} retries left)")
+                        time.sleep(1.0)
+                    else:
+                        print(f"  ❌ Error inserting {item_type} batch: {e}")
+                        break
+            
+            time.sleep(0.2)
+        
+        print(f"✅ Inserted {inserted_count} {item_type} into database")
+        return inserted_count
     
     def clear_database(self) -> bool:
         """

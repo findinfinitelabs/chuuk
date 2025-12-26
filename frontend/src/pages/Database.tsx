@@ -4,6 +4,7 @@ import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconP
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
+import './Database.css'
 
 interface DictionaryEntry {
   _id?: string
@@ -11,12 +12,11 @@ interface DictionaryEntry {
   english_translation: string // Can be a word or phrase
   definition?: string
   examples?: string[]
-  word_type?: string
+  grammar?: string // noun, verb, adjective, etc.
+  type?: string // word, phrase, sentence, paragraph
   inflection_type?: string
   notes?: string
-  search_direction?: string
-  primary_language?: string
-  secondary_language?: string
+  search_direction?: string // chk_to_en or en_to_chk
 }
 
 interface DatabaseStats {
@@ -46,7 +46,8 @@ function Database() {
     chuukese_word: '',
     english_translation: '',
     definition: '',
-    word_type: '',
+    type: '',
+    grammar: '',
     examples: [] as string[],
     notes: ''
   })
@@ -118,47 +119,8 @@ function Database() {
       const response = await axios.get('/api/database/entries', { params })
       const data = response.data
       
-      // Only show sample data if no search term and database is truly empty
-      if (!data.entries || data.entries.length === 0) {
-        if (!searchTerm) {
-          // Show sample data only when browsing, not when searching
-          const sampleEntries: DictionaryEntry[] = [
-            {
-              _id: 'sample1',
-              chuukese_word: 'mwochen',
-              english_translation: 'good, well',
-              definition: 'An adjective meaning good, well, fine',
-              word_type: 'adjective',
-              examples: ['Mwochen an néni', 'Good morning'],
-            },
-            {
-              _id: 'sample2', 
-              chuukese_word: 'pwúpwú',
-              english_translation: 'book',
-              definition: 'A book, written material',
-              word_type: 'noun',
-              examples: ['Pwúpwú en skuul', 'School book'],
-            },
-            {
-              _id: 'sample3',
-              chuukese_word: 'wúnúmei',
-              english_translation: 'thank you',
-              definition: 'Expression of gratitude',
-              word_type: 'interjection',
-              examples: ['Wúnúmei non kewe', 'Thank you very much'],
-            }
-          ]
-          setEntries(sampleEntries)
-          setTotalPages(1)
-        } else {
-          // When searching and nothing found, show empty array
-          setEntries([])
-          setTotalPages(1)
-        }
-      } else {
-        setEntries(data.entries || [])
-        setTotalPages(Math.ceil((data.total || 0) / entriesPerPage))
-      }
+      setEntries(data.entries || [])
+      setTotalPages(Math.ceil((data.total || 0) / entriesPerPage))
     } catch (err) {
       setError('Failed to load database entries')
       console.error(err)
@@ -185,7 +147,8 @@ function Database() {
         chuukese_word: entry.chuukese_word,
         english_translation: entry.english_translation,
         definition: entry.definition || '',
-        word_type: entry.word_type || '',
+        type: entry.type || '',
+        grammar: entry.grammar || '',
         examples: entry.examples || [],
         notes: ''
       })
@@ -196,7 +159,8 @@ function Database() {
         chuukese_word: preFillWord || '',
         english_translation: '',
         definition: '',
-        word_type: '',
+        type: '',
+        grammar: '',
         examples: [],
         notes: ''
       })
@@ -354,7 +318,7 @@ function Database() {
               value={searchTerm}
               onChange={setSearchTerm}
               data={suggestions}
-              style={{ flex: 1 }}
+              className="search-input-wrapper"
               label="Search"
               error={searchTerm && !loading && entries.length === 0}
               limit={10}
@@ -371,7 +335,7 @@ function Database() {
           
           {/* Accent buttons */}
           <Group gap="xs">
-            <Text size="xs" color="dimmed" style={{ minWidth: 'fit-content' }}>
+            <Text size="xs" color="dimmed" className="accent-label">
               Accents:
             </Text>
             {accentChars.map((char) => (
@@ -380,7 +344,7 @@ function Database() {
                 size="xs"
                 variant="light"
                 onClick={() => insertAccent(char)}
-                style={{ minWidth: '28px', padding: '4px 8px' }}
+                className="accent-button"
               >
                 {char}
               </Button>
@@ -426,9 +390,8 @@ function Database() {
                   <Table.Tr>
                     <Table.Th>Chuukese</Table.Th>
                     <Table.Th>English Translation</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Direction</Table.Th>
-                    <Table.Th>Languages</Table.Th>
+                    <Table.Th>Grammar</Table.Th>
+                    <Table.Th>Search Dir</Table.Th>
                     <Table.Th>Definition</Table.Th>
                     <Table.Th>Examples</Table.Th>
                     <Table.Th>Actions</Table.Th>
@@ -437,7 +400,7 @@ function Database() {
                 <Table.Tbody>
                   {entries.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={8}>
+                      <Table.Td colSpan={7}>
                         {searchTerm ? (
                           <Group justify="center" gap="sm" p="md">
                             <Text size="sm" color="dimmed">
@@ -471,9 +434,9 @@ function Database() {
                           <Text>{highlightText(entry.english_translation, searchTerm)}</Text>
                         </Table.Td>
                         <Table.Td>
-                          {entry.word_type ? (
+                          {entry.grammar ? (
                             <Badge color="orange" variant="light" size="sm">
-                              {entry.word_type}
+                              {entry.grammar}
                             </Badge>
                           ) : (
                             <Text color="dimmed">—</Text>
@@ -482,17 +445,8 @@ function Database() {
                         <Table.Td>
                           {entry.search_direction ? (
                             <Badge color="violet" variant="light" size="sm">
-                              {entry.search_direction === 'chk_to_eng' ? 'Chk→Eng' : 'Eng→Chk'}
+                              {entry.search_direction === 'chk_to_eng' || entry.search_direction === 'chk_to_en' ? 'Chk→Eng' : 'Eng→Chk'}
                             </Badge>
-                          ) : (
-                            <Text color="dimmed" size="sm">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {entry.primary_language && entry.secondary_language ? (
-                            <Text size="xs" color="dimmed">
-                              {entry.primary_language} → {entry.secondary_language}
-                            </Text>
                           ) : (
                             <Text color="dimmed" size="sm">—</Text>
                           )}
@@ -593,24 +547,43 @@ function Database() {
           <Select
             label="Type"
             placeholder="Select type..."
-            value={formData.word_type}
-            onChange={(value) => setFormData({...formData, word_type: value || ''})}
+            value={formData.type}
+            onChange={(value) => setFormData({...formData, type: value || ''})}
+            data={[
+              'word',
+              'phrase',
+              'sentence',
+              'paragraph'
+            ]}
+            searchable
+            clearable
+            description="Entry type: word, phrase, sentence, or paragraph"
+          />
+          
+          <Select
+            label="Grammar"
+            placeholder="Select grammar type..."
+            value={formData.grammar}
+            onChange={(value) => setFormData({...formData, grammar: value || ''})}
             data={[
               'noun',
-              'verb', 
+              'verb',
+              'transitive verb',
+              'intransitive verb',
               'adjective',
               'adverb',
               'pronoun',
               'preposition',
               'conjunction',
               'interjection',
-              'phrase',
-              'idiom',
-              'expression'
+              'auxiliary',
+              'determiner',
+              'particle',
+              'article'
             ]}
             searchable
             clearable
-            description="For phrases, select 'phrase', 'idiom', or 'expression'"
+            description="Part of speech (noun, verb, adjective, etc.)"
           />
           
           <Textarea

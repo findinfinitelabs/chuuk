@@ -3,12 +3,19 @@ Flask application for Chuuk Dictionary OCR and Lookup
 """
 import os
 import re
+import time
+import json
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 # from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from markupsafe import Markup
+from pathlib import Path
+
+# Load environment variables from absolute path
+env_path = Path(__file__).parent / '.env'
+load_dotenv(env_path, override=True)
 
 from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
@@ -21,9 +28,6 @@ try:
 except ImportError as e:
     print(f"⚠️ Helsinki translator not available: {e}")
     HELSINKI_AVAILABLE = False
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 secret_key = os.getenv('FLASK_SECRET_KEY')
@@ -40,10 +44,12 @@ app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 # Enable CORS for React frontend
 # CORS(app, origins=["http://localhost:5173"])
 
-# Initialize services
-pub_manager = PublicationManager(app.config['UPLOAD_FOLDER'])
-ocr_processor = OCRProcessor(use_google_vision=bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS')))
+# Initialize database first
 dict_db = DictionaryDB()
+
+# Initialize services with db reference
+pub_manager = PublicationManager(app.config['UPLOAD_FOLDER'], db=dict_db)
+ocr_processor = OCRProcessor(use_google_vision=bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS')))
 jworg_lookup = JWOrgLookup(pub_manager)
 
 # Initialize Helsinki-NLP translator
@@ -111,16 +117,18 @@ def allowed_file(filename):
 # Removed conflicting index route - handled by serve_react below
 
 
-@app.route('/publication/new', methods=['GET', 'POST'])
-def new_publication():
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/publication/new', methods=['GET', 'POST'])
+# def new_publication():
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
-@app.route('/publication/<pub_id>')
-def view_publication(pub_id):
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/publication/<pub_id>')
+# def view_publication(pub_id):
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
 @app.route('/publication/<pub_id>/upload', methods=['POST'])
@@ -157,9 +165,12 @@ def upload_page(pub_id):
         file.save(file_path)
         
         # Process OCR if requested
-        process_ocr = request.form.get('process_ocr', 'false') == 'true'
+        process_ocr = request.form.get('ocr', request.form.get('process_ocr', 'false')) == 'true'
         index_dictionary = request.form.get('index_dictionary', 'false') == 'true'
         ocr_results = None
+        
+        print(f"📤 Upload: process_ocr={process_ocr}, index_dictionary={index_dictionary}")
+        print(f"📋 Form data: {dict(request.form)}")
         
         # Create processing session for logging
         import uuid
@@ -337,7 +348,62 @@ def upload_page(pub_id):
     return jsonify({'error': 'Invalid file type'}), 400
 
 
+@app.route('/api/processing/status/<session_id>', methods=['GET'])
+def get_processing_status(session_id):
+    """Get current processing status for a session"""
+    logs = processing_logger.get_logs(session_id)
+    if logs:
+        return jsonify(logs)
+    return jsonify({'error': 'Session not found'}), 404
+
+
+@app.route('/api/processing/stream/<session_id>')
+def stream_processing_status(session_id):
+    """Stream processing status updates via Server-Sent Events"""
+    def generate():
+        last_log_count = 0
+        max_wait = 120  # 2 minutes timeout
+        waited = 0
+        
+        while waited < max_wait:
+            logs = processing_logger.get_logs(session_id)
+            
+            if not logs:
+                yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+                break
+            
+            # Send update if there are new logs
+            current_log_count = len(logs.get('logs', []))
+            if current_log_count > last_log_count or waited == 0:
+                last_log_count = current_log_count
+                yield f"data: {json.dumps(logs)}\n\n"
+            
+            # Check if processing is complete
+            if logs.get('status') in ['completed', 'failed']:
+                yield f"data: {json.dumps(logs)}\n\n"
+                break
+            
+            time.sleep(0.5)
+            waited += 0.5
+        
+        # Send final status
+        final_logs = processing_logger.get_logs(session_id)
+        if final_logs:
+            yield f"data: {json.dumps(final_logs)}\n\n"
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+
 @app.route('/publication/<pub_id>/upload_csv', methods=['POST'])
+@app.route('/api/publications/<pub_id>/upload_csv', methods=['POST'])
 def upload_csv(pub_id):
     """Upload and process a CSV file into the dictionary database"""
     # Validate publication ID format (timestamp + UUID)
@@ -358,7 +424,7 @@ def upload_csv(pub_id):
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
-    if file and file.filename.lower().endswith('.csv'):
+    if file and file.filename.lower().endswith('.csv') or file.filename.lower().endswith('.tsv'):
         filename = secure_filename(file.filename)
         
         # Read CSV content
@@ -377,7 +443,12 @@ def upload_csv(pub_id):
         
         try:
             # Process CSV into database
+            import sys
+            sys.stdout.flush()
+            print(f"\n🔍 DEBUG: dict_db.client is {'available' if dict_db.client else 'None'}", flush=True)
+            print(f"🔍 DEBUG: About to call add_dictionary_from_csv with pub_id={pub_id}, filename={filename}", flush=True)
             page_id, entries_added = dict_db.add_dictionary_from_csv(pub_id, filename, csv_content)
+            print(f"🔍 DEBUG: Returned page_id={page_id}, entries_added={entries_added}\n", flush=True)
             
             if page_id:
                 processing_logger.log(session_id, f"✅ Successfully processed CSV: {entries_added} entries added")
@@ -408,6 +479,9 @@ def upload_csv(pub_id):
                 return jsonify({'error': 'Database not available for CSV processing'}), 500
                 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"❌ CSV UPLOAD ERROR: {error_details}")
             processing_logger.log(session_id, f"❌ CSV processing failed: {str(e)}", 'error')
             processing_logger.set_status(session_id, 'failed')
             return jsonify({'error': f'Error processing CSV: {str(e)}'}), 500
@@ -483,7 +557,9 @@ def reprocess_page():
         stats = dict_db.reprocess_page(pub_id, filename, page_number)
         
         if not stats.get('success'):
-            return jsonify(stats), 404
+            error_msg = stats.get('error', 'Unknown error')
+            print(f"Reprocess failed: {error_msg}")
+            return jsonify(stats), 400 if 'not found' in error_msg.lower() else 500
         
         # Build response message
         message_parts = []
@@ -508,10 +584,11 @@ def reprocess_page():
         }), 500
 
 
-@app.route('/translate', methods=['GET', 'POST'])
-def translate():
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/translate', methods=['GET', 'POST'])
+# def translate():
+#     """Redirect to React app"""
+#     return redirect('/')
 
 @app.route('/api/translate', methods=['POST'])
 def api_translate():
@@ -700,6 +777,10 @@ def api_translate_correction():
                         
                         if helsinki_success:
                             print("✅ Helsinki models fine-tuned successfully")
+                            # Reload the translator to use the new fine-tuned models
+                            if helsinki_translator:
+                                print("🔄 Reloading Helsinki translator with fine-tuned models...")
+                                helsinki_translator.reload_models()
                         else:
                             print("⚠️  Helsinki fine-tuning had issues, continuing...")
                     except Exception as e:
@@ -922,10 +1003,11 @@ def model_status():
         return jsonify({'error': f'Status check failed: {str(e)}'})
 
 
-@app.route('/lookup', methods=['GET', 'POST'])
-def lookup():
-    """Redirect to React app"""
-    return redirect('/')
+# Disabled - handled by React Router
+# @app.route('/lookup', methods=['GET', 'POST'])
+# def lookup():
+#     """Redirect to React app"""
+#     return redirect('/')
 
 
 @app.route('/api/lookup/<word>')
@@ -977,22 +1059,6 @@ def get_recent_logs(session_id):
     limit = request.args.get('limit', 20, type=int)
     logs = processing_logger.get_recent_logs(session_id, limit)
     return jsonify({'logs': logs})
-
-
-@app.route('/api/processing/status/<session_id>')
-def get_processing_status(session_id):
-    """Get current processing status"""
-    session_data = processing_logger.get_logs(session_id)
-    if session_data:
-        return jsonify({
-            'status': session_data.get('status', 'unknown'),
-            'current_page': session_data.get('current_page', 0),
-            'total_pages': session_data.get('total_pages', 1),
-            'stats': session_data.get('stats', {}),
-            'progress_percentage': round((session_data.get('current_page', 0) / session_data.get('total_pages', 1)) * 100, 1)
-        })
-    else:
-        return jsonify({'error': 'Session not found'}), 404
 
 
 @app.route('/database')
@@ -1092,9 +1158,13 @@ def api_lookup_get():
         if not word:
             return jsonify({'results': []})
         
-        results = dict_db.search_word(word, limit=10)
+        # Now uses denormalized data - only 1 query, includes related words!
+        results = dict_db.search_word(word, limit=10, include_related=True)
         return jsonify({'word': word, 'results': results})
     except Exception as e:
+        import traceback
+        print(f"❌ Error in lookup: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
@@ -1138,7 +1208,7 @@ def api_database_entries():
         
         if search:
             # Search with pagination
-            entries = list(dict_db.collection.find({
+            entries = list(dict_db.dictionary_collection.find({
                 '$or': [
                     {'chuukese_word': {'$regex': search, '$options': 'i'}},
                     {'english_translation': {'$regex': search, '$options': 'i'}},
@@ -1146,7 +1216,7 @@ def api_database_entries():
                 ]
             }).skip(skip).limit(limit))
             
-            total = dict_db.collection.count_documents({
+            total = dict_db.dictionary_collection.count_documents({
                 '$or': [
                     {'chuukese_word': {'$regex': search, '$options': 'i'}},
                     {'english_translation': {'$regex': search, '$options': 'i'}},
@@ -1155,8 +1225,8 @@ def api_database_entries():
             })
         else:
             # Get all entries with pagination
-            entries = list(dict_db.collection.find({}).skip(skip).limit(limit))
-            total = dict_db.collection.count_documents({})
+            entries = list(dict_db.dictionary_collection.find({}).skip(skip).limit(limit))
+            total = dict_db.dictionary_collection.count_documents({})
         
         # Convert ObjectId to string for JSON serialization
         for entry in entries:
@@ -1184,13 +1254,14 @@ def api_create_database_entry():
             'english_translation': data.get('english_translation'),
             'definition': data.get('definition', ''),
             'word_type': data.get('word_type', ''),
+            'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
             'source': 'User Input',
             'created_date': datetime.now()
         }
         
-        result = dict_db.collection.insert_one(entry)
+        result = dict_db.dictionary_collection.insert_one(entry)
         entry['_id'] = str(result.inserted_id)
         
         return jsonify({'message': 'Entry created successfully', 'entry': entry}), 201
@@ -1210,12 +1281,13 @@ def api_update_database_entry(entry_id):
             'english_translation': data.get('english_translation'),
             'definition': data.get('definition', ''),
             'word_type': data.get('word_type', ''),
+            'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
             'updated_date': datetime.now()
         }
         
-        result = dict_db.collection.update_one(
+        result = dict_db.dictionary_collection.update_one(
             {'_id': ObjectId(entry_id)},
             {'$set': update_data}
         )
@@ -1234,7 +1306,7 @@ def api_delete_database_entry(entry_id):
     try:
         from bson import ObjectId
         
-        result = dict_db.collection.delete_one({'_id': ObjectId(entry_id)})
+        result = dict_db.dictionary_collection.delete_one({'_id': ObjectId(entry_id)})
         
         if result.deleted_count > 0:
             return jsonify({'message': 'Entry deleted successfully'}), 200

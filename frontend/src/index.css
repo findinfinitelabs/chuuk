@@ -86,7 +86,7 @@ button {
   padding: 0 2px;
   border-radius: 2px;
 }
-}
+
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;

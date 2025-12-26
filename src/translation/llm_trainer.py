@@ -282,13 +282,15 @@ TEMPLATE """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
         if direction == "auto":
             # Simple heuristic: if contains English letters, translate to Chuukese
             if re.search(r'[a-zA-Z]', text) and not re.search(r'[àáâãäåæçèéêëìíîïñòóôõöùúûüý]', text):
-                prompt = f"Translate to Chuukese: {text}"
+                direction = "en_to_chk"
             else:
-                prompt = f"Translate to English: {text}"
-        elif direction == "chk_to_en":
-            prompt = f"Translate to English: {text}"
+                direction = "chk_to_en"
+        
+        # Build a clear, directive prompt for translation
+        if direction == "chk_to_en":
+            prompt = f"You are a Chuukese to English translator. Translate this Chuukese text to English. Only provide the English translation, nothing else.\n\nChuukese: {text}\nEnglish:"
         elif direction == "en_to_chk":
-            prompt = f"Translate to Chuukese: {text}"
+            prompt = f"You are an English to Chuukese translator. Translate this English text to Chuukese. Only provide the Chuukese translation, nothing else.\n\nEnglish: {text}\nChuukese:"
         else:
             prompt = text
         
@@ -299,8 +301,9 @@ TEMPLATE """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,
-                        "top_p": 0.9
+                        "temperature": 0.1,  # Lower temperature for more focused responses
+                        "top_p": 0.7,
+                        "stop": ["\n\n", "Chuukese:", "English:", "\n#", "\nNote:"]  # Stop at common conversational patterns
                     }
                 },
                 timeout=30
@@ -308,7 +311,23 @@ TEMPLATE """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
             
             if response.status_code == 200:
                 result = response.json()
-                return result.get('response', '').strip()
+                translation = result.get('response', '').strip()
+                
+                # Clean up any conversational artifacts
+                translation = translation.split('\n')[0].strip()  # Take only first line
+                
+                # Remove common prefixes that might sneak in
+                prefixes_to_remove = [
+                    'Translation:', 'translation:', 'TRANSLATION:',
+                    'The translation is:', 'It means:', 'This means:',
+                    'The English translation is:', 'The Chuukese translation is:',
+                    'Answer:', 'Result:', 'Output:'
+                ]
+                for prefix in prefixes_to_remove:
+                    if translation.lower().startswith(prefix.lower()):
+                        translation = translation[len(prefix):].strip()
+                
+                return translation
             else:
                 return f"Error: {response.status_code}"
                 

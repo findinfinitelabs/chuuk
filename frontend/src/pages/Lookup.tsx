@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Card, Title, Text, TextInput, Button, Group, Stack, Loader, Alert, List, Badge, Accordion } from '@mantine/core'
 import { IconSearch, IconAlertCircle } from '@tabler/icons-react'
 import axios from 'axios'
+import type { ReactElement } from 'react'
 
 interface DictionaryEntry {
   chuukese_word: string
@@ -20,6 +21,25 @@ function Lookup() {
   const [loading, setLoading] = useState(false)
   const [localResults, setLocalResults] = useState<DictionaryEntry[]>([])
   const [error, setError] = useState('')
+
+  const highlightText = (text: string, searchTerm: string): ReactElement => {
+    if (!searchTerm.trim()) return <>{text}</>
+    
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    const parts = text.split(regex)
+    
+    return (
+      <>
+        {parts.map((part, i) => 
+          regex.test(part) ? (
+            <span key={i} className="search-highlight">{part}</span>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </>
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,19 +97,31 @@ function Lookup() {
       {localResults.length > 0 && (
         <Card withBorder>
           <Title order={3} mb="md">Dictionary Database Results</Title>
-          <Stack gap="md">
+          <Stack gap="md" align="flex-start">
             {localResults.map((entry, index) => (
-              <Card key={index} withBorder>
-                <Group mb="xs">
-                  <Badge color="blue">CHK</Badge>
-                  <Text fw={500}>{entry.chuukese_word}</Text>
+              <Card key={index} withBorder style={{ width: '100%' }}>
+                <Group mb="xs" wrap="nowrap" align="flex-start">
+                  <Badge color="blue">Chuukese</Badge>
+                  <Text fw={500}>{highlightText(entry.chuukese_word, word)}</Text>
                 </Group>
-                <Group mb="xs">
-                  <Badge color="green">ENG</Badge>
-                  <Text>{entry.english_translation}</Text>
+                <Group mb="xs" wrap="nowrap" align="flex-start">
+                  <Badge color="green">English</Badge>
+                  <Text>{highlightText(entry.english_translation, word)}</Text>
                 </Group>
-                <Group mb="xs" gap="xs">
-                  {entry.word_type && <Badge color="orange">{entry.word_type}</Badge>}
+                {entry.word_type && (
+                  <Group mb="xs" wrap="nowrap" align="flex-start">
+                    <Badge color="orange">{entry.word_type}</Badge>
+                  </Group>
+                )}
+                {entry.definition && (
+                  <>
+                    <Group mb="xs" wrap="nowrap" align="flex-start">
+                      <Badge color="gray" variant="light">Word Breakdown</Badge>
+                      <Text size="sm" color="dimmed">{highlightText(entry.definition, word)}</Text>
+                    </Group>
+                  </>
+                )}
+                <Group gap="xs">
                   {entry.search_direction && (
                     <Badge color="violet" variant="light">
                       {entry.search_direction === 'chk_to_eng' ? 'Chk→Eng' : 'Eng→Chk'}
@@ -101,9 +133,6 @@ function Lookup() {
                     </Badge>
                   )}
                 </Group>
-                {entry.definition && (
-                  <Text size="sm" color="dimmed">{entry.definition}</Text>
-                )}
                 {entry.examples && entry.examples.length > 0 && (
                   <Accordion>
                     <Accordion.Item value="examples">

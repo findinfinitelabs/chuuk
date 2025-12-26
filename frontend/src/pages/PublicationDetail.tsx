@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Card, Title, Text, Button, Group, Stack, Grid, Badge, Loader, Alert, Select, Checkbox, Progress } from '@mantine/core'
-import { IconUpload, IconFileText, IconAlertCircle, IconEye, IconCheck } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Grid, Badge, Loader, Alert, Select, Checkbox, Progress, Modal, ScrollArea } from '@mantine/core'
+import { IconUpload, IconFileText, IconAlertCircle, IconEye, IconCheck, IconLoader } from '@tabler/icons-react'
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
@@ -28,6 +28,30 @@ interface UploadProgress {
   filename: string
   progress: number
   status: 'uploading' | 'processing' | 'complete' | 'error'
+  sessionId?: string
+}
+
+interface ProcessingLog {
+  timestamp: string
+  level: string
+  message: string
+  data?: Record<string, unknown>
+}
+
+interface ProcessingStatus {
+  filename: string
+  status: string
+  logs: ProcessingLog[]
+  stats: {
+    pages_processed: number
+    words_indexed: number
+    entries_created: number
+    ocr_method: string | null
+    errors: number
+    total_pages?: number
+  }
+  current_page: number
+  total_pages: number
 }
 
 function PublicationDetail() {
@@ -40,6 +64,12 @@ function PublicationDetail() {
   const [aiEnabled, setAiEnabled] = useState(true)
   const [aiLanguage, setAiLanguage] = useState('eng+chk')
   const [indexDictionary, setIndexDictionary] = useState(true)
+  
+  // Processing status modal
+  const [showProcessingModal, setShowProcessingModal] = useState(false)
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null)
+  const logScrollRef = useRef<HTMLDivElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     if (id) {
@@ -59,6 +89,77 @@ function PublicationDetail() {
       })
   }
 
+  // Connect to processing status stream
+  const connectToProcessingStream = (sessionId: string, filename: string) => {
+    // Close any existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+
+    setShowProcessingModal(true)
+    setProcessingStatus({
+      filename,
+      status: 'started',
+      logs: [],
+      stats: { pages_processed: 0, words_indexed: 0, entries_created: 0, ocr_method: null, errors: 0 },
+      current_page: 0,
+      total_pages: 1
+    })
+
+    const eventSource = new EventSource(`/api/processing/stream/${sessionId}`)
+    eventSourceRef.current = eventSource
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        
+        if (data.error) {
+          console.error('Processing error:', data.error)
+          eventSource.close()
+          return
+        }
+
+        setProcessingStatus({
+          filename: data.filename || filename,
+          status: data.status || 'processing',
+          logs: data.logs || [],
+          stats: data.stats || { pages_processed: 0, words_indexed: 0, entries_created: 0, ocr_method: null, errors: 0 },
+          current_page: data.current_page || 0,
+          total_pages: data.total_pages || 1
+        })
+
+        // Auto-scroll to bottom of logs
+        if (logScrollRef.current) {
+          logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight
+        }
+
+        // Close connection when complete
+        if (data.status === 'completed' || data.status === 'failed') {
+          setTimeout(() => {
+            eventSource.close()
+            loadPublication() // Refresh publication data
+          }, 1000)
+        }
+      } catch (e) {
+        console.error('Error parsing SSE data:', e)
+      }
+    }
+
+    eventSource.onerror = () => {
+      console.error('SSE connection error')
+      eventSource.close()
+    }
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+    }
+  }, [])
+
   const handleUpload = async (files: File[]) => {
     if (!id || files.length === 0) return
 
@@ -74,15 +175,22 @@ function PublicationDetail() {
       const file = files[i]
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('ocr', aiEnabled.toString())
-      formData.append('lang', aiLanguage)
-      formData.append('index_dictionary', indexDictionary.toString())
+      
+      // Check if this is a CSV file - use different endpoint
+      const isCSV = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.tsv')
+      
+      if (!isCSV) {
+        formData.append('ocr', aiEnabled.toString())
+        formData.append('lang', aiLanguage)
+        formData.append('index_dictionary', indexDictionary.toString())
+      }
 
       try {
         progressMap[i].status = 'uploading'
         setUploadProgress([...progressMap])
 
-        await axios.post(`/api/publications/${id}/upload`, formData, {
+        const endpoint = isCSV ? `/api/publications/${id}/upload_csv` : `/api/publications/${id}/upload`
+        const response = await axios.post(endpoint, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
           onUploadProgress: (progressEvent) => {
             const percentCompleted = progressEvent.total
@@ -93,21 +201,41 @@ function PublicationDetail() {
           }
         })
 
-        progressMap[i].status = 'complete'
-        progressMap[i].progress = 100
-        setUploadProgress([...progressMap])
+        // Check for session_id to show processing status
+        const sessionId = response.data?.session_id
+        if (sessionId && (aiEnabled || isCSV)) {
+          progressMap[i].status = 'processing'
+          progressMap[i].sessionId = sessionId
+          setUploadProgress([...progressMap])
+          
+          // Connect to processing stream to show real-time status
+          connectToProcessingStream(sessionId, file.name)
+        } else {
+          progressMap[i].status = 'complete'
+          progressMap[i].progress = 100
+          setUploadProgress([...progressMap])
+        }
 
         notifications.show({
           title: 'Success',
           message: `${file.name} uploaded successfully`,
           color: 'green'
         })
-      } catch (err) {
+      } catch (err: any) {
         progressMap[i].status = 'error'
         setUploadProgress([...progressMap])
+        
+        // Extract error message from response
+        const errorMessage = err.response?.data?.error || err.message || 'Unknown error'
+        console.error('Upload error details:', {
+          status: err.response?.status,
+          error: errorMessage,
+          fullResponse: err.response?.data
+        })
+        
         notifications.show({
           title: 'Upload Failed',
-          message: `Failed to upload ${file.name}`,
+          message: `${file.name}: ${errorMessage}`,
           color: 'red'
         })
       }
@@ -282,7 +410,7 @@ function PublicationDetail() {
 
         <Dropzone
           onDrop={handleUpload}
-          accept={[MIME_TYPES.png, MIME_TYPES.jpeg, MIME_TYPES.pdf, MIME_TYPES.docx, 'image/*']}
+          accept={[MIME_TYPES.png, MIME_TYPES.jpeg, MIME_TYPES.pdf, MIME_TYPES.docx, MIME_TYPES.csv, 'image/*', 'text/csv', 'text/tab-separated-values']}
           loading={uploading}
           multiple
         >
@@ -299,10 +427,10 @@ function PublicationDetail() {
 
             <div>
               <Text size="xl" inline>
-                Drag images here or click to select files
+                Drag images or CSV files here or click to select files
               </Text>
               <Text size="sm" color="dimmed" inline mt={7}>
-                Attach as many files as you like (PNG, JPG, PDF, DOCX supported)
+                Attach as many files as you like (PNG, JPG, PDF, DOCX, CSV, TSV supported)
               </Text>
             </div>
           </Group>
@@ -414,6 +542,122 @@ function PublicationDetail() {
           </Grid>
         )}
       </Card>
+
+      {/* Processing Status Modal */}
+      <Modal
+        opened={showProcessingModal}
+        onClose={() => setShowProcessingModal(false)}
+        title={
+          <Group>
+            {processingStatus?.status === 'completed' ? (
+              <IconCheck size={20} color="green" />
+            ) : processingStatus?.status === 'failed' ? (
+              <IconAlertCircle size={20} color="red" />
+            ) : (
+              <IconLoader size={20} className="spinning-icon" />
+            )}
+            <Text fw={600}>Processing: {processingStatus?.filename}</Text>
+          </Group>
+        }
+        size="lg"
+      >
+        <Stack gap="md">
+          {/* Status Badge */}
+          <Group>
+            <Badge 
+              color={
+                processingStatus?.status === 'completed' ? 'green' : 
+                processingStatus?.status === 'failed' ? 'red' : 
+                'blue'
+              }
+              size="lg"
+            >
+              {processingStatus?.status?.toUpperCase() || 'PROCESSING'}
+            </Badge>
+            {processingStatus?.stats?.ocr_method && (
+              <Badge variant="outline" color="gray">
+                {processingStatus.stats.ocr_method}
+              </Badge>
+            )}
+          </Group>
+
+          {/* Progress Bar */}
+          {processingStatus && processingStatus.total_pages > 0 && (
+            <div>
+              <Group justify="space-between" mb={4}>
+                <Text size="sm">Page Progress</Text>
+                <Text size="sm" color="dimmed">
+                  {processingStatus.current_page} / {processingStatus.total_pages}
+                </Text>
+              </Group>
+              <Progress 
+                value={(processingStatus.current_page / processingStatus.total_pages) * 100} 
+                color="blue" 
+                size="lg"
+                animated={processingStatus.status !== 'completed' && processingStatus.status !== 'failed'}
+              />
+            </div>
+          )}
+
+          {/* Stats */}
+          {processingStatus?.stats && (
+            <Group gap="lg">
+              <div>
+                <Text size="xs" color="dimmed">Pages Processed</Text>
+                <Text size="lg" fw={600}>{processingStatus.stats.pages_processed}</Text>
+              </div>
+              <div>
+                <Text size="xs" color="dimmed">Words Indexed</Text>
+                <Text size="lg" fw={600}>{processingStatus.stats.words_indexed}</Text>
+              </div>
+              <div>
+                <Text size="xs" color="dimmed">Entries Created</Text>
+                <Text size="lg" fw={600} c="green">{processingStatus.stats.entries_created}</Text>
+              </div>
+              {processingStatus.stats.errors > 0 && (
+                <div>
+                  <Text size="xs" color="dimmed">Errors</Text>
+                  <Text size="lg" fw={600} c="red">{processingStatus.stats.errors}</Text>
+                </div>
+              )}
+            </Group>
+          )}
+
+          {/* Log Output */}
+          <div>
+            <Text size="sm" fw={500} mb="xs">Processing Log</Text>
+            <ScrollArea h={250} viewportRef={logScrollRef} style={{ backgroundColor: '#1e1e1e', borderRadius: 8 }}>
+              <Stack gap={2} p="sm">
+                {processingStatus?.logs?.map((log, idx) => (
+                  <Group key={idx} gap="xs" wrap="nowrap" align="flex-start">
+                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </Text>
+                    <Text 
+                      size="xs" 
+                      c={log.level === 'error' ? 'red' : log.level === 'warning' ? 'yellow' : 'gray.4'}
+                      style={{ fontFamily: 'monospace' }}
+                    >
+                      {log.message}
+                    </Text>
+                  </Group>
+                )) || (
+                  <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                    Waiting for processing to start...
+                  </Text>
+                )}
+              </Stack>
+            </ScrollArea>
+          </div>
+
+          {/* Close Button */}
+          {(processingStatus?.status === 'completed' || processingStatus?.status === 'failed') && (
+            <Button onClick={() => setShowProcessingModal(false)} fullWidth>
+              Close
+            </Button>
+          )}
+        </Stack>
+      </Modal>
     </Stack>
   )
 }

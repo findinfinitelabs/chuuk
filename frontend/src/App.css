@@ -1,6 +1,37 @@
 /* Chuuk Language Learner - Standardized Styles with Bootswatch Litera */
 
 /* ============================================
+   APP SHELL STYLES
+   ============================================ */
+.app-header {
+  background-color: var(--mantine-color-violet-9);
+  color: white;
+}
+
+.app-navbar {
+  background-color: var(--mantine-color-gray-0);
+}
+
+.nav-link {
+  font-weight: 500;
+}
+
+.app-title {
+  font-size: 1.625rem;
+  font-weight: 900;
+  color: white;
+}
+
+.header-subtitle {
+  font-weight: 600;
+  color: white;
+}
+
+.nav-title {
+  color: var(--mantine-color-ocean-7);
+}
+
+/* ============================================
    COMPONENT STANDARDIZATION GUIDE
    ============================================
    
@@ -187,4 +218,55 @@
     page-break-inside: avoid;
     margin-bottom: 1rem;
   }
+}
+
+/* ============================================
+   PROCESSING STATUS MODAL
+   ============================================ */
+.spinning-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.processing-log-container {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.processing-log-entry {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.processing-log-timestamp {
+  color: #888;
+  white-space: nowrap;
+}
+
+.processing-log-message {
+  color: #d4d4d4;
+}
+
+.processing-log-message.error {
+  color: #f87171;
+}
+
+.processing-log-message.warning {
+  color: #fbbf24;
+}
+
+.processing-log-message.success {
+  color: #4ade80;
 }

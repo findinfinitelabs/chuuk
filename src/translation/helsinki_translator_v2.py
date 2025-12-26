@@ -68,6 +68,11 @@ class HelsinkiChuukeseTranslator:
                  reverse_model: str = "Helsinki-NLP/opus-mt-en-mul"):
         self.base_model = base_model
         self.reverse_model = reverse_model
+        
+        # Local fine-tuned model paths
+        self.local_chk_to_en = "models/helsinki-chuukese_chuukese_to_english/finetuned"
+        self.local_en_to_chk = "models/helsinki-chuukese_english_to_chuukese/finetuned"
+        
         self.tokenizer = None
         self.model = None
         self.reverse_tokenizer = None
@@ -77,22 +82,31 @@ class HelsinkiChuukeseTranslator:
         self.training_data = []
         self.db = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.using_finetuned = {"chk_to_en": False, "en_to_chk": False}
         logger.info(f"🔧 Using device: {self.device}")
         
     def setup_models(self) -> bool:
-        """Initialize Helsinki-NLP OPUS models for translation"""
+        """Initialize Helsinki-NLP OPUS models for translation, preferring fine-tuned if available"""
         try:
             logger.info("🚀 Loading Helsinki-NLP OPUS models...")
             
-            # Forward direction: Multilingual to English
-            logger.info(f"📥 Loading {self.base_model}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.base_model)
+            # Forward direction: Chuukese to English
+            # Check for fine-tuned model first
+            if os.path.exists(self.local_chk_to_en) and os.path.exists(os.path.join(self.local_chk_to_en, "config.json")):
+                model_path = self.local_chk_to_en
+                self.using_finetuned["chk_to_en"] = True
+                logger.info(f"📥 Loading FINE-TUNED model from {model_path}...")
+            else:
+                model_path = self.base_model
+                logger.info(f"📥 Loading base model {model_path}...")
+                
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
                 
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                self.base_model,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+                model_path,
+                dtype=torch.float16 if self.device == "cuda" else torch.float32
             ).to(self.device)
             
             # Create translation pipeline
@@ -103,15 +117,23 @@ class HelsinkiChuukeseTranslator:
                 device=0 if self.device == "cuda" else -1
             )
             
-            # Reverse direction: English to Multilingual  
-            logger.info(f"📥 Loading {self.reverse_model}...")
-            self.reverse_tokenizer = AutoTokenizer.from_pretrained(self.reverse_model)
+            # Reverse direction: English to Chuukese
+            # Check for fine-tuned model first
+            if os.path.exists(self.local_en_to_chk) and os.path.exists(os.path.join(self.local_en_to_chk, "config.json")):
+                reverse_model_path = self.local_en_to_chk
+                self.using_finetuned["en_to_chk"] = True
+                logger.info(f"📥 Loading FINE-TUNED reverse model from {reverse_model_path}...")
+            else:
+                reverse_model_path = self.reverse_model
+                logger.info(f"📥 Loading base reverse model {reverse_model_path}...")
+                
+            self.reverse_tokenizer = AutoTokenizer.from_pretrained(reverse_model_path)
             if self.reverse_tokenizer.pad_token is None:
                 self.reverse_tokenizer.pad_token = self.reverse_tokenizer.eos_token
                 
             self.reverse_model_obj = AutoModelForSeq2SeqLM.from_pretrained(
-                self.reverse_model,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+                reverse_model_path,
+                dtype=torch.float16 if self.device == "cuda" else torch.float32
             ).to(self.device)
             
             self.reverse_translator_pipeline = pipeline(
@@ -121,13 +143,37 @@ class HelsinkiChuukeseTranslator:
                 device=0 if self.device == "cuda" else -1
             )
             
-            logger.info("✅ Helsinki-NLP OPUS models loaded successfully!")
+            if self.using_finetuned["chk_to_en"] or self.using_finetuned["en_to_chk"]:
+                logger.info(f"✅ Helsinki-NLP models loaded (fine-tuned: chk→en={self.using_finetuned['chk_to_en']}, en→chk={self.using_finetuned['en_to_chk']})")
+            else:
+                logger.info("✅ Helsinki-NLP OPUS models loaded successfully!")
             return True
             
         except Exception as e:
             logger.error(f"❌ Failed to load Helsinki models: {e}")
             return False
     
+    def reload_models(self) -> bool:
+        """Reload models, picking up any newly fine-tuned versions"""
+        logger.info("🔄 Reloading Helsinki-NLP models...")
+        
+        # Clear existing models from memory
+        if self.device == "cuda":
+            import gc
+            if self.model is not None:
+                del self.model
+            if self.reverse_model_obj is not None:
+                del self.reverse_model_obj
+            self.model = None
+            self.reverse_model_obj = None
+            self.translator_pipeline = None
+            self.reverse_translator_pipeline = None
+            gc.collect()
+            torch.cuda.empty_cache()
+        
+        # Reload models (will pick up fine-tuned if available)
+        return self.setup_models()
+
     def translate_chuukese_to_english(self, chuukese_text: str) -> str:
         """
         Translate Chuukese text to English using Helsinki-NLP model
@@ -186,6 +232,12 @@ class HelsinkiChuukeseTranslator:
         """Load Chuukese dictionary data from MongoDB for training"""
         try:
             self.db = DictionaryDB()
+            
+            # Check if database connection is available
+            if not self.db.client:
+                logger.warning("⚠️ Database not available, skipping dictionary data loading")
+                return 0
+                
             logger.info("🔍 Loading dictionary data from MongoDB...")
             
             # Get all dictionary entries

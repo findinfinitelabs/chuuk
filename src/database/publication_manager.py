@@ -10,14 +10,18 @@ from typing import List, Dict, Optional
 class PublicationManager:
     """Manages dictionary publications and their OCR results"""
     
-    def __init__(self, storage_dir: str = 'uploads'):
+    def __init__(self, storage_dir: str = 'uploads', db=None):
         """
         Initialize publication manager
         
         Args:
             storage_dir: Directory to store publications and metadata
+            db: Optional DictionaryDB instance for syncing with database pages
         """
         self.storage_dir = storage_dir
+        self.metadata_file = os.path.join(storage_dir, 'publications.json')
+        self.publications = self._load_metadata()
+        self.db = db
         self.metadata_file = os.path.join(storage_dir, 'publications.json')
         
         # Create storage directory if it doesn't exist
@@ -115,8 +119,23 @@ class PublicationManager:
         return self.publications.get(pub_id)
     
     def list_publications(self) -> List[Dict]:
-        """List all publications"""
-        return list(self.publications.values())
+        """List all publications with page counts from database"""
+        pubs = list(self.publications.values())
+        
+        # Add page counts from database if db connection available
+        if self.db and self.db.client:
+            for pub in pubs:
+                pub_id = pub.get('id')
+                if pub_id:
+                    # Count pages from database
+                    page_count = self.db.pages_collection.count_documents({'publication_id': pub_id})
+                    pub['page_count'] = page_count
+        else:
+            # Fallback to JSON metadata
+            for pub in pubs:
+                pub['page_count'] = len(pub.get('pages', []))
+        
+        return pubs
     
     def clear_publications(self) -> bool:
         """

@@ -1,5 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
-import { AppShell, NavLink, Title, Group, createTheme, MantineProvider } from '@mantine/core'
+import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
+import { AppShell, NavLink, Title, Group, MantineProvider } from '@mantine/core'
 import { Notifications } from '@mantine/notifications'
 import { IconHome, IconSearch, IconBooks, IconPlus, IconDatabase, IconLanguage } from '@tabler/icons-react'
 import Home from './pages/Home'
@@ -9,59 +9,12 @@ import NewPublication from './pages/NewPublication'
 import PublicationDetail from './pages/PublicationDetail'
 import Database from './pages/Database'
 import Translate from './pages/Translate'
+import { chuukTheme } from './theme'
 import './App.css'
 
-// Modern violet theme with improved typography (#4F23C0)
-const chuukTheme = createTheme({
-  primaryColor: 'violet',
-  colors: {
-    violet: [
-      '#f3edff',
-      '#e0d7fa',
-      '#beabf0',
-      '#9a7de6',
-      '#7c55de',
-      '#693cd9',
-      '#5f30d8',
-      '#4f23c0',
-      '#461eac',
-      '#3b1898'
-    ],
-    ocean: [
-      '#e6f6ff',
-      '#b3e5ff',
-      '#80d4ff',
-      '#4dc3ff',
-      '#1ab2ff',
-      '#00a1ff',
-      '#0090e6',
-      '#0080cc',
-      '#006fb3',
-      '#005e99'
-    ],
-  },
-  primaryShade: { light: 6, dark: 8 },
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Sans Emoji"',
-  fontFamilyMonospace: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  headings: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    fontWeight: '700',
-    sizes: {
-      h1: { fontSize: '2.125rem', lineHeight: '1.3', fontWeight: '700' },
-      h2: { fontSize: '1.625rem', lineHeight: '1.35', fontWeight: '700' },
-      h3: { fontSize: '1.375rem', lineHeight: '1.4', fontWeight: '600' },
-      h4: { fontSize: '1.125rem', lineHeight: '1.45', fontWeight: '600' },
-      h5: { fontSize: '1rem', lineHeight: '1.5', fontWeight: '600' },
-      h6: { fontSize: '0.875rem', lineHeight: '1.5', fontWeight: '600' },
-    },
-  },
-  defaultRadius: 'md',
-  cursorType: 'pointer',
-  autoContrast: true,
-  luminanceThreshold: 0.3,
-})
-
 function App() {
+  const location = useLocation()
+  
   return (
     <MantineProvider theme={chuukTheme}>
       <Notifications />
@@ -74,69 +27,70 @@ function App() {
         header={{
           height: 70,
         }}
-        styles={{
-          header: {
-            backgroundColor: 'var(--mantine-color-violet-9)',
-            color: 'white'
-          },
-          navbar: {
-            backgroundColor: 'var(--mantine-color-gray-0)'
-          }
+        classNames={{
+          header: 'app-header',
+          navbar: 'app-navbar'
         }}
       >
         <AppShell.Navbar p="md">
           <AppShell.Section grow>
-            <Title order={4} mb="md" c="ocean.7">Navigation</Title>
+            <Title order={4} mb="md" className="nav-title">Navigation</Title>
             <NavLink 
               label="Home" 
               leftSection={<IconHome size="1.2rem" />} 
-              component="a" 
-              href="/"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/"
+              active={location.pathname === '/'}
+              className="nav-link"
             />
             <NavLink 
               label="Word Lookup" 
               leftSection={<IconSearch size="1.2rem" />} 
-              component="a" 
-              href="/lookup"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/lookup"
+              active={location.pathname === '/lookup'}
+              className="nav-link"
             />
             <NavLink 
               label="AI Translation" 
               leftSection={<IconLanguage size="1.2rem" />} 
-              component="a" 
-              href="/translate"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/translate"
+              active={location.pathname === '/translate'}
+              className="nav-link"
             />
             <NavLink 
               label="Database" 
               leftSection={<IconDatabase size="1.2rem" />} 
-              component="a" 
-              href="/database"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/database"
+              active={location.pathname === '/database'}
+              className="nav-link"
             />
             <NavLink 
               label="Publications" 
               leftSection={<IconBooks size="1.2rem" />} 
-              component="a" 
-              href="/publications"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/publications"
+              active={location.pathname === '/publications'}
+              className="nav-link"
             />
             <NavLink 
               label="New Publication" 
               leftSection={<IconPlus size="1.2rem" />} 
-              component="a" 
-              href="/publications/new"
-              styles={{ label: { fontWeight: 500 } }}
+              component={Link}
+              to="/publications/new"
+              active={location.pathname === '/publications/new'}
+              className="nav-link"
             />
           </AppShell.Section>
         </AppShell.Navbar>
 
         <AppShell.Header p="md">
           <Group justify="space-between" h="100%">
-            <Title order={1} size="h2" fw={900} c="white">🏝️ Chuuk AI Language Dictionary</Title>
+            <Title order={1} className="app-title">🏝️ Chuuk Dictionary AI Copilot</Title>
             <Group gap="sm">
-              <Title order={6} fw={600} c="white" className="header-subtitle">
+              <Title order={6} className="header-subtitle">
                 Chuukese Language Tools
               </Title>
             </Group>
@@ -152,6 +106,7 @@ function App() {
             <Route path="/publications" element={<Publications />} />
             <Route path="/publications/new" element={<NewPublication />} />
             <Route path="/publications/:id" element={<PublicationDetail />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AppShell.Main>
       </AppShell>
