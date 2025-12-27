@@ -15,6 +15,7 @@ ollama==0.1.7
 # Database support - Cosmos DB with MongoDB API
 pymongo==4.3.3  # Pinned for Cosmos DB wire protocol compatibility (version 6)
 azure-cosmos>=4.3.0
+azure-identity>=1.15.0  # For managed identity authentication
 
 # Helsinki-NLP and machine learning packages
 torch>=2.0.0

@@ -1613,6 +1613,74 @@ def serve_assets(path):
     """Serve React app static assets"""
     return send_from_directory('frontend/dist/assets', path)
 
+# AI scraping protection - robots.txt
+@app.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt to block AI crawlers and scrapers"""
+    robots_content = """# Block AI training crawlers and scrapers
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Omgilibot
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: Diffbot
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: YouBot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Cohere-AI
+Disallow: /
+
+# Allow regular search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: *
+Allow: /
+
+# Sitemap (optional)
+# Sitemap: https://chuuk.findinfinite.com/sitemap.xml
+"""
+    return Response(robots_content, mimetype='text/plain')
+
 # React app routes - handle all non-API routes
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
