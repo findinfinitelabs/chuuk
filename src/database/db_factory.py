@@ -23,6 +23,13 @@ def get_cosmos_client():
     """Get Cosmos DB client using MongoDB API"""
     try:
         from pymongo import MongoClient
+        import urllib.parse
+        
+        # Check for direct MongoDB connection string first
+        mongo_connection_string = os.getenv('COSMOS_MONGO_CONNECTION_STRING')
+        if mongo_connection_string:
+            print(f"✅ Using direct MongoDB connection string")
+            return MongoClient(mongo_connection_string, serverSelectionTimeoutMS=30000)
         
         # Get Azure Cosmos DB details
         endpoint = os.getenv('COSMOS_DB_URI', 'https://localhost:8081')
@@ -37,9 +44,11 @@ def get_cosmos_client():
         if key and ('chuuk-dictionary-cosmos' in endpoint or 'cosmos.azure.com' in endpoint):
             # Azure Cosmos DB MongoDB connection string
             account_name = 'chuuk-dictionary-cosmos'
-            connection_string = f"mongodb://{account_name}:{key}@{account_name}.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&maxIdleTimeMS=120000&appName=@{account_name}@&retryWrites=false"
+            # URL-encode the key to handle special characters
+            encoded_key = urllib.parse.quote_plus(key)
+            connection_string = f"mongodb://{account_name}:{encoded_key}@{account_name}.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&maxIdleTimeMS=120000&appName=@{account_name}@&retryWrites=false"
             print(f"✅ Connecting to Azure Cosmos DB: {account_name}.mongo.cosmos.azure.com")
-            return MongoClient(connection_string, serverSelectionTimeoutMS=10000)
+            return MongoClient(connection_string, serverSelectionTimeoutMS=30000)
         else:
             # Fallback to local MongoDB
             print("❌ Connecting to local MongoDB (Cosmos DB credentials not found)")

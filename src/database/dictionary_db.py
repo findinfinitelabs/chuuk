@@ -46,12 +46,14 @@ class DictionaryDB:
             if self.db_type == 'cosmos':
                 # Test Cosmos DB connection with MongoDB API
                 try:
-                    # Test connection
-                    self.client.admin.command('ismaster')
-                    print("Connected to Azure Cosmos DB with MongoDB API successfully")
+                    # Test connection - use list_database_names() which works with Cosmos DB
+                    db_names = self.client.list_database_names()
+                    print(f"Connected to Azure Cosmos DB with MongoDB API successfully. Databases: {db_names}")
                     self._create_indexes()
                 except Exception as e:
                     print(f"Azure Cosmos DB connection failed: {e}")
+                    import traceback
+                    traceback.print_exc()
                     self.client = None
             else:
                 # MongoDB connection (fallback)
@@ -91,45 +93,25 @@ class DictionaryDB:
             self.words_collection.create_index([('chuukese', ASCENDING)])
             self.words_collection.create_index([('english_translation', ASCENDING)])
             self.words_collection.create_index([('grammar', ASCENDING)])
+            self.words_collection.create_index([('date_added', ASCENDING)])
             
-            # Create indexes for phrases collection
+            # Create indexes for phrases collection (no text indexes for Cosmos DB)
             self.phrases_collection.create_index([('chuukese', ASCENDING)])
             self.phrases_collection.create_index([('english', ASCENDING)])
+            self.phrases_collection.create_index([('chuukese_phrase', ASCENDING)])
+            self.phrases_collection.create_index([('english_translation', ASCENDING)])
+            self.phrases_collection.create_index([('source', ASCENDING)])
+            self.phrases_collection.create_index([('date_added', ASCENDING)])
+            
+            # Create indexes for paragraphs collection (no text indexes for Cosmos DB)
+            self.paragraphs_collection.create_index([('chuukese_paragraph', ASCENDING)])
+            self.paragraphs_collection.create_index([('english_paragraph', ASCENDING)])
+            self.paragraphs_collection.create_index([('source', ASCENDING)])
+            self.paragraphs_collection.create_index([('date_added', ASCENDING)])
             
             print("✓ Created indexes for Cosmos DB")
         except Exception as e:
-            print(f"Error creating indexes: {str(e)}")
-            self.words_collection.create_index([('chuukese', 1)])
-            self.words_collection.create_index([('english_translation', 1)])
-            self.words_collection.create_index([('grammar', 1)])
-            self.words_collection.create_index([('date_added', -1)])
-            
-            # Create indexes for phrases collection with full text search
-            self.phrases_collection.create_index([
-                ('chuukese_phrase', 'text'),
-                ('english_translation', 'text'),
-                ('source', 'text')
-            ])
-            self.phrases_collection.create_index([('chuukese_phrase', 1)])
-            self.phrases_collection.create_index([('english_translation', 1)])
-            self.phrases_collection.create_index([('source', 1)])
-            self.phrases_collection.create_index([('date_added', -1)])
-            
-            # Create indexes for paragraphs collection with full text search
-            self.paragraphs_collection.create_index([
-                ('chuukese_paragraph', 'text'),
-                ('english_paragraph', 'text'),
-                ('source', 'text')
-            ])
-            self.paragraphs_collection.create_index([('chuukese_paragraph', 1)])
-            self.paragraphs_collection.create_index([('english_paragraph', 1)])
-            self.paragraphs_collection.create_index([('source', 1)])
-            self.paragraphs_collection.create_index([('date_added', -1)])
-            
-            print("Database indexes created successfully for all collections")
-            
-        except Exception as e:
-            print(f"Error creating indexes: {e}")
+            print(f"Error creating indexes (may already exist): {str(e)}")
 
     @property
     def collection(self):
