@@ -17,6 +17,9 @@ interface DictionaryEntry {
   inflection_type?: string
   notes?: string
   search_direction?: string // chk_to_en or en_to_chk
+  scripture?: string // Scripture reference like "Genesis 1:1"
+  chuukese_scripture?: string // Fetched Chuukese scripture text
+  english_scripture?: string // Fetched English scripture text
 }
 
 interface DatabaseStats {
@@ -38,6 +41,8 @@ function Database() {
   const [editingEntry, setEditingEntry] = useState<DictionaryEntry | null>(null)
   const [isNewEntry, setIsNewEntry] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [scriptureModalOpened, { open: openScriptureModal, close: closeScriptureModal }] = useDisclosure(false)
+  const [selectedScripture, setSelectedScripture] = useState<DictionaryEntry | null>(null)
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -49,7 +54,8 @@ function Database() {
     type: '',
     grammar: '',
     examples: [] as string[],
-    notes: ''
+    notes: '',
+    scripture: ''
   })
 
   useEffect(() => {
@@ -150,7 +156,8 @@ function Database() {
         type: entry.type || '',
         grammar: entry.grammar || '',
         examples: entry.examples || [],
-        notes: ''
+        notes: '',
+        scripture: entry.scripture || ''
       })
       setIsNewEntry(false)
     } else {
@@ -162,7 +169,8 @@ function Database() {
         type: '',
         grammar: '',
         examples: [],
-        notes: ''
+        notes: '',
+        scripture: ''
       })
       setIsNewEntry(true)
     }
@@ -390,7 +398,9 @@ function Database() {
                   <Table.Tr>
                     <Table.Th>Chuukese</Table.Th>
                     <Table.Th>English Translation</Table.Th>
+                    <Table.Th>Type</Table.Th>
                     <Table.Th>Grammar</Table.Th>
+                    <Table.Th>Scripture</Table.Th>
                     <Table.Th>Search Dir</Table.Th>
                     <Table.Th>Definition</Table.Th>
                     <Table.Th>Examples</Table.Th>
@@ -400,7 +410,7 @@ function Database() {
                 <Table.Tbody>
                   {entries.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={7}>
+                      <Table.Td colSpan={9}>
                         {searchTerm ? (
                           <Group justify="center" gap="sm" p="md">
                             <Text size="sm" color="dimmed">
@@ -434,10 +444,36 @@ function Database() {
                           <Text>{highlightText(entry.english_translation, searchTerm)}</Text>
                         </Table.Td>
                         <Table.Td>
+                          {entry.type ? (
+                            <Badge color="blue" variant="light" size="sm">
+                              {entry.type}
+                            </Badge>
+                          ) : (
+                            <Text color="dimmed">—</Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
                           {entry.grammar ? (
                             <Badge color="orange" variant="light" size="sm">
                               {entry.grammar}
                             </Badge>
+                          ) : (
+                            <Text color="dimmed">—</Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          {entry.scripture ? (
+                            <Button
+                              size="xs"
+                              variant="subtle"
+                              color="blue"
+                              onClick={() => {
+                                setSelectedScripture(entry)
+                                openScriptureModal()
+                              }}
+                            >
+                              {entry.scripture}
+                            </Button>
                           ) : (
                             <Text color="dimmed">—</Text>
                           )}
@@ -553,11 +589,12 @@ function Database() {
               'word',
               'phrase',
               'sentence',
-              'paragraph'
+              'paragraph',
+              'scripture'
             ]}
             searchable
             clearable
-            description="Entry type: word, phrase, sentence, or paragraph"
+            description="Entry type: word, phrase, sentence, paragraph, or scripture"
           />
           
           <Select
@@ -595,6 +632,15 @@ function Database() {
               examples: e.target.value.split('\n').filter(ex => ex.trim())
             })}
             rows={3}
+            description="Enter examples, one per line"
+          />
+          
+          <TextInput
+            label="Scripture Reference"
+            placeholder="e.g., Matthew 24:14, Genesis 1:1"
+            value={formData.scripture}
+            onChange={(e) => setFormData({...formData, scripture: e.target.value})}
+            description="Enter scripture reference to auto-fill Chuukese and English fields"
           />
           
           <Group justify="flex-end" mt="md">
@@ -603,6 +649,36 @@ function Database() {
             </Button>
             <Button onClick={saveEntry}>
               {isNewEntry ? 'Create Entry' : 'Save Changes'}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Scripture Display Modal */}
+      <Modal
+        opened={scriptureModalOpened}
+        onClose={closeScriptureModal}
+        title={selectedScripture?.scripture || 'Scripture'}
+        size="lg"
+      >
+        <Stack gap="md">
+          <div>
+            <Text size="sm" fw={600} c="dimmed" mb="xs">Chuukese</Text>
+            <Text className="chuukese-text-style">
+              {selectedScripture?.chuukese_word || '—'}
+            </Text>
+          </div>
+          
+          <div>
+            <Text size="sm" fw={600} c="dimmed" mb="xs">English</Text>
+            <Text>
+              {selectedScripture?.english_translation || '—'}
+            </Text>
+          </div>
+          
+          <Group justify="flex-end" mt="md">
+            <Button variant="outline" onClick={closeScriptureModal}>
+              Close
             </Button>
           </Group>
         </Stack>

@@ -21,7 +21,7 @@ FLASK_PORT=5002
 REACT_PORT=5173
 PROJECT_DIR="$(pwd)"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
-VENV_DIR="$PROJECT_DIR/.venv"
+VENV_DIR="$PROJECT_DIR/venv"
 
 # Database type - using Cosmos DB only
 DB_TYPE="cosmos"
