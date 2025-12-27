@@ -12,16 +12,41 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from markupsafe import Markup
 from pathlib import Path
+import ebooklib
+from ebooklib import epub
+from nwt_epub_parser import NWTEpubParser
 
 # Load environment variables from absolute path
 env_path = Path(__file__).parent / '.env'
 load_dotenv(env_path, override=True)
+
+# Initialize NWT EPUB parsers (lazy load)
+_nwt_english_parser = None
+_nwt_chuukese_parser = None
+
+def get_nwt_english_parser():
+    global _nwt_english_parser
+    if _nwt_english_parser is None:
+        epub_path = 'data/bible/nwt_E.epub'
+        if os.path.exists(epub_path):
+            _nwt_english_parser = NWTEpubParser(epub_path)
+    return _nwt_english_parser
+
+def get_nwt_chuukese_parser():
+    global _nwt_chuukese_parser
+    if _nwt_chuukese_parser is None:
+        epub_path = 'data/bible/nwt_TE.epub'
+        if os.path.exists(epub_path):
+            _nwt_chuukese_parser = NWTEpubParser(epub_path)
+    return _nwt_chuukese_parser
 
 from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
 from scripts.processing_logger import processing_logger
+import requests
+from bs4 import BeautifulSoup
 try:
     from src.translation.helsinki_translator_v2 import HelsinkiChuukeseTranslator
     HELSINKI_AVAILABLE = True
@@ -1195,6 +1220,242 @@ def api_database_stats():
         return jsonify({'error': str(e)}), 500
 
 
+def extract_ot_verse(book_name, chapter, verse):
+    """
+    Extract a verse from Old Testament EPUB
+    
+    Args:
+        book_name: Book name like "Genesis" or abbreviation like "GEN"
+        chapter: Chapter number (int)
+        verse: Verse number (int)
+    
+    Returns:
+        str: Verse text in Chuukese, or None if not found
+    """
+    try:
+        epub_path = 'data/bible/old_testament_chuukese.epub'
+        if not os.path.exists(epub_path):
+            print(f"EPUB file not found: {epub_path}")
+            return None
+            
+        book = epub.read_epub(epub_path)
+        
+        # Book code mapping (2-letter codes used in EPUB IDs)
+        book_codes = {
+            'Genesis': 'GN', 'Exodus': 'EX', 'Leviticus': 'LV', 'Numbers': 'NU', 'Deuteronomy': 'DT',
+            'Joshua': 'JS', 'Judges': 'JG', 'Ruth': 'RT', '1 Samuel': '1S', '2 Samuel': '2S',
+            '1 Kings': '1K', '2 Kings': '2K', '1 Chronicles': '1C', '2 Chronicles': '2C', 'Ezra': 'ER',
+            'Nehemiah': 'NE', 'Esther': 'ET', 'Job': 'JB', 'Psalms': 'PS', 'Proverbs': 'PR',
+            'Ecclesiastes': 'EC', 'Song of Solomon': 'SS', 'Isaiah': 'IS', 'Jeremiah': 'JR', 'Lamentations': 'LM',
+            'Ezekiel': 'EK', 'Daniel': 'DN', 'Hosea': 'HS', 'Joel': 'JL', 'Amos': 'AM',
+            'Obadiah': 'OB', 'Jonah': 'JN', 'Micah': 'MC', 'Nahum': 'NM', 'Habakkuk': 'HK',
+            'Zephaniah': 'ZP', 'Haggai': 'HG', 'Zechariah': 'ZC', 'Malachi': 'ML'
+        }
+        
+        # Get 2-letter book code
+        book_abbrev = book_codes.get(book_name, book_name)
+        
+        # Map common abbreviations
+        abbrev_map = {
+            'GEN': 'GN', 'GENESIS': 'GN',
+            'EXO': 'EX', 'EXODUS': 'EX', 'EXOD': 'EX',
+            'LEV': 'LV', 'LEVITICUS': 'LV',
+            'NUM': 'NU', 'NUMBERS': 'NU',
+            'DEU': 'DT', 'DEUT': 'DT', 'DEUTERONOMY': 'DT',
+            'JOS': 'JS', 'JOSHUA': 'JS',
+            'JDG': 'JG', 'JUDG': 'JG', 'JUDGES': 'JG',
+            'RUT': 'RT', 'RUTH': 'RT',
+            '1SA': '1S', '1 SAMUEL': '1S',
+            '2SA': '2S', '2 SAMUEL': '2S',
+            '1KI': '1K', '1 KINGS': '1K',
+            '2KI': '2K', '2 KINGS': '2K',
+            'EZR': 'ER', 'EZRA': 'ER',
+            'NEH': 'NE', 'NEHEMIAH': 'NE',
+            'EST': 'ET', 'ESTHER': 'ET',
+            'JOB': 'JB',
+            'PSA': 'PS', 'PSALM': 'PS', 'PSALMS': 'PS',
+            'PRO': 'PR', 'PROV': 'PR', 'PROVERBS': 'PR',
+            'ECC': 'EC', 'ECCL': 'EC', 'ECCLESIASTES': 'EC',
+            'SNG': 'SS', 'SONG': 'SS', 'SONG OF SOLOMON': 'SS',
+            'ISA': 'IS', 'ISAIAH': 'IS',
+            'JER': 'JR', 'JEREMIAH': 'JR',
+            'LAM': 'LM', 'LAMENTATIONS': 'LM',
+            'EZK': 'EK', 'EZEK': 'EK', 'EZEKIEL': 'EK',
+            'DAN': 'DN', 'DANIEL': 'DN',
+            'HOS': 'HS', 'HOSEA': 'HS',
+            'JOL': 'JL', 'JOEL': 'JL',
+            'AMO': 'AM', 'AMOS': 'AM',
+            'OBA': 'OB', 'OBAD': 'OB', 'OBADIAH': 'OB',
+            'JON': 'JN', 'JONAH': 'JN',
+            'MIC': 'MC', 'MICAH': 'MC',
+            'NAM': 'NM', 'NAH': 'NM', 'NAHUM': 'NM',
+            'HAB': 'HK', 'HABAKKUK': 'HK',
+            'ZEP': 'ZP', 'ZEPH': 'ZP', 'ZEPHANIAH': 'ZP',
+            'HAG': 'HG', 'HAGGAI': 'HG',
+            'ZEC': 'ZC', 'ZECH': 'ZC', 'ZECHARIAH': 'ZC',
+            'MAL': 'ML', 'MALACHI': 'ML'
+        }
+        
+        if book_name.upper() in abbrev_map:
+            book_abbrev = abbrev_map[book_name.upper()]
+        
+        # Filenames use 3-letter codes (GEN.xhtml, EXO.xhtml)
+        file_mapping = {
+            'GN': 'GEN', 'EX': 'EXO', 'LV': 'LEV', 'NU': 'NUM', 'DT': 'DEU',
+            'JS': 'JOS', 'JG': 'JDG', 'RT': 'RUT', '1S': '1SA', '2S': '2SA',
+            '1K': '1KI', '2K': '2KI', '1C': '1CH', '2C': '2CH', 'ER': 'EZR',
+            'NE': 'NEH', 'ET': 'EST', 'JB': 'JOB', 'PS': 'PSA', 'PR': 'PRO',
+            'EC': 'ECC', 'SS': 'SNG', 'IS': 'ISA', 'JR': 'JER', 'LM': 'LAM',
+            'EK': 'EZK', 'DN': 'DAN', 'HS': 'HOS', 'JL': 'JOL', 'AM': 'AMO',
+            'OB': 'OBA', 'JN': 'JON', 'MC': 'MIC', 'NM': 'NAM', 'HK': 'HAB',
+            'ZP': 'ZEP', 'HG': 'HAG', 'ZC': 'ZEC', 'ML': 'MAL'
+        }
+        filename = f'{file_mapping.get(book_abbrev, book_abbrev.upper())}.xhtml'
+        
+        # Find the book file
+        for item in book.get_items():
+            if item.get_name() == filename:
+                content = item.get_content()
+                soup = BeautifulSoup(content, 'html.parser')
+                
+                # Find verse by ID (e.g., GN1_1 for Genesis 1:1)
+                verse_id = f'{book_abbrev}{chapter}_{verse}'
+                verse_elem = soup.find(id=verse_id)
+                
+                if not verse_elem:
+                    return None
+                
+                # The verse element is a span with the verse number
+                # The verse text comes after it until the next verse marker
+                verse_text_parts = []
+                current = verse_elem.next_sibling
+                
+                # Get all text until we hit another verse marker (span with id ending in underscore+number)
+                while current:
+                    if hasattr(current, 'name') and current.name == 'span' and current.get('id'):
+                        # Check if this is another verse marker (has underscore+number pattern)
+                        if re.match(r'^[A-Z0-9]+_\d+$', current.get('id', '')):
+                            break
+                    
+                    if hasattr(current, 'get_text'):
+                        verse_text_parts.append(current.get_text())
+                    elif isinstance(current, str):
+                        verse_text_parts.append(current)
+                    
+                    current = current.next_sibling if hasattr(current, 'next_sibling') else None
+                
+                verse_text = ''.join(verse_text_parts).strip()
+                
+                # Clean up cross-references and extra whitespace
+                verse_text = re.sub(r'✡.*?(?=\n|$)', '', verse_text, flags=re.MULTILINE)
+                verse_text = re.sub(r'\s+', ' ', verse_text)  # Normalize whitespace
+                verse_text = verse_text.strip()
+                
+                return verse_text
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error extracting OT verse: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def fetch_scripture_from_jworg(scripture_ref):
+    """
+    Fetch scripture text from JW.org in both Chuukese and English
+    For Old Testament (Genesis-Malachi), uses local EPUB for Chuukese text
+    
+    Args:
+        scripture_ref: Scripture reference like "Genesis 1:1"
+    
+    Returns:
+        dict: {'chuukese': str, 'english': str, 'error': str or None}
+    """
+    try:
+        # Parse scripture reference (e.g., "Genesis 1:1")
+        # Map common book names to JW.org codes
+        book_map = {
+            'genesis': '1', 'exodus': '2', 'leviticus': '3', 'numbers': '4', 'deuteronomy': '5',
+            'joshua': '6', 'judges': '7', 'ruth': '8', '1 samuel': '9', '2 samuel': '10',
+            '1 kings': '11', '2 kings': '12', '1 chronicles': '13', '2 chronicles': '14',
+            'ezra': '15', 'nehemiah': '16', 'esther': '17', 'job': '18', 'psalm': '19', 'psalms': '19',
+            'proverbs': '20', 'ecclesiastes': '21', 'song of solomon': '22', 'isaiah': '23',
+            'jeremiah': '24', 'lamentations': '25', 'ezekiel': '26', 'daniel': '27', 'hosea': '28',
+            'joel': '29', 'amos': '30', 'obadiah': '31', 'jonah': '32', 'micah': '33', 'nahum': '34',
+            'habakkuk': '35', 'zephaniah': '36', 'haggai': '37', 'zechariah': '38', 'malachi': '39',
+            'matthew': '40', 'mark': '41', 'luke': '42', 'john': '43', 'acts': '44',
+            'romans': '45', '1 corinthians': '46', '2 corinthians': '47', 'galatians': '48',
+            'ephesians': '49', 'philippians': '50', 'colossians': '51', '1 thessalonians': '52',
+            '2 thessalonians': '53', '1 timothy': '54', '2 timothy': '55', 'titus': '56',
+            'philemon': '57', 'hebrews': '58', 'james': '59', '1 peter': '60', '2 peter': '61',
+            '1 john': '62', '2 john': '63', '3 john': '64', 'jude': '65', 'revelation': '66'
+        }
+        
+        # Old Testament books (1-39)
+        old_testament_books = set(str(i) for i in range(1, 40))
+        
+        # Parse the reference
+        parts = scripture_ref.strip().split()
+        if len(parts) < 2:
+            return {'chuukese': '', 'english': '', 'error': 'Invalid scripture format'}
+        
+        # Handle books with numbers (e.g., "1 Samuel")
+        if parts[0].isdigit():
+            book_name = f"{parts[0]} {parts[1]}".lower()
+            book_name_for_epub = f"{parts[0]} {parts[1].capitalize()}"
+            verse_part = ' '.join(parts[2:])
+        else:
+            book_name = parts[0].lower()
+            book_name_for_epub = parts[0].capitalize()
+            verse_part = ' '.join(parts[1:])
+        
+        book_num = book_map.get(book_name)
+        if not book_num:
+            return {'chuukese': '', 'english': '', 'error': f'Book "{book_name}" not found'}
+        
+        # Parse chapter:verse
+        if ':' in verse_part:
+            chapter, verse = verse_part.split(':')
+            chapter = int(chapter.strip())
+            verse = int(verse.strip())
+        else:
+            return {'chuukese': '', 'english': '', 'error': 'Invalid verse format (use Chapter:Verse)'}
+        
+        chuukese_text = ''
+        english_text = ''
+        
+        # For Old Testament, use Chuukese OT EPUB
+        if book_num in old_testament_books:
+            chuukese_text = extract_ot_verse(book_name_for_epub, chapter, verse)
+            if not chuukese_text:
+                chuukese_text = ''
+        else:
+            # New Testament - use Chuukese NT EPUB
+            chk_parser = get_nwt_chuukese_parser()
+            if chk_parser:
+                chuukese_text = chk_parser.get_verse(book_num, chapter, verse)
+            if not chuukese_text:
+                chuukese_text = ''
+        
+        # Fetch English from NWT English EPUB (full Bible)
+        eng_parser = get_nwt_english_parser()
+        if eng_parser:
+            english_text = eng_parser.get_verse(book_num, chapter, verse)
+        if not english_text:
+            english_text = ''
+        
+        return {
+            'chuukese': chuukese_text,
+            'english': english_text,
+            'error': None if (chuukese_text or english_text) else 'Scripture not found'
+        }
+    
+    except Exception as e:
+        return {'chuukese': '', 'english': '', 'error': str(e)}
+
+
 @app.route('/api/database/entries', methods=['GET'])
 def api_database_entries():
     """API: Get paginated database entries"""
@@ -1249,14 +1510,29 @@ def api_create_database_entry():
     try:
         data = request.get_json()
         
+        # Fetch scripture if provided
+        scripture_ref = data.get('scripture', '')
+        chuukese_word = data.get('chuukese_word', '')
+        english_translation = data.get('english_translation', '')
+        
+        if scripture_ref:
+            scripture_result = fetch_scripture_from_jworg(scripture_ref)
+            if not scripture_result['error']:
+                # Auto-populate fields with scripture text
+                chuukese_word = scripture_result['chuukese']
+                english_translation = scripture_result['english']
+        
         entry = {
-            'chuukese_word': data.get('chuukese_word'),
-            'english_translation': data.get('english_translation'),
+            'chuukese_word': chuukese_word,
+            'english_translation': english_translation,
             'definition': data.get('definition', ''),
-            'word_type': data.get('word_type', ''),
+            'word_type': data.get('word_type', '') or data.get('grammar', ''),
+            'type': 'scripture' if scripture_ref else data.get('type', ''),
+            'grammar': data.get('grammar', ''),
             'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
+            'scripture': scripture_ref,
             'source': 'User Input',
             'created_date': datetime.now()
         }
@@ -1276,14 +1552,29 @@ def api_update_database_entry(entry_id):
         from bson import ObjectId
         data = request.get_json()
         
+        # Fetch scripture if provided
+        scripture_ref = data.get('scripture', '')
+        chuukese_word = data.get('chuukese_word', '')
+        english_translation = data.get('english_translation', '')
+        
+        if scripture_ref:
+            scripture_result = fetch_scripture_from_jworg(scripture_ref)
+            if not scripture_result['error']:
+                # Auto-populate fields with scripture text
+                chuukese_word = scripture_result['chuukese']
+                english_translation = scripture_result['english']
+        
         update_data = {
-            'chuukese_word': data.get('chuukese_word'),
-            'english_translation': data.get('english_translation'),
+            'chuukese_word': chuukese_word,
+            'english_translation': english_translation,
             'definition': data.get('definition', ''),
-            'word_type': data.get('word_type', ''),
+            'word_type': data.get('word_type', '') or data.get('grammar', ''),
+            'type': 'scripture' if scripture_ref else data.get('type', ''),
+            'grammar': data.get('grammar', ''),
             'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
+            'scripture': scripture_ref,
             'updated_date': datetime.now()
         }
         

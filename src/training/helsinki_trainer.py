@@ -186,14 +186,28 @@ class HelsinkiFineTuner:
             self._update_progress(f"Loading {stage_name} model", 15)
             
             # Load model and tokenizer
+            # Check if we have a valid trained model (with actual model files)
+            has_model_files = False
             if os.path.exists(model_path):
+                # Check for actual model weight files
+                model_files = ['pytorch_model.bin', 'model.safetensors', 'tf_model.h5']
+                has_model_files = any(os.path.exists(os.path.join(model_path, f)) for f in model_files)
+            
+            if has_model_files:
                 print(f"📂 Loading local model from {model_path}")
                 model = MarianMTModel.from_pretrained(model_path)
                 tokenizer = MarianTokenizer.from_pretrained(model_path)
             else:
                 print(f"📥 Downloading base model: {base_model}")
+                print(f"   This may take a few minutes on first run...")
                 model = MarianMTModel.from_pretrained(base_model)
                 tokenizer = MarianTokenizer.from_pretrained(base_model)
+                
+                # Save the base model locally for future use
+                print(f"💾 Saving base model to {model_path}")
+                os.makedirs(model_path, exist_ok=True)
+                model.save_pretrained(model_path)
+                tokenizer.save_pretrained(model_path)
             
             model = model.to(self.device)
             
