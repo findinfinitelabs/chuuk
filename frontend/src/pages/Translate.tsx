@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Card, Title, Text, Textarea, Button, Group, Stack, Radio, Alert, Badge, Paper, LoadingOverlay, Progress } from '@mantine/core'
-import { IconLanguage, IconArrowsExchange, IconCheck, IconAlertCircle, IconRobot, IconRefresh, IconBrandGoogle, IconDeviceFloppy, IconBrain } from '@tabler/icons-react'
+import { useState, useEffect, useRef } from 'react'
+import { Card, Title, Text, Textarea, Button, Group, Stack, Radio, Alert, Badge, Paper, LoadingOverlay, Progress, Autocomplete, Table, ActionIcon, Modal, Divider, Slider } from '@mantine/core'
+import { IconLanguage, IconArrowsExchange, IconCheck, IconAlertCircle, IconRobot, IconRefresh, IconBrandGoogle, IconDeviceFloppy, IconBrain, IconBook, IconPlus } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 
@@ -18,9 +18,17 @@ interface TrainingStatus {
   last_training?: string
 }
 
+interface PhraseTranslation {
+  original: string
+  translation: string
+  confidence: 'low' | 'medium' | 'high' | 'verified'
+  sources: Record<string, string>
+}
+
 function Translate() {
   const [text, setText] = useState('')
   const [translations, setTranslations] = useState<TranslationResults>({})
+  const [phraseTranslations, setPhraseTranslations] = useState<PhraseTranslation[]>([])
   const [correction, setCorrection] = useState('')
   const [direction, setDirection] = useState<'auto' | 'chk_to_en' | 'en_to_chk'>('auto')
   const [loading, setLoading] = useState(false)
@@ -28,6 +36,13 @@ function Translate() {
   const [error, setError] = useState('')
   const [modelStatus, setModelStatus] = useState<'available' | 'unavailable' | 'checking'>('checking')
   const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [relatedEntries, setRelatedEntries] = useState<any[]>([])
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [selectedPhrase, setSelectedPhrase] = useState<PhraseTranslation | null>(null)
+  const [userConfidence, setUserConfidence] = useState<number>(3)
+  const [existingPhraseMatch, setExistingPhraseMatch] = useState<any>(null)
+  const textInputRef = useRef<HTMLInputElement>(null)
 
   // Poll training status
   useEffect(() => {
@@ -49,25 +64,116 @@ function Translate() {
     return () => clearInterval(interval)
   }, [])
 
+  // Load suggestions when text changes
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      if (!text || text.length < 2) {
+        setSuggestions([])
+        return
+      }
+
+      try {
+        const response = await axios.get('/api/database/entries', {
+          params: { search: text, limit: 10 }
+        })
+        const data = response.data
+        if (data.entries && data.entries.length > 0) {
+          // Deduplicate suggestions
+          const uniqueWords = [...new Set(data.entries.map((entry: any) => entry.chuukese_word))] as string[]
+          setSuggestions(uniqueWords)
+        } else {
+          setSuggestions([])
+        }
+      } catch (err) {
+        console.error('Failed to load suggestions:', err)
+        setSuggestions([])
+      }
+    }
+
+    const debounce = setTimeout(() => {
+      loadSuggestions()
+    }, 300)
+
+    return () => clearTimeout(debounce)
+  }, [text])
+
+  const insertAccent = (char: string) => {
+    const input = textInputRef.current
+    if (!input) return
+
+    const start = input.selectionStart || 0
+    const end = input.selectionEnd || 0
+    const newText = text.substring(0, start) + char + text.substring(end)
+    
+    setText(newText)
+    
+    // Set cursor position after inserted character
+    setTimeout(() => {
+      input.focus()
+      input.setSelectionRange(start + 1, start + 1)
+    }, 0)
+  }
+
+  const accentChars = [
+    'á', 'à', 'â', 'ä', 'ã',
+    'é', 'è', 'ê', 'ë',
+    'í', 'ì', 'î', 'ï',
+    'ó', 'ò', 'ô', 'ö', 'õ',
+    'ú', 'ù', 'û', 'ü',
+    'ñ', 'ç'
+  ]
+
   const handleTranslate = async () => {
     if (!text.trim()) return
 
     setLoading(true)
     setError('')
     setTranslations({})
+    setPhraseTranslations([])
     setCorrection('') // Clear previous correction
+    setRelatedEntries([])
+    setExistingPhraseMatch(null)
 
     try {
-      const response = await axios.post('/api/translate', {
+      // Check if exact phrase exists in database first
+      const existingResponse = await axios.get('/api/database/entries', {
+        params: { search: text.trim(), limit: 1 }
+      })
+      
+      if (existingResponse.data.entries && existingResponse.data.entries.length > 0) {
+        const exactMatch = existingResponse.data.entries.find((e: any) => 
+          e.chuukese_word.toLowerCase() === text.trim().toLowerCase()
+        )
+        if (exactMatch) {
+          setExistingPhraseMatch(exactMatch)
+        }
+      }
+
+      // Call FULL text translation API (for the cards)
+      const fullTextResponse = await axios.post('/api/translate', {
         text: text.trim(),
         direction
       })
 
-      if (response.data.success) {
-        setTranslations(response.data.translations)
-      } else {
-        setError(response.data.error || 'Translation failed')
+      if (fullTextResponse.data.success) {
+        setTranslations(fullTextResponse.data.translations)
       }
+
+      // Split text into phrases for phrase-by-phrase breakdown
+      const phrases = text.match(/[^,.!?;]+[,.!?;]?/g) || [text]
+      
+      const phraseResponse = await axios.post('/api/translate', {
+        phrases: phrases.map(p => p.trim()),
+        direction
+      })
+
+      if (phraseResponse.data.success && phraseResponse.data.phrases) {
+        setPhraseTranslations(phraseResponse.data.phrases)
+      }
+      
+      // Search for related entries
+      await searchRelatedEntries(text.trim())
+      
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to translate text')
       notifications.show({
@@ -77,6 +183,75 @@ function Translate() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const searchRelatedEntries = async (searchText: string) => {
+    try {
+      // Split text into words and search for entries containing any of them
+      const words = searchText.split(/\s+/).filter(w => w.length > 2)
+      
+      if (words.length === 0) return
+
+      const response = await axios.get('/api/database/entries', {
+        params: {
+          search: words.join(' '),
+          limit: 10,
+          type: 'phrase,sentence'
+        }
+      })
+
+      if (response.data.entries) {
+        setRelatedEntries(response.data.entries)
+      }
+    } catch (err) {
+      console.error('Failed to load related entries:', err)
+    }
+  }
+
+  const openSaveModal = (phrase: PhraseTranslation) => {
+    setSelectedPhrase(phrase)
+    // Set initial confidence based on auto-detected level (0-100)
+    const confidenceMap = { low: 25, medium: 50, high: 75, verified: 100 }
+    setUserConfidence(confidenceMap[phrase.confidence] || 50)
+    setSaveModalOpen(true)
+  }
+
+  const savePhraseToDatabase = async () => {
+    if (!selectedPhrase) return
+
+    try {
+      // Convert percentage to confidence level
+      let confidenceLevel = 'low'
+      if (userConfidence >= 90) confidenceLevel = 'verified'
+      else if (userConfidence >= 70) confidenceLevel = 'high'
+      else if (userConfidence >= 40) confidenceLevel = 'medium'
+      
+      const response = await axios.post('/api/database/entries', {
+        chuukese_word: selectedPhrase.original,
+        english_translation: selectedPhrase.translation,
+        type: 'phrase',
+        confidence_level: confidenceLevel,
+        confidence_score: userConfidence,
+        source: 'User Translation',
+        notes: `Auto-translated with ${selectedPhrase.confidence} confidence, user-verified at ${userConfidence}%`
+      })
+
+      if (response.status === 201) {
+        notifications.show({
+          title: 'Phrase Saved',
+          message: 'Translation added to dictionary',
+          color: 'green'
+        })
+        setSaveModalOpen(false)
+        setSelectedPhrase(null)
+      }
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to save phrase',
+        color: 'red'
+      })
     }
   }
 
@@ -236,18 +411,43 @@ function Translate() {
           <Title order={4}>Input Text</Title>
         </Card.Section>
         <Card.Section inheritPadding py="md">
-          <Textarea
-            placeholder="Enter text to translate..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            minRows={6}
-            maxRows={10}
-            styles={{
-              input: {
-                fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif'
-              }
-            }}
-          />
+          <Stack gap="sm">
+            <Autocomplete
+              ref={textInputRef}
+              placeholder="Enter text to translate..."
+              value={text}
+              onChange={setText}
+              data={suggestions}
+              limit={10}
+              maxDropdownHeight={300}
+              size="md"
+              styles={{
+                input: {
+                  fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif',
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  padding: '10px 12px'
+                }
+              }}
+            />
+            
+            {/* Accent buttons */}
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                Accents:
+              </Text>
+              {accentChars.map((char) => (
+                <Button
+                  key={char}
+                  size="xs"
+                  variant="light"
+                  onClick={() => insertAccent(char)}
+                >
+                  {char}
+                </Button>
+              ))}
+            </Group>
+          </Stack>
         </Card.Section>
       </Card>
 
@@ -399,6 +599,296 @@ function Translate() {
               </Card.Section>
             </Card>
           </Group>
+          
+          {/* Existing Phrase Match */}
+          {existingPhraseMatch && (
+            <Alert color="teal" variant="light" title="Phrase Found in Dictionary">
+              <Stack gap="sm">
+                <div>
+                  <Text size="sm" fw={500}>Chuukese:</Text>
+                  <Text 
+                    size="lg" 
+                    fw={700}
+                    style={{ 
+                      fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif'
+                    }}
+                  >
+                    {existingPhraseMatch.chuukese_word}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="sm" fw={500}>English:</Text>
+                  <Text size="md">{existingPhraseMatch.english_translation}</Text>
+                </div>
+                {existingPhraseMatch.confidence_level && (
+                  <Group gap="xs">
+                    <Badge 
+                      size="lg"
+                      variant="filled"
+                      color={
+                        existingPhraseMatch.confidence_level === 'verified' ? 'blue' :
+                        existingPhraseMatch.confidence_level === 'high' ? 'green' :
+                        existingPhraseMatch.confidence_level === 'medium' ? 'yellow' : 'red'
+                      }
+                    >
+                      {existingPhraseMatch.confidence_score || 
+                        (existingPhraseMatch.confidence_level === 'verified' ? '100' :
+                         existingPhraseMatch.confidence_level === 'high' ? '75' :
+                         existingPhraseMatch.confidence_level === 'medium' ? '50' : '25')}% Confidence
+                    </Badge>
+                    <Text size="xs" c="dimmed">
+                      {existingPhraseMatch.confidence_level.charAt(0).toUpperCase() + 
+                       existingPhraseMatch.confidence_level.slice(1)} Quality
+                    </Text>
+                  </Group>
+                )}
+              </Stack>
+            </Alert>
+          )}
+
+          {/* Phrase-by-Phrase Breakdown */}
+          {phraseTranslations.length > 0 && (
+            <Card withBorder>
+              <Card.Section withBorder inheritPadding py="sm">
+                <Group gap="xs">
+                  <IconBook size={20} color="var(--mantine-color-blue-6)" />
+                  <Title order={4}>Phrase-by-Phrase Breakdown</Title>
+                </Group>
+              </Card.Section>
+              <Card.Section inheritPadding py="md">
+                <Stack gap="xs">
+                  {phraseTranslations.map((phrase, idx) => {
+                    const confidenceColors = {
+                      low: 'red',
+                      medium: 'yellow',
+                      high: 'green',
+                      verified: 'blue'
+                    }
+                    const confidenceIcons = {
+                      low: '⚠️',
+                      medium: '👍',
+                      high: '✅',
+                      verified: '🔥'
+                    }
+                    const confidenceLabels = {
+                      low: 'Machine Translation',
+                      medium: 'Auto-Translated',
+                      high: 'Database Match',
+                      verified: 'Verified'
+                    }
+                    
+                    return (
+                      <Paper key={idx} p="sm" withBorder style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                        <Stack gap="xs">
+                          <Group justify="space-between" align="flex-start">
+                            <div style={{ flex: 1 }}>
+                              <Text 
+                                fw={700} 
+                                size="lg"
+                                style={{ 
+                                  fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif'
+                                }}
+                              >
+                                {phrase.original}
+                              </Text>
+                              <Text 
+                                size="md" 
+                                c="dimmed"
+                                mt="xs"
+                              >
+                                {phrase.translation}
+                              </Text>
+                            </div>
+                            <Group gap="xs">
+                              <Badge 
+                                color={confidenceColors[phrase.confidence]} 
+                                variant="light"
+                                leftSection={confidenceIcons[phrase.confidence]}
+                              >
+                                {confidenceLabels[phrase.confidence]}
+                              </Badge>
+                              <ActionIcon
+                                variant="light"
+                                color="teal"
+                                onClick={() => openSaveModal(phrase)}
+                                title="Save to dictionary"
+                              >
+                                <IconPlus size={16} />
+                              </ActionIcon>
+                            </Group>
+                          </Group>
+                        </Stack>
+                      </Paper>
+                    )
+                  })}
+                </Stack>
+              </Card.Section>
+            </Card>
+          )}
+
+          {/* Save Phrase Modal */}
+          <Modal
+            opened={saveModalOpen}
+            onClose={() => setSaveModalOpen(false)}
+            title="Save Phrase to Dictionary"
+            size="md"
+          >
+            {selectedPhrase && (
+              <Stack gap="md">
+                <div>
+                  <Text size="sm" c="dimmed" mb="xs">Chuukese Phrase:</Text>
+                  <Text 
+                    fw={700} 
+                    size="lg"
+                    style={{ 
+                      fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif'
+                    }}
+                  >
+                    {selectedPhrase.original}
+                  </Text>
+                </div>
+                
+                <div>
+                  <Text size="sm" c="dimmed" mb="xs">English Translation:</Text>
+                  <Text size="md">{selectedPhrase.translation}</Text>
+                </div>
+                
+                <Divider />
+                
+                <div>
+                  <Text size="sm" fw={500} mb="md">Confidence Assessment</Text>
+                  
+                  <Stack gap="md">
+                    <Slider
+                      value={userConfidence}
+                      onChange={setUserConfidence}
+                      min={0}
+                      max={100}
+                      step={5}
+                      size="lg"
+                      marks={[
+                        { value: 0, label: '0%' },
+                        { value: 25, label: '25%' },
+                        { value: 50, label: '50%' },
+                        { value: 75, label: '75%' },
+                        { value: 100, label: '100%' }
+                      ]}
+                      color={
+                        userConfidence >= 90 ? 'blue' :
+                        userConfidence >= 70 ? 'green' :
+                        userConfidence >= 40 ? 'yellow' : 'red'
+                      }
+                    />
+                    
+                    <Paper p="md" withBorder mt="lg" style={{ 
+                      backgroundColor: 
+                        userConfidence >= 90 ? 'var(--mantine-color-blue-0)' :
+                        userConfidence >= 70 ? 'var(--mantine-color-green-0)' :
+                        userConfidence >= 40 ? 'var(--mantine-color-yellow-0)' : 'var(--mantine-color-red-0)'
+                    }}>
+                      <Group gap="xs" align="center">
+                        <Badge 
+                          size="xl" 
+                          variant="filled"
+                          color={
+                            userConfidence >= 90 ? 'blue' :
+                            userConfidence >= 70 ? 'green' :
+                            userConfidence >= 40 ? 'yellow' : 'red'
+                          }
+                        >
+                          {userConfidence}%
+                        </Badge>
+                        <div>
+                          <Text fw={600} size="sm">
+                            {userConfidence >= 90 ? 'Verified / Native' :
+                             userConfidence >= 70 ? 'High Confidence' :
+                             userConfidence >= 40 ? 'Medium Confidence' : 'Low Confidence'}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {userConfidence >= 90 ? 'Perfect translation, verified by native speaker' :
+                             userConfidence >= 70 ? 'Very good translation, highly reliable' :
+                             userConfidence >= 40 ? 'Decent translation, may need review' : 
+                             'Uncertain translation, requires verification'}
+                          </Text>
+                        </div>
+                      </Group>
+                    </Paper>
+                  </Stack>
+                </div>
+                
+                <Group justify="flex-end" mt="md">
+                  <Button variant="subtle" onClick={() => setSaveModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    leftSection={<IconCheck size={16} />}
+                    onClick={savePhraseToDatabase}
+                    color="teal"
+                    style={{ color: 'white' }}
+                  >
+                    Save to Dictionary
+                  </Button>
+                </Group>
+              </Stack>
+            )}
+          </Modal>
+
+          {/* Related Entries from Database */}
+          {relatedEntries.length > 0 && (
+            <Card withBorder>
+              <Card.Section withBorder inheritPadding py="sm">
+                <Group gap="xs" justify="space-between">
+                  <Group gap="xs">
+                    <IconBook size={20} color="var(--mantine-color-teal-6)" />
+                    <Title order={4}>Related Phrases & Sentences</Title>
+                  </Group>
+                  <Badge color="teal" variant="light">
+                    {relatedEntries.length} found
+                  </Badge>
+                </Group>
+              </Card.Section>
+              <Card.Section inheritPadding py="md">
+                <Stack gap="sm">
+                  <Text size="sm" c="dimmed">
+                    Similar phrases and sentences from the dictionary that use these words:
+                  </Text>
+                  <Table highlightOnHover>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Chuukese</Table.Th>
+                        <Table.Th>English</Table.Th>
+                        <Table.Th>Type</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {relatedEntries.map((entry, idx) => (
+                        <Table.Tr key={idx}>
+                          <Table.Td>
+                            <Text 
+                              fw={500}
+                              style={{ 
+                                fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif'
+                              }}
+                            >
+                              {entry.chuukese_word}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text>{entry.english_translation}</Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Badge size="sm" variant="light">
+                              {entry.type || 'word'}
+                            </Badge>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Stack>
+              </Card.Section>
+            </Card>
+          )}
         </>
       )}
 

@@ -615,6 +615,76 @@ def reprocess_page():
 #     """Redirect to React app"""
 #     return redirect('/')
 
+def translate_phrases(phrases, direction):
+    """Translate multiple phrases individually and return with confidence scores"""
+    import os
+    import requests
+    
+    api_key = os.getenv('GOOGLE_CLOUD_API_KEY')
+    results = {
+        'success': True,
+        'direction': direction,
+        'phrases': []
+    }
+    
+    for phrase in phrases:
+        phrase_text = phrase.strip()
+        if not phrase_text:
+            continue
+            
+        phrase_result = {
+            'original': phrase_text,
+            'translation': '',
+            'confidence': 'low',  # low, medium, high, verified
+            'sources': {}
+        }
+        
+        # Try Google Translate
+        try:
+            if api_key:
+                url = f'https://translation.googleapis.com/language/translate/v2?key={api_key}'
+                
+                payload = {
+                    'q': phrase_text,
+                    'target': 'en' if direction == 'chk_to_en' else 'chk',
+                    'format': 'text'
+                }
+                
+                # Add source language
+                if direction == 'chk_to_en':
+                    payload['source'] = 'chk'
+                elif direction == 'en_to_chk':
+                    payload['source'] = 'en'
+                
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    result = response.json()
+                    translation = result['data']['translations'][0]['translatedText']
+                    phrase_result['translation'] = translation
+                    phrase_result['sources']['google'] = translation
+                    phrase_result['confidence'] = 'medium'  # Auto-translated
+        except Exception as e:
+            phrase_result['sources']['google'] = f'Error: {str(e)}'
+        
+        # Check if phrase exists in database (verified translation)
+        try:
+            # Look for exact or similar match
+            db_entry = dict_db.dictionary_collection.find_one({
+                'chuukese_word': {'$regex': f'^{phrase_text}$', '$options': 'i'}
+            })
+            if db_entry:
+                phrase_result['translation'] = db_entry.get('english_translation', phrase_result['translation'])
+                phrase_result['sources']['database'] = db_entry.get('english_translation')
+                phrase_result['confidence'] = 'high'  # From verified database
+                if db_entry.get('confidence_level'):
+                    phrase_result['confidence'] = db_entry['confidence_level']
+        except Exception as e:
+            pass
+        
+        results['phrases'].append(phrase_result)
+    
+    return jsonify(results)
+
 @app.route('/api/translate', methods=['POST'])
 def api_translate():
     """Translate using all three sources: Google, Helsinki, Ollama"""
@@ -622,21 +692,28 @@ def api_translate():
         data = request.get_json()
         text = data.get('text', '').strip()
         direction = data.get('direction', 'auto')
+        phrases = data.get('phrases', [])  # Optional: pre-split phrases
         
-        if not text:
+        if not text and not phrases:
             return jsonify({'success': False, 'error': 'No text provided'})
         
+        # Determine actual direction if auto
+        if direction == 'auto':
+            # Simple heuristic: if text contains mostly ASCII, assume English
+            check_text = text if text else ' '.join(phrases)
+            is_english = all(ord(c) < 128 for c in check_text if c.isalpha())
+            direction = 'en_to_chk' if is_english else 'chk_to_en'
+        
+        # If phrases provided, translate each individually
+        if phrases:
+            return translate_phrases(phrases, direction)
+        
+        # Otherwise, translate full text
         results = {
             'success': True,
             'original_text': text,
             'translations': {}
         }
-        
-        # Determine actual direction if auto
-        if direction == 'auto':
-            # Simple heuristic: if text contains mostly ASCII, assume English
-            is_english = all(ord(c) < 128 for c in text if c.isalpha())
-            direction = 'en_to_chk' if is_english else 'chk_to_en'
         
         # Google Translate - Using REST API with API key
         try:
@@ -667,7 +744,8 @@ def api_translate():
                     translation = result['data']['translations'][0]['translatedText']
                     results['translations']['google'] = translation
                 else:
-                    results['translations']['google'] = f'Google API error: {response.status_code}'
+                    error_msg = response.json().get('error', {}).get('message', f'Status {response.status_code}')
+                    results['translations']['google'] = f'Google API error: {error_msg}'
             else:
                 results['translations']['google'] = 'Google Translate API key not configured'
         except Exception as e:
@@ -1463,31 +1541,70 @@ def api_database_entries():
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         search = request.args.get('search', '')
+        sort_by = request.args.get('sort_by', '')
+        sort_order = request.args.get('sort_order', 'asc')
+        filter_type = request.args.get('filter_type', '')
+        filter_grammar = request.args.get('filter_grammar', '')
+        filter_scripture = request.args.get('filter_scripture', '')
         
-        # Calculate skip value
-        skip = (page - 1) * limit
+        # Build query with search and filters
+        conditions = []
         
         if search:
-            # Search with pagination
-            entries = list(dict_db.dictionary_collection.find({
+            conditions.append({
                 '$or': [
                     {'chuukese_word': {'$regex': search, '$options': 'i'}},
                     {'english_translation': {'$regex': search, '$options': 'i'}},
-                    {'definition': {'$regex': search, '$options': 'i'}}
-                ]
-            }).skip(skip).limit(limit))
-            
-            total = dict_db.dictionary_collection.count_documents({
-                '$or': [
-                    {'chuukese_word': {'$regex': search, '$options': 'i'}},
-                    {'english_translation': {'$regex': search, '$options': 'i'}},
-                    {'definition': {'$regex': search, '$options': 'i'}}
+                    {'definition': {'$regex': search, '$options': 'i'}},
+                    {'examples': {'$regex': search, '$options': 'i'}}
                 ]
             })
-        else:
-            # Get all entries with pagination
-            entries = list(dict_db.dictionary_collection.find({}).skip(skip).limit(limit))
-            total = dict_db.dictionary_collection.count_documents({})
+        
+        # Add filter conditions
+        if filter_type:
+            conditions.append({'type': filter_type})
+        if filter_grammar:
+            conditions.append({'grammar': filter_grammar})
+        if filter_scripture:
+            # For scripture, use regex to allow partial match
+            conditions.append({'scripture': {'$regex': filter_scripture, '$options': 'i'}})
+        
+        query = {'$and': conditions} if conditions else {}
+        
+        # Map frontend column names to database field names
+        field_map = {
+            'chuukese': 'chuukese_word',
+            'english': 'english_translation',
+            'type': 'type',
+            'grammar': 'grammar',
+            'scripture': 'scripture',
+            'search_direction': 'search_direction',
+            'definition': 'definition'
+        }
+        
+        # Fetch all matching entries (we'll sort and paginate in Python to handle nulls)
+        all_entries = list(dict_db.dictionary_collection.find(query))
+        total = len(all_entries)
+        
+        # Sort in Python to handle null/missing values properly
+        if sort_by and sort_by in field_map:
+            sort_field = field_map[sort_by]
+            reverse = sort_order == 'desc'
+            
+            # Sort with nulls/empty at the end, case-insensitive for strings
+            def sort_key(entry):
+                value = entry.get(sort_field)
+                if value is None or value == '':
+                    # Put nulls/empty at the end
+                    return (1, '')
+                # Case-insensitive string comparison
+                return (0, str(value).lower())
+            
+            all_entries.sort(key=sort_key, reverse=reverse)
+        
+        # Apply pagination after sorting
+        skip = (page - 1) * limit
+        entries = all_entries[skip:skip + limit]
         
         # Convert ObjectId to string for JSON serialization
         for entry in entries:
@@ -1501,6 +1618,218 @@ def api_database_entries():
             'limit': limit
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/distinct', methods=['GET'])
+def api_database_distinct():
+    """API: Get distinct values for filter dropdowns"""
+    try:
+        field = request.args.get('field', '')
+        
+        # Map frontend field names to database field names
+        field_map = {
+            'type': 'type',
+            'grammar': 'grammar',
+            'scripture': 'scripture'
+        }
+        
+        if field not in field_map:
+            return jsonify({'error': 'Invalid field'}), 400
+        
+        db_field = field_map[field]
+        
+        # Get distinct non-null, non-empty values
+        distinct_values = dict_db.dictionary_collection.distinct(db_field)
+        
+        # Filter out None and empty strings, sort alphabetically
+        values = sorted([v for v in distinct_values if v and str(v).strip()])
+        
+        return jsonify({'field': field, 'values': values})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# Bible book information with chapter/verse counts
+BIBLE_BOOKS = {
+    'Genesis': {'num': 1, 'chapters': 50, 'verses': [31,25,24,26,32,22,24,22,29,32,32,20,18,24,21,16,27,33,38,18,34,24,20,67,34,35,46,22,35,43,55,32,20,31,29,43,36,30,23,23,57,38,34,34,28,34,31,22,33,26]},
+    'Exodus': {'num': 2, 'chapters': 40, 'verses': [22,25,22,31,23,30,25,32,35,29,10,51,22,31,27,36,16,27,25,26,36,31,33,18,40,37,21,43,46,38,18,35,23,35,35,38,29,31,43,38]},
+    'Leviticus': {'num': 3, 'chapters': 27, 'verses': [17,16,17,35,19,30,38,36,24,20,47,8,59,57,33,34,16,30,37,27,24,33,44,23,55,46,34]},
+    'Numbers': {'num': 4, 'chapters': 36, 'verses': [54,34,51,49,31,27,89,26,23,36,35,16,33,45,41,50,13,32,22,29,35,41,30,25,18,65,23,31,40,16,54,42,56,29,34,13]},
+    'Deuteronomy': {'num': 5, 'chapters': 34, 'verses': [46,37,29,49,33,25,26,20,29,22,32,32,18,29,23,22,20,22,21,20,23,30,25,22,19,19,26,68,29,20,30,52,29,12]},
+    'Joshua': {'num': 6, 'chapters': 24, 'verses': [18,24,17,24,15,27,26,35,27,43,23,24,33,15,63,10,18,28,51,9,45,34,16,33]},
+    'Judges': {'num': 7, 'chapters': 21, 'verses': [36,23,31,24,31,40,25,35,57,18,40,15,25,20,20,31,13,31,30,48,25]},
+    'Ruth': {'num': 8, 'chapters': 4, 'verses': [22,23,18,22]},
+    '1 Samuel': {'num': 9, 'chapters': 31, 'verses': [28,36,21,22,12,21,17,22,27,27,15,25,23,52,35,23,58,30,24,42,15,23,29,22,44,25,12,25,11,31,13]},
+    '2 Samuel': {'num': 10, 'chapters': 24, 'verses': [27,32,39,12,25,23,29,18,13,19,27,31,39,33,37,23,29,33,43,26,22,51,39,25]},
+    '1 Kings': {'num': 11, 'chapters': 22, 'verses': [53,46,28,34,18,38,51,66,28,29,43,33,34,31,34,34,24,46,21,43,29,53]},
+    '2 Kings': {'num': 12, 'chapters': 25, 'verses': [18,25,27,44,27,33,20,29,37,36,21,21,25,29,38,20,41,37,37,21,26,20,37,20,30]},
+    '1 Chronicles': {'num': 13, 'chapters': 29, 'verses': [54,55,24,43,26,81,40,40,44,14,47,40,14,17,29,43,27,17,19,8,30,19,32,31,31,32,34,21,30]},
+    '2 Chronicles': {'num': 14, 'chapters': 36, 'verses': [17,18,17,22,14,42,22,18,31,19,23,16,22,15,19,14,19,34,11,37,20,12,21,27,28,23,9,27,36,27,21,33,25,33,27,23]},
+    'Ezra': {'num': 15, 'chapters': 10, 'verses': [11,70,13,24,17,22,28,36,15,44]},
+    'Nehemiah': {'num': 16, 'chapters': 13, 'verses': [11,20,32,23,19,19,73,18,38,39,36,47,31]},
+    'Esther': {'num': 17, 'chapters': 10, 'verses': [22,23,15,17,14,14,10,17,32,3]},
+    'Job': {'num': 18, 'chapters': 42, 'verses': [22,13,26,21,27,30,21,22,35,22,20,25,28,22,35,22,16,21,29,29,34,30,17,25,6,14,23,28,25,31,40,22,33,37,16,33,24,41,30,24,34,17]},
+    'Psalms': {'num': 19, 'chapters': 150, 'verses': [6,12,8,8,12,10,17,9,20,18,7,8,6,7,5,11,15,50,14,9,13,31,6,10,22,12,14,9,11,12,24,11,22,22,28,12,40,22,13,17,13,11,5,26,17,11,9,14,20,23,19,9,6,7,23,13,11,11,17,12,8,12,11,10,13,20,7,35,36,5,24,20,28,23,10,12,20,72,13,19,16,8,18,12,13,17,7,18,52,17,16,15,5,23,11,13,12,9,9,5,8,28,22,35,45,48,43,13,31,7,10,10,9,8,18,19,2,29,176,7,8,9,4,8,5,6,5,6,8,8,3,18,3,3,21,26,9,8,24,13,10,7,12,15,21,10,20,14,9,6]},
+    'Proverbs': {'num': 20, 'chapters': 31, 'verses': [33,22,35,27,23,35,27,36,18,32,31,28,25,35,33,33,28,24,29,30,31,29,35,34,28,28,27,28,27,33,31]},
+    'Ecclesiastes': {'num': 21, 'chapters': 12, 'verses': [18,26,22,16,20,12,29,17,18,20,10,14]},
+    'Song of Solomon': {'num': 22, 'chapters': 8, 'verses': [17,17,11,16,16,13,13,14]},
+    'Isaiah': {'num': 23, 'chapters': 66, 'verses': [31,22,26,6,30,13,25,22,21,34,16,6,22,32,9,14,14,7,25,6,17,25,18,23,12,21,13,29,24,33,9,20,24,17,10,22,38,22,8,31,29,25,28,28,25,13,15,22,26,11,23,15,12,17,13,12,21,14,21,22,11,12,19,12,25,24]},
+    'Jeremiah': {'num': 24, 'chapters': 52, 'verses': [19,37,25,31,31,30,34,22,26,25,23,17,27,22,21,21,27,23,15,18,14,30,40,10,38,24,22,17,32,24,40,44,26,22,19,32,21,28,18,16,18,22,13,30,5,28,7,47,39,46,64,34]},
+    'Lamentations': {'num': 25, 'chapters': 5, 'verses': [22,22,66,22,22]},
+    'Ezekiel': {'num': 26, 'chapters': 48, 'verses': [28,10,27,17,17,14,27,18,11,22,25,28,23,23,8,63,24,32,14,49,32,31,49,27,17,21,36,26,21,26,18,32,33,31,15,38,28,23,29,49,26,20,27,31,25,24,23,35]},
+    'Daniel': {'num': 27, 'chapters': 12, 'verses': [21,49,30,37,31,28,28,27,27,21,45,13]},
+    'Hosea': {'num': 28, 'chapters': 14, 'verses': [11,23,5,19,15,11,16,14,17,15,12,14,16,9]},
+    'Joel': {'num': 29, 'chapters': 3, 'verses': [20,32,21]},
+    'Amos': {'num': 30, 'chapters': 9, 'verses': [15,16,15,13,27,14,17,14,15]},
+    'Obadiah': {'num': 31, 'chapters': 1, 'verses': [21]},
+    'Jonah': {'num': 32, 'chapters': 4, 'verses': [17,10,10,11]},
+    'Micah': {'num': 33, 'chapters': 7, 'verses': [16,13,12,13,15,16,20]},
+    'Nahum': {'num': 34, 'chapters': 3, 'verses': [15,13,19]},
+    'Habakkuk': {'num': 35, 'chapters': 3, 'verses': [17,20,19]},
+    'Zephaniah': {'num': 36, 'chapters': 3, 'verses': [18,15,20]},
+    'Haggai': {'num': 37, 'chapters': 2, 'verses': [15,23]},
+    'Zechariah': {'num': 38, 'chapters': 14, 'verses': [21,13,10,14,11,15,14,23,17,12,17,14,9,21]},
+    'Malachi': {'num': 39, 'chapters': 4, 'verses': [14,17,18,6]},
+    'Matthew': {'num': 40, 'chapters': 28, 'verses': [25,23,17,25,48,34,29,34,38,42,30,50,58,36,39,28,27,35,30,34,46,46,39,51,46,75,66,20]},
+    'Mark': {'num': 41, 'chapters': 16, 'verses': [45,28,35,41,43,56,37,38,50,52,33,44,37,72,47,20]},
+    'Luke': {'num': 42, 'chapters': 24, 'verses': [80,52,38,44,39,49,50,56,62,42,54,59,35,35,32,31,37,43,48,47,38,71,56,53]},
+    'John': {'num': 43, 'chapters': 21, 'verses': [51,25,36,54,47,71,53,59,41,42,57,50,38,31,27,33,26,40,42,31,25]},
+    'Acts': {'num': 44, 'chapters': 28, 'verses': [26,47,26,37,42,15,60,40,43,48,30,25,52,28,41,40,34,28,41,38,40,30,35,27,27,32,44,31]},
+    'Romans': {'num': 45, 'chapters': 16, 'verses': [32,29,31,25,21,23,25,39,33,21,36,21,14,23,33,27]},
+    '1 Corinthians': {'num': 46, 'chapters': 16, 'verses': [31,16,23,21,13,20,40,13,27,33,34,31,13,40,58,24]},
+    '2 Corinthians': {'num': 47, 'chapters': 13, 'verses': [24,17,18,18,21,18,16,24,15,18,33,21,14]},
+    'Galatians': {'num': 48, 'chapters': 6, 'verses': [24,21,29,31,26,18]},
+    'Ephesians': {'num': 49, 'chapters': 6, 'verses': [23,22,21,32,33,24]},
+    'Philippians': {'num': 50, 'chapters': 4, 'verses': [30,30,21,23]},
+    'Colossians': {'num': 51, 'chapters': 4, 'verses': [29,23,25,18]},
+    '1 Thessalonians': {'num': 52, 'chapters': 5, 'verses': [10,20,13,18,28]},
+    '2 Thessalonians': {'num': 53, 'chapters': 3, 'verses': [12,17,18]},
+    '1 Timothy': {'num': 54, 'chapters': 6, 'verses': [20,15,16,16,25,21]},
+    '2 Timothy': {'num': 55, 'chapters': 4, 'verses': [18,26,17,22]},
+    'Titus': {'num': 56, 'chapters': 3, 'verses': [16,15,15]},
+    'Philemon': {'num': 57, 'chapters': 1, 'verses': [25]},
+    'Hebrews': {'num': 58, 'chapters': 13, 'verses': [14,18,19,16,14,20,28,13,28,39,40,29,25]},
+    'James': {'num': 59, 'chapters': 5, 'verses': [27,26,18,17,20]},
+    '1 Peter': {'num': 60, 'chapters': 5, 'verses': [25,25,22,19,14]},
+    '2 Peter': {'num': 61, 'chapters': 3, 'verses': [21,22,18]},
+    '1 John': {'num': 62, 'chapters': 5, 'verses': [10,29,24,21,21]},
+    '2 John': {'num': 63, 'chapters': 1, 'verses': [13]},
+    '3 John': {'num': 64, 'chapters': 1, 'verses': [14]},
+    'Jude': {'num': 65, 'chapters': 1, 'verses': [25]},
+    'Revelation': {'num': 66, 'chapters': 22, 'verses': [20,29,22,11,14,17,17,13,21,11,19,17,18,20,8,21,18,24,21,15,27,21]}
+}
+
+
+@app.route('/api/database/bible-coverage', methods=['GET'])
+def api_bible_coverage():
+    """API: Get Bible book coverage - which verses are loaded vs missing"""
+    try:
+        book = request.args.get('book', '')
+        
+        if not book:
+            # Return list of books with their loaded verse counts
+            # Use single aggregation query to avoid Cosmos DB RU throttling
+            books_coverage = []
+            
+            # Get all scripture entries at once
+            scripture_entries = list(dict_db.dictionary_collection.find(
+                {'scripture': {'$exists': True, '$ne': ''}},
+                {'scripture': 1, '_id': 0}
+            ))
+            
+            # Count entries per book
+            book_counts = {}
+            for entry in scripture_entries:
+                scripture = entry.get('scripture', '')
+                # Extract book name from scripture (e.g., "Genesis 1:1" -> "Genesis")
+                if scripture:
+                    parts = scripture.split()
+                    if len(parts) >= 2:
+                        # Handle books with numbers like "1 Samuel"
+                        if parts[0].isdigit():
+                            book_name = f"{parts[0]} {parts[1]}"
+                        else:
+                            book_name = parts[0]
+                        book_counts[book_name] = book_counts.get(book_name, 0) + 1
+            
+            # Build coverage list
+            for book_name, info in BIBLE_BOOKS.items():
+                count = book_counts.get(book_name, 0)
+                total_verses = sum(info['verses'])
+                books_coverage.append({
+                    'book': book_name,
+                    'num': info['num'],
+                    'chapters': info['chapters'],
+                    'total_verses': total_verses,
+                    'loaded_verses': count,
+                    'coverage_percent': round((count / total_verses) * 100, 1) if total_verses > 0 else 0
+                })
+            return jsonify({'books': books_coverage})
+        
+        # Get details for a specific book
+        if book not in BIBLE_BOOKS:
+            return jsonify({'error': 'Invalid book name'}), 400
+        
+        book_info = BIBLE_BOOKS[book]
+        
+        # Get all scripture entries for this book
+        entries = list(dict_db.dictionary_collection.find({
+            'scripture': {'$regex': f'^{book}', '$options': 'i'}
+        }, {'scripture': 1, '_id': 0}))
+        
+        # Parse loaded verses
+        loaded_verses = set()
+        for entry in entries:
+            scripture = entry.get('scripture', '')
+            # Parse "Book Chapter:Verse" format
+            match = re.match(rf'^{re.escape(book)}\s+(\d+):(\d+)', scripture, re.IGNORECASE)
+            if match:
+                chapter = int(match.group(1))
+                verse = int(match.group(2))
+                loaded_verses.add((chapter, verse))
+        
+        # Build chapter-by-chapter coverage
+        chapters_coverage = []
+        for chapter_idx, verse_count in enumerate(book_info['verses']):
+            chapter_num = chapter_idx + 1
+            loaded_in_chapter = []
+            missing_in_chapter = []
+            
+            for verse in range(1, verse_count + 1):
+                if (chapter_num, verse) in loaded_verses:
+                    loaded_in_chapter.append(verse)
+                else:
+                    missing_in_chapter.append(verse)
+            
+            chapters_coverage.append({
+                'chapter': chapter_num,
+                'total_verses': verse_count,
+                'loaded': loaded_in_chapter,
+                'missing': missing_in_chapter,
+                'loaded_count': len(loaded_in_chapter),
+                'missing_count': len(missing_in_chapter)
+            })
+        
+        total_verses = sum(book_info['verses'])
+        total_loaded = len(loaded_verses)
+        
+        return jsonify({
+            'book': book,
+            'num': book_info['num'],
+            'chapters': chapters_coverage,
+            'total_verses': total_verses,
+            'total_loaded': total_loaded,
+            'total_missing': total_verses - total_loaded,
+            'coverage_percent': round((total_loaded / total_verses) * 100, 1) if total_verses > 0 else 0
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -1533,6 +1862,7 @@ def api_create_database_entry():
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
+            'references': data.get('references', ''),
             'source': 'User Input',
             'created_date': datetime.now()
         }
@@ -1575,6 +1905,7 @@ def api_update_database_entry(entry_id):
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
+            'references': data.get('references', ''),
             'updated_date': datetime.now()
         }
         
@@ -1603,6 +1934,29 @@ def api_delete_database_entry(entry_id):
             return jsonify({'message': 'Entry deleted successfully'}), 200
         else:
             return jsonify({'error': 'Entry not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scripture/preview', methods=['POST'])
+def api_scripture_preview():
+    """API: Preview scripture text without saving to database"""
+    try:
+        data = request.get_json()
+        scripture_ref = data.get('scripture', '').strip()
+        
+        if not scripture_ref:
+            return jsonify({'error': 'Scripture reference is required'}), 400
+        
+        # Fetch scripture from EPUBs
+        result = fetch_scripture_from_jworg(scripture_ref)
+        
+        return jsonify({
+            'scripture': scripture_ref,
+            'chuukese': result.get('chuukese', ''),
+            'english': result.get('english', ''),
+            'error': result.get('error')
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

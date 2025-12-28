@@ -1,10 +1,37 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete } from '@mantine/core'
-import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid } from '@mantine/core'
+import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './Database.css'
+
+interface BibleBookCoverage {
+  book: string
+  num: number
+  chapters: number
+  total_verses: number
+  loaded_verses: number
+  coverage_percent: number
+}
+
+interface ChapterCoverage {
+  chapter: number
+  total_verses: number
+  loaded: number[]
+  missing: number[]
+  loaded_count: number
+  missing_count: number
+}
+
+interface BookDetail {
+  book: string
+  chapters: ChapterCoverage[]
+  total_verses: number
+  total_loaded: number
+  total_missing: number
+  coverage_percent: number
+}
 
 interface DictionaryEntry {
   _id?: string
@@ -18,6 +45,7 @@ interface DictionaryEntry {
   notes?: string
   search_direction?: string // chk_to_en or en_to_chk
   scripture?: string // Scripture reference like "Genesis 1:1"
+  references?: string // Additional scripture references
   chuukese_scripture?: string // Fetched Chuukese scripture text
   english_scripture?: string // Fetched English scripture text
 }
@@ -43,6 +71,23 @@ function Database() {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [scriptureModalOpened, { open: openScriptureModal, close: closeScriptureModal }] = useDisclosure(false)
   const [selectedScripture, setSelectedScripture] = useState<DictionaryEntry | null>(null)
+  const [addScriptureModalOpened, { open: openAddScriptureModal, close: closeAddScriptureModal }] = useDisclosure(false)
+  const [scriptureRef, setScriptureRef] = useState('')
+  const [scripturePreview, setScripturePreview] = useState<{ chuukese: string; english: string; error?: string } | null>(null)
+  const [loadingScripture, setLoadingScripture] = useState(false)
+  const [sortBy, setSortBy] = useState<string>('')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [filterType, setFilterType] = useState<string>('')
+  const [filterGrammar, setFilterGrammar] = useState<string>('')
+  const [filterScripture, setFilterScripture] = useState<string>('')
+  const [typeOptions, setTypeOptions] = useState<string[]>([])
+  const [grammarOptions, setGrammarOptions] = useState<string[]>([])
+  const [scriptureOptions, setScriptureOptions] = useState<string[]>([])
+  const [filterBook, setFilterBook] = useState<string>('')
+  const [bibleBooks, setBibleBooks] = useState<BibleBookCoverage[]>([])
+  const [selectedBookDetail, setSelectedBookDetail] = useState<BookDetail | null>(null)
+  const [bibleCoverageOpened, { open: openBibleCoverage, close: closeBibleCoverage }] = useDisclosure(false)
+  const [expandedChapters, setExpandedChapters] = useState<number[]>([])
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -55,13 +100,15 @@ function Database() {
     grammar: '',
     examples: [] as string[],
     notes: '',
-    scripture: ''
+    scripture: '',
+    references: ''
   })
 
   useEffect(() => {
     loadDatabaseStats()
     loadEntries()
-  }, [currentPage])
+    loadFilterOptions()
+  }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterScripture, filterBook])
 
   // Live search effect
   useEffect(() => {
@@ -78,6 +125,27 @@ function Database() {
     return () => clearTimeout(timeoutId)
   }, [searchTerm])
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      // Toggle sort order if same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // New column, start with ascending
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+    setCurrentPage(1)
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortBy !== column) {
+      return <IconArrowsSort size={14} style={{ opacity: 0.3 }} />
+    }
+    return sortOrder === 'asc' ? 
+      <IconSortAscending size={14} /> : 
+      <IconSortDescending size={14} />
+  }
+
   const loadDatabaseStats = async () => {
     try {
       const response = await axios.get('/api/database/stats')
@@ -85,6 +153,41 @@ function Database() {
     } catch (err) {
       console.error('Failed to load database stats:', err)
     }
+  }
+
+  const loadFilterOptions = async () => {
+    try {
+      const [typeRes, grammarRes, scriptureRes, bibleRes] = await Promise.all([
+        axios.get('/api/database/distinct', { params: { field: 'type' } }),
+        axios.get('/api/database/distinct', { params: { field: 'grammar' } }),
+        axios.get('/api/database/distinct', { params: { field: 'scripture' } }),
+        axios.get('/api/database/bible-coverage')
+      ])
+      setTypeOptions(typeRes.data.values || [])
+      setGrammarOptions(grammarRes.data.values || [])
+      setScriptureOptions(scriptureRes.data.values || [])
+      setBibleBooks(bibleRes.data.books || [])
+    } catch (err) {
+      console.error('Failed to load filter options:', err)
+    }
+  }
+
+  const loadBookDetail = async (bookName: string) => {
+    try {
+      const response = await axios.get('/api/database/bible-coverage', { params: { book: bookName } })
+      setSelectedBookDetail(response.data)
+      setExpandedChapters([])
+    } catch (err) {
+      console.error('Failed to load book detail:', err)
+    }
+  }
+
+  const toggleChapter = (chapter: number) => {
+    setExpandedChapters(prev => 
+      prev.includes(chapter) 
+        ? prev.filter(c => c !== chapter)
+        : [...prev, chapter]
+    )
   }
 
   const loadSuggestions = async () => {
@@ -116,10 +219,15 @@ function Database() {
     setError('')
     
     try {
-      const params = {
+      const params: Record<string, string | number | undefined> = {
         page: currentPage,
         limit: entriesPerPage,
-        search: searchTerm || undefined
+        search: searchTerm || undefined,
+        sort_by: sortBy || undefined,
+        sort_order: sortBy ? sortOrder : undefined,
+        filter_type: filterType || undefined,
+        filter_grammar: filterGrammar || undefined,
+        filter_scripture: filterScripture || filterBook || undefined
       }
       
       const response = await axios.get('/api/database/entries', { params })
@@ -157,7 +265,8 @@ function Database() {
         grammar: entry.grammar || '',
         examples: entry.examples || [],
         notes: '',
-        scripture: entry.scripture || ''
+        scripture: entry.scripture || '',
+        references: entry.references || ''
       })
       setIsNewEntry(false)
     } else {
@@ -170,7 +279,8 @@ function Database() {
         grammar: '',
         examples: [],
         notes: '',
-        scripture: ''
+        scripture: '',
+        references: ''
       })
       setIsNewEntry(true)
     }
@@ -218,6 +328,137 @@ function Database() {
       notifications.show({
         title: 'Error',
         message: 'Failed to delete entry',
+        color: 'red'
+      })
+    }
+  }
+
+  const previewScripture = async () => {
+    if (!scriptureRef.trim()) {
+      notifications.show({
+        title: 'Error',
+        message: 'Please enter a scripture reference',
+        color: 'red'
+      })
+      return
+    }
+
+    setLoadingScripture(true)
+    setScripturePreview(null)
+
+    try {
+      const response = await axios.post('/api/scripture/preview', {
+        scripture: scriptureRef
+      })
+      const data = response.data
+
+      if (data.error && !data.chuukese && !data.english) {
+        notifications.show({
+          title: 'Error',
+          message: data.error,
+          color: 'red'
+        })
+      } else {
+        setScripturePreview({
+          chuukese: data.chuukese || '',
+          english: data.english || '',
+          error: data.error
+        })
+      }
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to fetch scripture',
+        color: 'red'
+      })
+    } finally {
+      setLoadingScripture(false)
+    }
+  }
+
+  const saveScriptureEntry = async () => {
+    if (!scripturePreview || (!scripturePreview.chuukese && !scripturePreview.english)) {
+      notifications.show({
+        title: 'Error',
+        message: 'Please preview the scripture first',
+        color: 'red'
+      })
+      return
+    }
+
+    try {
+      await axios.post('/api/database/entries', {
+        chuukese_word: scripturePreview.chuukese,
+        english_translation: scripturePreview.english,
+        scripture: scriptureRef,
+        type: 'scripture'
+      })
+
+      notifications.show({
+        title: 'Success',
+        message: 'Scripture entry added successfully',
+        color: 'green'
+      })
+
+      // Reset and close modal
+      setScriptureRef('')
+      setScripturePreview(null)
+      closeAddScriptureModal()
+      refreshDatabase()
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to save scripture entry',
+        color: 'red'
+      })
+    }
+  }
+
+  const fetchAndSaveVerse = async (bookName: string, chapter: number, verse: number) => {
+    const reference = `${bookName} ${chapter}:${verse}`
+    
+    try {
+      // Fetch the scripture text
+      const response = await axios.post('/api/scripture/preview', {
+        scripture: reference
+      })
+      const data = response.data
+
+      if (data.error && !data.chuukese && !data.english) {
+        notifications.show({
+          title: 'Error',
+          message: `Failed to fetch ${reference}: ${data.error}`,
+          color: 'red'
+        })
+        return
+      }
+
+      // Save the entry
+      await axios.post('/api/database/entries', {
+        chuukese_word: data.chuukese || '',
+        english_translation: data.english || '',
+        scripture: reference,
+        type: 'scripture'
+      })
+
+      notifications.show({
+        title: 'Success',
+        message: `Added ${reference}`,
+        color: 'green'
+      })
+
+      // Refresh the view without closing the expanded chapter
+      refreshDatabase()
+      if (selectedBookDetail) {
+        const currentExpandedChapters = expandedChapters
+        await loadBookDetail(selectedBookDetail.book)
+        // Restore the expanded chapters after reload
+        setExpandedChapters(currentExpandedChapters)
+      }
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: `Failed to add ${reference}`,
         color: 'red'
       })
     }
@@ -358,6 +599,88 @@ function Database() {
               </Button>
             ))}
           </Group>
+
+          {/* Filter dropdowns */}
+          <Group gap="md">
+            <Text size="xs" color="dimmed">Filters:</Text>
+            <Select
+              placeholder="Type"
+              value={filterType}
+              onChange={(value) => {
+                setFilterType(value || '')
+                setCurrentPage(1)
+              }}
+              data={typeOptions}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 150 }}
+            />
+            <Select
+              placeholder="Grammar"
+              value={filterGrammar}
+              onChange={(value) => {
+                setFilterGrammar(value || '')
+                setCurrentPage(1)
+              }}
+              data={grammarOptions}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 150 }}
+            />
+            <Select
+              placeholder="Scripture"
+              value={filterScripture}
+              onChange={(value) => {
+                setFilterScripture(value || '')
+                setCurrentPage(1)
+              }}
+              data={scriptureOptions}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 180 }}
+            />
+            <Select
+              placeholder="Bible Book"
+              value={filterBook}
+              onChange={(value) => {
+                setFilterBook(value || '')
+                setFilterScripture('')
+                setCurrentPage(1)
+              }}
+              data={bibleBooks.map(b => ({ value: b.book, label: `${b.book} (${b.loaded_verses}/${b.total_verses})` }))}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 220 }}
+            />
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconBook size={14} />}
+              onClick={openBibleCoverage}
+            >
+              Bible Coverage
+            </Button>
+            {(filterType || filterGrammar || filterScripture || filterBook) && (
+              <Button
+                size="xs"
+                variant="subtle"
+                color="gray"
+                onClick={() => {
+                  setFilterType('')
+                  setFilterGrammar('')
+                  setFilterScripture('')
+                  setFilterBook('')
+                  setCurrentPage(1)
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </Group>
         </Stack>
       </Card>
 
@@ -378,6 +701,14 @@ function Database() {
             >
               Add Entry
             </Button>
+            <Button 
+              leftSection={<IconBook size={16} />}
+              variant="light"
+              color="blue"
+              onClick={openAddScriptureModal}
+            >
+              Add Scripture
+            </Button>
             <Text size="sm" color="dimmed">
               {searchTerm && `Filtered by: "${searchTerm}" • `}
               Page {currentPage} of {totalPages}
@@ -396,13 +727,27 @@ function Database() {
               <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Chuukese</Table.Th>
-                    <Table.Th>English Translation</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Grammar</Table.Th>
-                    <Table.Th>Scripture</Table.Th>
-                    <Table.Th>Search Dir</Table.Th>
-                    <Table.Th>Definition</Table.Th>
+                    <Table.Th onClick={() => handleSort('chuukese')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Chuukese {getSortIcon('chuukese')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('english')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">English Translation {getSortIcon('english')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('type')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Type {getSortIcon('type')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('grammar')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Grammar {getSortIcon('grammar')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('scripture')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Scripture {getSortIcon('scripture')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('search_direction')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Search Dir {getSortIcon('search_direction')}</Group>
+                    </Table.Th>
+                    <Table.Th onClick={() => handleSort('definition')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Definition {getSortIcon('definition')}</Group>
+                    </Table.Th>
                     <Table.Th>Examples</Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
@@ -590,11 +935,12 @@ function Database() {
               'phrase',
               'sentence',
               'paragraph',
+              'question',
               'scripture'
             ]}
             searchable
             clearable
-            description="Entry type: word, phrase, sentence, paragraph, or scripture"
+            description="Entry type: word, phrase, sentence, paragraph, question, or scripture"
           />
           
           <Select
@@ -643,6 +989,15 @@ function Database() {
             description="Enter scripture reference to auto-fill Chuukese and English fields"
           />
           
+          <Textarea
+            label="References"
+            placeholder="e.g., Genesis 1:1, John 3:16, Romans 8:28"
+            value={formData.references}
+            onChange={(e) => setFormData({...formData, references: e.target.value})}
+            description="Additional scripture references related to this entry"
+            rows={2}
+          />
+          
           <Group justify="flex-end" mt="md">
             <Button variant="outline" onClick={close}>
               Cancel
@@ -681,6 +1036,224 @@ function Database() {
               Close
             </Button>
           </Group>
+        </Stack>
+      </Modal>
+
+      {/* Add Scripture Modal */}
+      <Modal
+        opened={addScriptureModalOpened}
+        onClose={() => {
+          setScriptureRef('')
+          setScripturePreview(null)
+          closeAddScriptureModal()
+        }}
+        title="Add Scripture Entry"
+        size="lg"
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Scripture Reference"
+            placeholder="e.g., Matthew 24:14, Genesis 1:1, John 3:16"
+            value={scriptureRef}
+            onChange={(e) => setScriptureRef(e.target.value)}
+            description="Enter a Bible book, chapter, and verse (e.g., Genesis 1:1)"
+            required
+          />
+
+          <Button
+            onClick={previewScripture}
+            loading={loadingScripture}
+            variant="outline"
+            leftSection={<IconSearch size={16} />}
+          >
+            Fetch Scripture
+          </Button>
+
+          {scripturePreview && (
+            <Card withBorder p="md" bg="gray.0">
+              <Stack gap="md">
+                {scripturePreview.error && (
+                  <Alert color="yellow" title="Note">
+                    {scripturePreview.error}
+                  </Alert>
+                )}
+
+                <div>
+                  <Text size="sm" fw={600} c="dimmed" mb="xs">Chuukese</Text>
+                  <Text className="chuukese-text-style" style={{ whiteSpace: 'pre-wrap' }}>
+                    {scripturePreview.chuukese || '(Not available)'}
+                  </Text>
+                </div>
+
+                <div>
+                  <Text size="sm" fw={600} c="dimmed" mb="xs">English</Text>
+                  <Text style={{ whiteSpace: 'pre-wrap' }}>
+                    {scripturePreview.english || '(Not available)'}
+                  </Text>
+                </div>
+              </Stack>
+            </Card>
+          )}
+
+          <Group justify="flex-end" mt="md">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setScriptureRef('')
+                setScripturePreview(null)
+                closeAddScriptureModal()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={saveScriptureEntry}
+              disabled={!scripturePreview || (!scripturePreview.chuukese && !scripturePreview.english)}
+              leftSection={<IconPlus size={16} />}
+            >
+              Save Scripture
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Bible Coverage Modal */}
+      <Modal
+        opened={bibleCoverageOpened}
+        onClose={() => {
+          closeBibleCoverage()
+          setSelectedBookDetail(null)
+        }}
+        title="Bible Verse Coverage"
+        size="xl"
+      >
+        <Stack gap="md">
+          {!selectedBookDetail ? (
+            <>
+              <Text size="sm" c="dimmed">
+                Select a book to see which verses are loaded and which are missing.
+              </Text>
+              <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
+                {bibleBooks.map((book) => (
+                  <Card
+                    key={book.book}
+                    withBorder
+                    padding="xs"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => loadBookDetail(book.book)}
+                  >
+                    <Text size="sm" fw={500} truncate>{book.book}</Text>
+                    <Progress 
+                      value={book.coverage_percent} 
+                      size="sm" 
+                      color={book.coverage_percent === 100 ? 'green' : book.coverage_percent > 0 ? 'blue' : 'gray'}
+                      mt={4}
+                    />
+                    <Text size="xs" c="dimmed" mt={2}>
+                      {book.loaded_verses}/{book.total_verses} verses ({book.coverage_percent}%)
+                    </Text>
+                  </Card>
+                ))}
+              </SimpleGrid>
+            </>
+          ) : (
+            <>
+              <Group justify="space-between">
+                <Group>
+                  <Button 
+                    variant="subtle" 
+                    size="xs" 
+                    onClick={() => setSelectedBookDetail(null)}
+                    leftSection={<IconChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />}
+                  >
+                    Back to Books
+                  </Button>
+                  <Title order={4}>{selectedBookDetail.book}</Title>
+                </Group>
+                <Badge size="lg" color={selectedBookDetail.coverage_percent === 100 ? 'green' : 'blue'}>
+                  {selectedBookDetail.total_loaded}/{selectedBookDetail.total_verses} verses ({selectedBookDetail.coverage_percent}%)
+                </Badge>
+              </Group>
+
+              <Progress 
+                value={selectedBookDetail.coverage_percent} 
+                size="md" 
+                color={selectedBookDetail.coverage_percent === 100 ? 'green' : 'blue'}
+              />
+
+              <Stack gap="xs">
+                {selectedBookDetail.chapters.map((chapter) => (
+                  <Card key={chapter.chapter} withBorder padding="xs">
+                    <Group 
+                      justify="space-between" 
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => toggleChapter(chapter.chapter)}
+                    >
+                      <Group gap="xs">
+                        {expandedChapters.includes(chapter.chapter) ? 
+                          <IconChevronDown size={16} /> : 
+                          <IconChevronRight size={16} />
+                        }
+                        <Text fw={500}>Chapter {chapter.chapter}</Text>
+                      </Group>
+                      <Group gap="xs">
+                        <Badge size="sm" color="green" variant="light">
+                          {chapter.loaded_count} loaded
+                        </Badge>
+                        {chapter.missing_count > 0 && (
+                          <Badge size="sm" color="red" variant="light">
+                            {chapter.missing_count} missing
+                          </Badge>
+                        )}
+                      </Group>
+                    </Group>
+                    
+                    <Collapse in={expandedChapters.includes(chapter.chapter)}>
+                      <Box mt="sm">
+                        <Group gap={4} wrap="wrap">
+                          {Array.from({ length: chapter.total_verses }, (_, i) => i + 1).map((verse) => {
+                            const isLoaded = chapter.loaded.includes(verse)
+                            return (
+                              <Badge
+                                key={verse}
+                                size="xs"
+                                variant={isLoaded ? 'filled' : 'outline'}
+                                color={isLoaded ? 'green' : 'red'}
+                                style={{ cursor: 'pointer', color: isLoaded ? 'white' : undefined }}
+                                onClick={() => {
+                                  if (isLoaded) {
+                                    // Filter to show this verse
+                                    setFilterScripture(`${selectedBookDetail.book} ${chapter.chapter}:${verse}`)
+                                    closeBibleCoverage()
+                                    setSelectedBookDetail(null)
+                                  } else {
+                                    // Fetch and save this missing verse
+                                    fetchAndSaveVerse(selectedBookDetail.book, chapter.chapter, verse)
+                                  }
+                                }}
+                              >
+                                {verse}
+                              </Badge>
+                            )
+                          })}
+                        </Group>
+                        <Group gap="xs" mt="xs">
+                          <Group gap={4}>
+                            <IconCheck size={12} color="green" />
+                            <Text size="xs" c="dimmed">Loaded</Text>
+                          </Group>
+                          <Group gap={4}>
+                            <IconX size={12} color="red" />
+                            <Text size="xs" c="dimmed">Missing</Text>
+                          </Group>
+                        </Group>
+                      </Box>
+                    </Collapse>
+                  </Card>
+                ))}
+              </Stack>
+            </>
+          )}
         </Stack>
       </Modal>
     </Stack>
