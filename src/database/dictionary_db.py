@@ -1099,7 +1099,7 @@ class DictionaryDB:
         except Exception:
             return None
     
-    def add_dictionary_from_csv(self, publication_id: str, filename: str, csv_content: str) -> Tuple[str, int]:
+    def add_dictionary_from_csv(self, publication_id: str, filename: str, csv_content: str, confidence_score: int = 100) -> Tuple[str, int]:
         """
         Add dictionary entries from CSV content
         
@@ -1107,6 +1107,7 @@ class DictionaryDB:
             publication_id: ID of the publication
             filename: Name of the CSV file
             csv_content: Raw CSV content as string
+            confidence_score: Confidence score to apply to all entries (0-100)
             
         Returns:
             Tuple of (page_id, number of entries added)
@@ -1122,7 +1123,8 @@ class DictionaryDB:
             'csv_content': csv_content[:1000],  # Store first 1000 chars for reference
             'processed_date': datetime.now(timezone.utc),
             'entries_extracted': 0,
-            'source_type': 'csv_upload'
+            'source_type': 'csv_upload',
+            'confidence_score': confidence_score
         }
         
         # Insert page
@@ -1130,7 +1132,7 @@ class DictionaryDB:
         page_id = str(result.inserted_id)
         
         # Parse CSV and extract entries
-        entries = self._extract_entries_from_csv(csv_content, page_id, publication_id, filename)
+        entries = self._extract_entries_from_csv(csv_content, page_id, publication_id, filename, confidence_score)
         
         # Update page with number of entries extracted
         self.pages_collection.update_one(
@@ -1140,7 +1142,7 @@ class DictionaryDB:
         
         return page_id, len(entries)
     
-    def _extract_entries_from_csv(self, csv_content: str, page_id: str, publication_id: str, filename: str) -> List[Dict]:
+    def _extract_entries_from_csv(self, csv_content: str, page_id: str, publication_id: str, filename: str, confidence_score: int = 100) -> List[Dict]:
         """
         Extract dictionary entries from CSV content
         
@@ -1149,6 +1151,7 @@ class DictionaryDB:
             page_id: Page database ID
             publication_id: Publication ID
             filename: Source filename
+            confidence_score: Confidence score to apply to all entries (0-100)
             
         Returns:
             List of extracted entries
@@ -1301,6 +1304,7 @@ class DictionaryDB:
                                 'filename': filename,
                                 'line_number': row_num,
                                 'confidence': 1.0,
+                                'confidence_score': confidence_score,
                                 'citation': f"{filename}:{row_num}",
                                 'created_date': datetime.now(timezone.utc),
                                 'source_type': 'csv_upload'
@@ -1319,6 +1323,7 @@ class DictionaryDB:
                                 'publication_id': publication_id,
                                 'filename': filename,
                                 'line_number': row_num,
+                                'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
                                 'created_date': datetime.now(timezone.utc)
                             }
@@ -1336,6 +1341,7 @@ class DictionaryDB:
                                 'publication_id': publication_id,
                                 'filename': filename,
                                 'line_number': row_num,
+                                'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
                                 'created_date': datetime.now(timezone.utc)
                             }
@@ -1353,6 +1359,7 @@ class DictionaryDB:
                                 'publication_id': publication_id,
                                 'filename': filename,
                                 'line_number': row_num,
+                                'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
                                 'created_date': datetime.now(timezone.utc)
                             }
@@ -1372,6 +1379,7 @@ class DictionaryDB:
                                 'filename': filename,
                                 'line_number': row_num,
                                 'confidence': 1.0,
+                                'confidence_score': confidence_score,
                                 'citation': f"{filename}:{row_num}",
                                 'created_date': datetime.now(timezone.utc),
                                 'source_type': 'csv_upload'
@@ -1402,6 +1410,7 @@ class DictionaryDB:
                             'filename': filename,
                             'line_number': row_num,
                             'confidence': 1.0,
+                            'confidence_score': confidence_score,
                             'citation': f"{filename}:{row_num}",
                             'created_date': datetime.now(timezone.utc),
                             'source_type': 'csv_upload'
@@ -1421,7 +1430,7 @@ class DictionaryDB:
         print(f"✅ Extracted: {len(words)} words, {len(phrases)} phrases, {len(sentences)} sentences, {len(paragraphs)} paragraphs")
         
         import time
-        batch_size = 10  # Small batches to avoid Cosmos DB rate limiting
+        batch_size = 10  # Batch size for Cosmos DB autoscale (1000 RU/s)
         all_entries = []
         
         # Insert words into dictionary_collection
@@ -1447,21 +1456,29 @@ class DictionaryDB:
         return all_entries
     
     def _batch_insert(self, collection, items, batch_size, item_type):
-        """Insert items in batches with rate limiting handling"""
+        """Insert items in batches with rate limiting handling and exponential backoff"""
         import time
+        import re
         inserted_count = 0
+        collection_name = collection.name
+        total_batches = (len(items) + batch_size - 1) // batch_size
+        
+        print(f"📦 Starting batch insert: {len(items)} {item_type} into '{collection_name}' ({total_batches} batches of {batch_size})")
         
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
-            retries = 3
+            batch_num = i // batch_size + 1
+            retries = 5
+            base_delay = 1.0
             
             while retries > 0:
                 try:
                     collection.insert_many(batch, ordered=False)
                     inserted_count += len(batch)
-                    print(f"  ✓ {item_type} batch {i//batch_size + 1}/{(len(items) + batch_size - 1)//batch_size} ({len(batch)} items)")
+                    print(f"  ✓ [{collection_name}] {item_type} batch {batch_num}/{total_batches} ({len(batch)} items)")
                     break
                 except DuplicateKeyError:
+                    print(f"  ⚠️ [{collection_name}] Duplicates in batch {batch_num}, inserting individually...")
                     for item in batch:
                         try:
                             collection.insert_one(item)
@@ -1469,19 +1486,37 @@ class DictionaryDB:
                         except DuplicateKeyError:
                             pass  # Skip duplicates
                         except Exception as e:
-                            print(f"  ⚠️ Error inserting {item_type}: {e}")
+                            if '16500' in str(e):
+                                print(f"  ⏳ [{collection_name}] Rate limited on individual insert, waiting 0.5s...")
+                                time.sleep(0.5)
+                                try:
+                                    collection.insert_one(item)
+                                    inserted_count += 1
+                                except:
+                                    pass
+                            else:
+                                print(f"  ⚠️ [{collection_name}] Error inserting {item_type}: {e}")
                     break
                 except Exception as e:
                     error_str = str(e)
                     if '16500' in error_str or 'RetryAfterMs' in error_str:
                         retries -= 1
-                        print(f"  ⏳ Rate limited, waiting 1s ({retries} retries left)")
-                        time.sleep(1.0)
+                        # Extract RetryAfterMs value if present
+                        retry_match = re.search(r'RetryAfterMs=(\d+)', error_str)
+                        retry_ms = int(retry_match.group(1)) if retry_match else 1000
+                        # Use exponential backoff with minimum of retry_ms
+                        delay = max(retry_ms / 1000.0, base_delay * (2 ** (5 - retries)))
+                        delay = min(delay, 10.0)  # Cap at 10 seconds
+                        print(f"  ⏳ [{collection_name}] Rate limited on batch {batch_num}, waiting {delay:.1f}s ({retries} retries left)")
+                        time.sleep(delay)
                     else:
-                        print(f"  ❌ Error inserting {item_type} batch: {e}")
+                        print(f"  ❌ [{collection_name}] Error inserting {item_type} batch {batch_num}: {e}")
                         break
             
-            time.sleep(0.2)
+            # Delay between batches to avoid rate limiting
+            time.sleep(1.0)
+        
+        print(f"✅ [{collection_name}] Completed: {inserted_count}/{len(items)} {item_type} inserted")
         
         print(f"✅ Inserted {inserted_count} {item_type} into database")
         return inserted_count

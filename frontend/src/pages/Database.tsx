@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox } from '@mantine/core'
 import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -50,6 +50,7 @@ interface DictionaryEntry {
   english_scripture?: string // Fetched English scripture text
   confidence_level?: string // low, medium, high, verified
   confidence_score?: number // 0-100
+  user_confirmed?: boolean // User confirmed match from translation game
 }
 
 interface DatabaseStats {
@@ -104,7 +105,8 @@ function Database() {
     notes: '',
     scripture: '',
     references: '',
-    confidence_score: undefined as number | undefined
+    confidence_score: undefined as number | undefined,
+    user_confirmed: false
   })
 
   useEffect(() => {
@@ -270,7 +272,8 @@ function Database() {
         notes: '',
         scripture: entry.scripture || '',
         references: entry.references || '',
-        confidence_score: entry.confidence_score
+        confidence_score: entry.confidence_score,
+        user_confirmed: entry.user_confirmed || false
       })
       setIsNewEntry(false)
     } else {
@@ -285,7 +288,8 @@ function Database() {
         notes: '',
         scripture: '',
         references: '',
-        confidence_score: undefined
+        confidence_score: undefined,
+        user_confirmed: false
       })
       setIsNewEntry(true)
     }
@@ -858,22 +862,29 @@ function Database() {
                           </Text>
                         </Table.Td>
                         <Table.Td>
-                          {entry.confidence_score !== undefined ? (
-                            <Badge
-                              color={
-                                entry.confidence_score >= 90 ? 'blue' :
-                                entry.confidence_score >= 70 ? 'green' :
-                                entry.confidence_score >= 40 ? 'yellow' : 'red'
-                              }
-                              variant="filled"
-                              size="sm"
-                              style={{ color: 'white' }}
-                            >
-                              {entry.confidence_score}%
-                            </Badge>
-                          ) : (
-                            <Text color="dimmed" size="sm">—</Text>
-                          )}
+                          <Group gap="xs">
+                            {entry.confidence_score !== undefined ? (
+                              <Badge
+                                color={
+                                  entry.confidence_score >= 90 ? 'blue' :
+                                  entry.confidence_score >= 70 ? 'green' :
+                                  entry.confidence_score >= 40 ? 'yellow' : 'red'
+                                }
+                                variant="filled"
+                                size="sm"
+                                style={{ color: 'white' }}
+                              >
+                                {entry.confidence_score}%
+                              </Badge>
+                            ) : (
+                              <Text color="dimmed" size="sm">—</Text>
+                            )}
+                            {entry.user_confirmed && (
+                              <Badge color="teal" variant="light" size="sm" leftSection={<IconCheck size={10} />}>
+                                Verified
+                              </Badge>
+                            )}
+                          </Group>
                         </Table.Td>
                         <Table.Td>
                           <Group gap="xs">
@@ -1058,6 +1069,14 @@ function Database() {
                '⚠️ Low - Needs verification'}
             </Text>
           </div>
+          
+          <Checkbox
+            label="User Confirmed Match"
+            description="Check if this translation has been manually verified by a user"
+            checked={formData.user_confirmed}
+            onChange={(e) => setFormData({...formData, user_confirmed: e.currentTarget.checked})}
+            color="teal"
+          />
           
           <Group justify="flex-end" mt="md">
             <Button variant="outline" onClick={close}>

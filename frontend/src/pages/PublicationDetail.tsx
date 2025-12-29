@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Card, Title, Text, Button, Group, Stack, Grid, Badge, Loader, Alert, Select, Checkbox, Progress, Modal, ScrollArea } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Grid, Badge, Loader, Alert, Select, Checkbox, Progress, Modal, ScrollArea, Slider } from '@mantine/core'
 import { IconUpload, IconFileText, IconAlertCircle, IconEye, IconCheck, IconLoader } from '@tabler/icons-react'
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
+import './PublicationDetail.css'
 
 interface Page {
   id: string
@@ -64,6 +65,12 @@ function PublicationDetail() {
   const [aiEnabled, setAiEnabled] = useState(true)
   const [aiLanguage, setAiLanguage] = useState('eng+chk')
   const [indexDictionary, setIndexDictionary] = useState(true)
+  const [importConfidenceScore, setImportConfidenceScore] = useState(100)
+  
+  // Update confidence modal
+  const [showUpdateConfidenceModal, setShowUpdateConfidenceModal] = useState(false)
+  const [updateConfidenceScore, setUpdateConfidenceScore] = useState(100)
+  const [updatingConfidence, setUpdatingConfidence] = useState(false)
   
   // Processing status modal
   const [showProcessingModal, setShowProcessingModal] = useState(false)
@@ -87,6 +94,33 @@ function PublicationDetail() {
         setError('Failed to load publication')
         setLoading(false)
       })
+  }
+
+  const updatePublicationConfidence = async () => {
+    if (!id) return
+    
+    setUpdatingConfidence(true)
+    try {
+      const response = await axios.post(`/api/publications/${id}/update-confidence`, {
+        confidence_score: updateConfidenceScore
+      })
+      
+      notifications.show({
+        title: 'Confidence Updated',
+        message: response.data.message,
+        color: 'green'
+      })
+      
+      setShowUpdateConfidenceModal(false)
+    } catch (err: any) {
+      notifications.show({
+        title: 'Update Failed',
+        message: err.response?.data?.error || 'Failed to update confidence scores',
+        color: 'red'
+      })
+    } finally {
+      setUpdatingConfidence(false)
+    }
   }
 
   // Connect to processing status stream
@@ -183,6 +217,9 @@ function PublicationDetail() {
         formData.append('ocr', aiEnabled.toString())
         formData.append('lang', aiLanguage)
         formData.append('index_dictionary', indexDictionary.toString())
+      } else {
+        // For CSV imports, include confidence score
+        formData.append('confidence_score', importConfidenceScore.toString())
       }
 
       try {
@@ -364,15 +401,26 @@ function PublicationDetail() {
   return (
     <Stack gap="lg">
       <Card withBorder>
-        <Title order={2} mb="sm">{publication.title}</Title>
-        {publication.description && <Text color="dimmed">{publication.description}</Text>}
-        <Group mt="md">
-          <Badge size="lg" variant="light">
-            {publication.pages.length} pages
-          </Badge>
-          <Text size="sm" color="dimmed">
-            Created: {new Date(publication.created_date).toLocaleDateString()}
-          </Text>
+        <Group justify="space-between" align="flex-start">
+          <div>
+            <Title order={2} mb="sm">{publication.title}</Title>
+            {publication.description && <Text color="dimmed">{publication.description}</Text>}
+            <Group mt="md">
+              <Badge size="lg" variant="light">
+                {publication.pages.length} pages
+              </Badge>
+              <Text size="sm" color="dimmed">
+                Created: {new Date(publication.created_date).toLocaleDateString()}
+              </Text>
+            </Group>
+          </div>
+          <Button
+            variant="light"
+            color="blue"
+            onClick={() => setShowUpdateConfidenceModal(true)}
+          >
+            Update Confidence
+          </Button>
         </Group>
       </Card>
 
@@ -406,6 +454,33 @@ function PublicationDetail() {
               onChange={(e) => setIndexDictionary(e.currentTarget.checked)}
             />
           </Group>
+          
+          <Stack gap="lg" className="confidence-slider-container">
+            <Text size="sm" fw={500}>
+              Import Confidence Level: {importConfidenceScore}%
+            </Text>
+            <Slider
+              value={importConfidenceScore}
+              onChange={setImportConfidenceScore}
+              min={0}
+              max={100}
+              step={5}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 50, label: '50%' },
+                { value: 100, label: '100%' }
+              ]}
+              color={
+                importConfidenceScore >= 90 ? 'blue' :
+                importConfidenceScore >= 70 ? 'green' :
+                importConfidenceScore >= 40 ? 'yellow' : 'red'
+              }
+              className="confidence-slider"
+            />
+            <Text size="xs" c="dimmed">
+              Set confidence level for CSV/TSV dictionary imports
+            </Text>
+          </Stack>
         </Stack>
 
         <Dropzone
@@ -656,6 +731,61 @@ function PublicationDetail() {
               Close
             </Button>
           )}
+        </Stack>
+      </Modal>
+
+      {/* Update Confidence Modal */}
+      <Modal
+        opened={showUpdateConfidenceModal}
+        onClose={() => setShowUpdateConfidenceModal(false)}
+        title="Update Confidence Score"
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Update the confidence score for all dictionary entries imported from this publication.
+          </Text>
+          
+          <div>
+            <Text size="sm" fw={500} mb="xs">
+              Confidence Level: {updateConfidenceScore}%
+            </Text>
+            <Slider
+              value={updateConfidenceScore}
+              onChange={setUpdateConfidenceScore}
+              min={0}
+              max={100}
+              step={5}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 50, label: '50%' },
+                { value: 100, label: '100%' }
+              ]}
+              color={
+                updateConfidenceScore >= 90 ? 'blue' :
+                updateConfidenceScore >= 70 ? 'green' :
+                updateConfidenceScore >= 40 ? 'yellow' : 'red'
+              }
+            />
+            <Text size="xs" c="dimmed" mt="md">
+              {updateConfidenceScore >= 90 ? '🔥 Verified - Professionally confirmed' :
+               updateConfidenceScore >= 70 ? '✅ High - Very confident' :
+               updateConfidenceScore >= 40 ? '👍 Medium - Reasonably confident' :
+               '⚠️ Low - Needs verification'}
+            </Text>
+          </div>
+          
+          <Group justify="flex-end" mt="md">
+            <Button variant="outline" onClick={() => setShowUpdateConfidenceModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={updatePublicationConfidence}
+              loading={updatingConfidence}
+            >
+              Update All Entries
+            </Button>
+          </Group>
         </Stack>
       </Modal>
     </Stack>

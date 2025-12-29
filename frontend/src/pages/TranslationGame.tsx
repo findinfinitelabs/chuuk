@@ -39,6 +39,7 @@ function TranslationGame() {
   const [editingEnglishId, setEditingEnglishId] = useState<number | null>(null)
   const [editedText, setEditedText] = useState('')
   const [pendingChuukeseIds, setPendingChuukeseIds] = useState<number[]>([])  // Changed to array
+  const [editedChuukeseTexts, setEditedChuukeseTexts] = useState<Record<number, string>>({})
 
   useEffect(() => {
     loadStats()
@@ -229,13 +230,22 @@ function TranslationGame() {
       setEditingEnglishId(englishId)
       setPendingChuukeseIds(chuukeseIds)
       setEditedText(englishSentence.editedText || englishSentence.text)
+      // Initialize edited Chuukese texts with current values
+      const initialChuukeseTexts: Record<number, string> = {}
+      chuukeseIds.forEach(id => {
+        const sentence = chuukeseSentences.find(s => s.id === id)
+        if (sentence) {
+          initialChuukeseTexts[id] = sentence.editedText || sentence.text
+        }
+      })
+      setEditedChuukeseTexts(initialChuukeseTexts)
       setEditModalOpen(true)
     }
   }
 
   const handleSaveEdit = () => {
     if (editingEnglishId !== null && pendingChuukeseIds.length > 0) {
-      // Update the sentence with edited text
+      // Update the English sentence with edited text
       setEnglishSentences(prev => 
         prev.map(s => s.id === editingEnglishId 
           ? { ...s, editedText: editedText } 
@@ -243,13 +253,24 @@ function TranslationGame() {
         )
       )
       
-      // Proceed with match
-      attemptMatch(editingEnglishId, pendingChuukeseIds, editedText)
+      // Update Chuukese sentences with edited texts
+      setChuukeseSentences(prev =>
+        prev.map(s => {
+          if (editedChuukeseTexts[s.id] !== undefined) {
+            return { ...s, editedText: editedChuukeseTexts[s.id] }
+          }
+          return s
+        })
+      )
+      
+      // Proceed with match (passing edited Chuukese texts)
+      attemptMatch(editingEnglishId, pendingChuukeseIds, editedText, editedChuukeseTexts)
       
       setEditModalOpen(false)
       setEditingEnglishId(null)
       setPendingChuukeseIds([])
       setEditedText('')
+      setEditedChuukeseTexts({})
     }
   }
 
@@ -258,19 +279,25 @@ function TranslationGame() {
     setEditingEnglishId(null)
     setPendingChuukeseIds([])
     setEditedText('')
+    setEditedChuukeseTexts({})
     setSelectedEnglish(null)
     setSelectedChuukese([])
   }
 
-  const attemptMatch = async (englishId: number, chuukeseIds: number[], customEnglishText?: string) => {
+  const attemptMatch = async (englishId: number, chuukeseIds: number[], customEnglishText?: string, customChuukeseTexts?: Record<number, string>) => {
     // For now, assume matches are correct
     const isCorrect = true
     
     const englishSentence = englishSentences.find(s => s.id === englishId)
     const englishText = customEnglishText || englishSentence?.editedText || englishSentence?.text || ''
-    const chuukeseTexts = chuukeseIds.map(id => 
-      chuukeseSentences.find(s => s.id === id)?.text || ''
-    ).join(' ')
+    const chuukeseTexts = chuukeseIds.map(id => {
+      // Use custom edited text if provided, otherwise fall back to sentence text
+      if (customChuukeseTexts && customChuukeseTexts[id]) {
+        return customChuukeseTexts[id]
+      }
+      const sentence = chuukeseSentences.find(s => s.id === id)
+      return sentence?.editedText || sentence?.text || ''
+    }).join(' ')
     
     try {
       // Save match to backend
@@ -529,8 +556,15 @@ function TranslationGame() {
                       }}
                     >
                       <Group justify="space-between" align="flex-start">
-                        <Text size="sm" className="chuukese-text-style" style={{ flex: 1 }}>{sentence.text}</Text>
-                        {matched && <IconCheck size={20} color="green" />}
+                        <Text size="sm" className="chuukese-text-style" style={{ flex: 1 }}>
+                          {sentence.editedText || sentence.text}
+                        </Text>
+                        <Group gap="xs">
+                          {sentence.editedText && (
+                            <Badge size="xs" color="orange" variant="dot">Edited</Badge>
+                          )}
+                          {matched && <IconCheck size={20} color="green" />}
+                        </Group>
                       </Group>
                     </Paper>
                   )
@@ -557,43 +591,50 @@ function TranslationGame() {
         </Alert>
       )}
 
-      {/* Edit English Translation Modal */}
+      {/* Edit Translation Modal */}
       <Modal
         opened={editModalOpen}
         onClose={handleCancelEdit}
-        title="Edit English Translation"
+        title="Edit Translations"
         size="lg"
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Review and edit the English translation if needed before matching:
+            Review and edit the translations if needed before matching:
           </Text>
           
           <Textarea
             label="English Translation"
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}
-            minRows={4}
-            maxRows={8}
+            minRows={3}
+            maxRows={6}
             autosize
           />
           
           {pendingChuukeseIds.length > 0 && (
-            <Paper p="sm" withBorder bg="gray.0">
-              <Text size="xs" fw={500} c="dimmed" mb="xs">
-                Matching with {pendingChuukeseIds.length} Chuukese sentence{pendingChuukeseIds.length > 1 ? 's' : ''}:
+            <Stack gap="sm">
+              <Text size="sm" fw={500}>
+                Chuukese Sentence{pendingChuukeseIds.length > 1 ? 's' : ''} ({pendingChuukeseIds.length}):
               </Text>
-              <Stack gap="xs">
-                {pendingChuukeseIds.map(id => {
-                  const sentence = chuukeseSentences.find(s => s.id === id)
-                  return sentence ? (
-                    <Text key={id} size="sm" className="chuukese-text-style">
-                      {sentence.text}
-                    </Text>
-                  ) : null
-                })}
-              </Stack>
-            </Paper>
+              {pendingChuukeseIds.map(id => {
+                const sentence = chuukeseSentences.find(s => s.id === id)
+                return sentence ? (
+                  <Textarea
+                    key={id}
+                    value={editedChuukeseTexts[id] || sentence.text}
+                    onChange={(e) => setEditedChuukeseTexts(prev => ({
+                      ...prev,
+                      [id]: e.target.value
+                    }))}
+                    minRows={2}
+                    maxRows={4}
+                    autosize
+                    className="chuukese-text-style"
+                  />
+                ) : null
+              })}
+            </Stack>
           )}
           
           <Group justify="flex-end" mt="md">
