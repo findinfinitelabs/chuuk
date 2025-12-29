@@ -55,6 +55,9 @@ cover/
 *.mo
 *.pot
 
+# Config files with sensitive data
+config/users.json
+
 # Django stuff:
 *.log
 local_settings.py

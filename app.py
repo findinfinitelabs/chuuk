@@ -5,8 +5,13 @@ import os
 import re
 import time
 import json
-from datetime import datetime, timezone
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timezone, timedelta
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response, session
 # from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -58,13 +63,94 @@ app = Flask(__name__)
 secret_key = os.getenv('FLASK_SECRET_KEY')
 if not secret_key:
     # Generate a random secret key for development
-    import secrets
     secret_key = secrets.token_hex(32)
     if os.getenv('FLASK_ENV') == 'production':
         raise ValueError('FLASK_SECRET_KEY must be set in production')
 app.config['SECRET_KEY'] = secret_key
 app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))  # 16MB default
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 days
+
+# ============================================================================
+# Single Active Session + Magic Link Storage
+# ============================================================================
+# In-memory store for active sessions and magic links
+# In production, consider using Redis or database storage
+active_sessions = {}  # {email: session_id}
+magic_links = {}  # {token: {'email': email, 'expires': datetime}}
+MAGIC_LINK_EXPIRY_MINUTES = 15
+
+def send_magic_link_email(email: str, magic_token: str, base_url: str) -> bool:
+    """Send magic link email to user"""
+    smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+    smtp_port = int(os.getenv('SMTP_PORT', 587))
+    smtp_user = os.getenv('SMTP_USER')
+    smtp_password = os.getenv('SMTP_PASSWORD')
+    from_email = os.getenv('SMTP_FROM', smtp_user)
+    
+    if not smtp_user or not smtp_password:
+        print(f"⚠️ SMTP not configured. Magic link for {email}: {base_url}/auth/magic/{magic_token}")
+        return True  # Still return True for dev mode
+    
+    magic_url = f"{base_url}/auth/magic/{magic_token}"
+    
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Chuuk Dictionary - Login Link'
+    msg['From'] = from_email
+    msg['To'] = email
+    
+    text_content = f"""
+Chuuk Dictionary Login
+
+Click the link below to sign in to your account:
+
+{magic_url}
+
+This link expires in {MAGIC_LINK_EXPIRY_MINUTES} minutes.
+
+If you didn't request this link, you can safely ignore this email.
+"""
+    
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; background-color: #1a1b1e; color: #fff; padding: 20px; }}
+        .container {{ max-width: 500px; margin: 0 auto; background: #25262b; padding: 30px; border-radius: 8px; }}
+        .button {{ display: inline-block; background: #228be6; color: white; padding: 12px 24px; 
+                   text-decoration: none; border-radius: 4px; margin: 20px 0; }}
+        .footer {{ color: #909296; font-size: 12px; margin-top: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Chuuk Dictionary Login</h2>
+        <p>Click the button below to sign in to your account:</p>
+        <a href="{magic_url}" class="button">Sign In</a>
+        <p class="footer">This link expires in {MAGIC_LINK_EXPIRY_MINUTES} minutes.<br>
+        If you didn't request this link, you can safely ignore this email.</p>
+    </div>
+</body>
+</html>
+"""
+    
+    msg.attach(MIMEText(text_content, 'plain'))
+    msg.attach(MIMEText(html_content, 'html'))
+    
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        print(f"✅ Magic link email sent to {email}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send magic link email: {e}")
+        return False
 
 # Enable CORS for React frontend
 # CORS(app, origins=["http://localhost:5173"])
@@ -108,6 +194,248 @@ if HELSINKI_AVAILABLE:
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'docx'}
+
+# ============================================================================
+# Authentication Functions
+# ============================================================================
+
+def load_users():
+    """Load users from config file or environment variable"""
+    # First check for environment variable (for production/Docker)
+    users_json = os.getenv('APP_USERS_JSON')
+    if users_json:
+        try:
+            data = json.loads(users_json)
+            return data.get('users', []) if isinstance(data, dict) else data
+        except json.JSONDecodeError:
+            print("⚠️ Failed to parse APP_USERS_JSON environment variable")
+    
+    # Fall back to config file
+    users_file = Path(__file__).parent / 'config' / 'users.json'
+    if users_file.exists():
+        with open(users_file, 'r') as f:
+            data = json.load(f)
+            return data.get('users', [])
+    
+    # No users configured - log warning
+    print("⚠️ No users configured. Set APP_USERS_JSON env var or create config/users.json")
+    return []
+
+def authenticate_user(email, access_code):
+    """Authenticate user by email and access code"""
+    users = load_users()
+    for user in users:
+        if user['email'].lower() == email.lower() and user['access_code'] == access_code:
+            return user
+    return None
+
+def login_required(f):
+    """Decorator to require login for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated_function
+
+def role_required(*allowed_roles):
+    """Decorator to require specific roles for routes
+    
+    Roles hierarchy:
+    - admin: Full access to everything
+    - translator: Everything except publications management
+    - user: Home, Word Lookup, AI Translation only
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not session.get('logged_in'):
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
+                return redirect('/login')
+            
+            user_role = session.get('user_role', 'user')
+            if user_role not in allowed_roles:
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({'error': 'Access denied. Insufficient permissions.'}), 403
+                return jsonify({'error': 'Access denied'}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+# Role permissions mapping
+ROLE_PERMISSIONS = {
+    'user': ['home', 'lookup', 'translate'],
+    'translator': ['home', 'lookup', 'translate', 'database', 'game'],
+    'admin': ['home', 'lookup', 'translate', 'database', 'game', 'publications', 'new_publication']
+}
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """API endpoint for login - enforces single active session"""
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    access_code = data.get('access_code', '').strip()
+    
+    if not email or not access_code:
+        return jsonify({'error': 'Email and access code are required'}), 400
+    
+    user = authenticate_user(email, access_code)
+    if user:
+        # Generate unique session ID for single active session enforcement
+        new_session_id = secrets.token_hex(32)
+        
+        # Invalidate any existing session for this user (single active session)
+        old_session = active_sessions.get(user['email'].lower())
+        if old_session:
+            print(f"🔐 Invalidating previous session for {user['email']}")
+        
+        # Store new session ID
+        active_sessions[user['email'].lower()] = new_session_id
+        
+        session['logged_in'] = True
+        session['user_email'] = user['email']
+        session['user_name'] = user.get('name', email)
+        session['user_role'] = user.get('role', 'user')
+        session['session_id'] = new_session_id  # Store session ID for validation
+        session.permanent = True
+        user_role = user.get('role', 'user')
+        permissions = ROLE_PERMISSIONS.get(user_role, ROLE_PERMISSIONS['user'])
+        return jsonify({
+            'success': True,
+            'user': {
+                'email': user['email'],
+                'name': user.get('name', email),
+                'role': user_role
+            },
+            'permissions': permissions
+        })
+    else:
+        return jsonify({'error': 'Invalid email or access code'}), 401
+
+@app.route('/api/auth/request-magic-link', methods=['POST'])
+def api_request_magic_link():
+    """Request a magic link for passwordless login"""
+    data = request.get_json()
+    email = data.get('email', '').strip().lower()
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    # Check if user exists
+    users = load_users()
+    user = next((u for u in users if u['email'].lower() == email), None)
+    
+    if not user:
+        # Don't reveal if email exists or not for security
+        return jsonify({'success': True, 'message': 'If this email is registered, a login link has been sent.'})
+    
+    # Generate magic link token
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=MAGIC_LINK_EXPIRY_MINUTES)
+    
+    # Store magic link
+    magic_links[token] = {
+        'email': user['email'],
+        'expires': expires
+    }
+    
+    # Get base URL
+    base_url = request.url_root.rstrip('/')
+    
+    # Send email
+    if send_magic_link_email(user['email'], token, base_url):
+        return jsonify({'success': True, 'message': 'Login link sent to your email.'})
+    else:
+        return jsonify({'error': 'Failed to send email. Please try again.'}), 500
+
+@app.route('/auth/magic/<token>')
+def api_verify_magic_link(token):
+    """Verify magic link and create session"""
+    if token not in magic_links:
+        return redirect('/?error=invalid_link')
+    
+    link_data = magic_links[token]
+    
+    # Check if expired
+    if datetime.now(timezone.utc) > link_data['expires']:
+        del magic_links[token]
+        return redirect('/?error=link_expired')
+    
+    # Find user
+    users = load_users()
+    user = next((u for u in users if u['email'].lower() == link_data['email'].lower()), None)
+    
+    if not user:
+        del magic_links[token]
+        return redirect('/?error=user_not_found')
+    
+    # Delete used token (one-time use)
+    del magic_links[token]
+    
+    # Generate unique session ID for single active session enforcement
+    new_session_id = secrets.token_hex(32)
+    
+    # Invalidate any existing session for this user
+    old_session = active_sessions.get(user['email'].lower())
+    if old_session:
+        print(f"🔐 Invalidating previous session for {user['email']} (magic link login)")
+    
+    active_sessions[user['email'].lower()] = new_session_id
+    
+    # Create session
+    session['logged_in'] = True
+    session['user_email'] = user['email']
+    session['user_name'] = user.get('name', user['email'])
+    session['user_role'] = user.get('role', 'user')
+    session['session_id'] = new_session_id
+    session.permanent = True
+    
+    return redirect('/')
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    """API endpoint for logout"""
+    # Remove from active sessions
+    user_email = session.get('user_email', '').lower()
+    if user_email in active_sessions:
+        del active_sessions[user_email]
+    session.clear()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/status', methods=['GET'])
+def api_auth_status():
+    """Check authentication status - also validates single active session"""
+    if session.get('logged_in'):
+        user_email = session.get('user_email', '').lower()
+        session_id = session.get('session_id')
+        
+        # Validate this is still the active session
+        if active_sessions.get(user_email) != session_id:
+            # Session was invalidated (user logged in elsewhere)
+            session.clear()
+            return jsonify({
+                'authenticated': False,
+                'error': 'Session expired. You logged in from another device.'
+            })
+        
+        user_role = session.get('user_role', 'user')
+        permissions = ROLE_PERMISSIONS.get(user_role, ROLE_PERMISSIONS['user'])
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'email': session.get('user_email'),
+                'name': session.get('user_name'),
+                'role': user_role
+            },
+            'permissions': permissions
+        })
+    return jsonify({'authenticated': False})
+
+# ============================================================================
 
 
 def highlight_search_term(text, search_term):
@@ -1375,12 +1703,17 @@ def api_lookup_get():
     try:
         word = request.args.get('word', '')
         lang = request.args.get('lang', 'chk')
+        limit = int(request.args.get('limit', 50))  # Increased default limit
         
         if not word:
             return jsonify({'results': []})
         
         # Now uses denormalized data - only 1 query, includes related words!
-        results = dict_db.search_word(word, limit=10, include_related=True)
+        results = dict_db.search_word(word, limit=limit, include_related=True)
+        
+        # Sort results alphabetically by chuukese_word
+        results.sort(key=lambda x: (x.get('chuukese_word', '') or '').lower())
+        
         return jsonify({'word': word, 'results': results})
     except Exception as e:
         import traceback
@@ -2040,13 +2373,17 @@ def api_create_database_entry():
                 english_translation = scripture_result['english']
         
         # Prepare the update data
+        # Normalize grammar type
+        raw_grammar = data.get('grammar', '')
+        normalized_grammar = dict_db._normalize_grammar(raw_grammar) if raw_grammar else None
+        
         update_data = {
             'chuukese_word': chuukese_word,
             'english_translation': english_translation,
             'definition': data.get('definition', ''),
-            'word_type': data.get('word_type', '') or data.get('grammar', ''),
+            'word_type': normalized_grammar or data.get('word_type', ''),
             'type': 'scripture' if scripture_ref else data.get('type', ''),
-            'grammar': data.get('grammar', ''),
+            'grammar': normalized_grammar,
             'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
@@ -2112,13 +2449,17 @@ def api_update_database_entry(entry_id):
                 chuukese_word = scripture_result['chuukese']
                 english_translation = scripture_result['english']
         
+        # Normalize grammar type
+        raw_grammar = data.get('grammar', '')
+        normalized_grammar = dict_db._normalize_grammar(raw_grammar) if raw_grammar else None
+        
         update_data = {
             'chuukese_word': chuukese_word,
             'english_translation': english_translation,
             'definition': data.get('definition', ''),
-            'word_type': data.get('word_type', '') or data.get('grammar', ''),
+            'word_type': normalized_grammar or data.get('word_type', ''),
             'type': 'scripture' if scripture_ref else data.get('type', ''),
-            'grammar': data.get('grammar', ''),
+            'grammar': normalized_grammar,
             'direction': data.get('direction', ''),
             'examples': data.get('examples', []),
             'notes': data.get('notes', ''),
