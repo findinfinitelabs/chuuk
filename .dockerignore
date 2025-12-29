@@ -21,3 +21,9 @@ deploy-azure.sh
 run.sh
 dev-start.sh
 dev-start.ps1
+
+# Exclude large training checkpoint files
+models/**/checkpoint-*
+models/**/finetuned
+training_data/
+data/brochures/
