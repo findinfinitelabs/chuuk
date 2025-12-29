@@ -318,10 +318,12 @@ function TranslationGame() {
     setMatches([])
     setSelectedEnglish(null)
     setSelectedChuukese([])
-    setArticleUrl('')
+    setEnglishUrl('')
+    setChuukeseUrl('')
     setArticleTitle('')
     setEnglishSentences([])
     setChuukeseSentences([])
+    clearGameState()
   }
 
   const isMatched = (id: number, type: 'english' | 'chuukese') => {
