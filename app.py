@@ -449,6 +449,9 @@ def upload_csv(pub_id):
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
+    # Get optional confidence score from form data (default 100%)
+    confidence_score = int(request.form.get('confidence_score', 100))
+    
     if file and file.filename.lower().endswith('.csv') or file.filename.lower().endswith('.tsv'):
         filename = secure_filename(file.filename)
         
@@ -464,15 +467,15 @@ def upload_csv(pub_id):
         
         # Initialize logger
         processing_logger.create_session(session_id, filename)
-        processing_logger.log(session_id, f"Starting CSV processing for {filename}")
+        processing_logger.log(session_id, f"Starting CSV processing for {filename} with confidence {confidence_score}%")
         
         try:
             # Process CSV into database
             import sys
             sys.stdout.flush()
             print(f"\n🔍 DEBUG: dict_db.client is {'available' if dict_db.client else 'None'}", flush=True)
-            print(f"🔍 DEBUG: About to call add_dictionary_from_csv with pub_id={pub_id}, filename={filename}", flush=True)
-            page_id, entries_added = dict_db.add_dictionary_from_csv(pub_id, filename, csv_content)
+            print(f"🔍 DEBUG: About to call add_dictionary_from_csv with pub_id={pub_id}, filename={filename}, confidence_score={confidence_score}", flush=True)
+            page_id, entries_added = dict_db.add_dictionary_from_csv(pub_id, filename, csv_content, confidence_score=confidence_score)
             print(f"🔍 DEBUG: Returned page_id={page_id}, entries_added={entries_added}\n", flush=True)
             
             if page_id:
@@ -607,6 +610,121 @@ def reprocess_page():
             'error': str(e),
             'message': f'Reprocessing failed: {str(e)}'
         }), 500
+
+
+@app.route('/api/publications/<pub_id>/update-confidence', methods=['POST'])
+def update_publication_confidence(pub_id):
+    """Bulk update confidence scores for all entries from a specific publication"""
+    import time
+    import re
+    
+    def batch_update_collection(collection, query, confidence_score, collection_name):
+        """Update documents in batches to avoid Cosmos DB rate limiting"""
+        updated_count = 0
+        batch_size = 50
+        max_retries = 5
+        
+        # Get all document IDs first
+        docs = list(collection.find(query, {'_id': 1}))
+        total_docs = len(docs)
+        
+        if total_docs == 0:
+            return 0, 0  # (found, modified)
+        
+        print(f"   [{collection_name}] Found {total_docs} documents to update")
+        
+        for i in range(0, total_docs, batch_size):
+            batch_ids = [doc['_id'] for doc in docs[i:i + batch_size]]
+            batch_num = i // batch_size + 1
+            total_batches = (total_docs + batch_size - 1) // batch_size
+            
+            retries = max_retries
+            while retries > 0:
+                try:
+                    result = collection.update_many(
+                        {'_id': {'$in': batch_ids}},
+                        {'$set': {'confidence_score': confidence_score}}
+                    )
+                    updated_count += result.modified_count
+                    print(f"   [{collection_name}] Batch {batch_num}/{total_batches}: {result.modified_count} updated")
+                    break
+                except Exception as e:
+                    error_str = str(e)
+                    if '16500' in error_str:
+                        retries -= 1
+                        retry_match = re.search(r'RetryAfterMs=(\d+)', error_str)
+                        delay = max(int(retry_match.group(1)) / 1000.0 if retry_match else 1.0, 1.0)
+                        delay = min(delay * (2 ** (max_retries - retries)), 10.0)
+                        print(f"   [{collection_name}] Rate limited, waiting {delay:.1f}s ({retries} retries left)")
+                        time.sleep(delay)
+                    else:
+                        print(f"   [{collection_name}] Error: {e}")
+                        break
+            
+            time.sleep(0.3)  # Small delay between batches
+        
+        return total_docs, updated_count  # (found, modified)
+    
+    try:
+        data = request.get_json()
+        confidence_score = data.get('confidence_score', 100)
+        filename = data.get('filename')  # Optional: limit to specific file
+        
+        if not isinstance(confidence_score, (int, float)) or confidence_score < 0 or confidence_score > 100:
+            return jsonify({'error': 'Invalid confidence score. Must be between 0 and 100.'}), 400
+        
+        # Build query filter
+        query = {'publication_id': pub_id}
+        if filename:
+            query['filename'] = filename
+        
+        print(f"📊 Updating confidence for publication {pub_id} to {confidence_score}%")
+        print(f"   Query: {query}")
+        
+        dict_found, dict_modified = 0, 0
+        phrases_found, phrases_modified = 0, 0
+        paragraphs_found, paragraphs_modified = 0, 0
+        
+        # Update all matching entries in dictionary_collection
+        if dict_db.dictionary_collection is not None:
+            dict_found, dict_modified = batch_update_collection(
+                dict_db.dictionary_collection, query, confidence_score, "dictionary"
+            )
+        
+        # Update all matching entries in phrases_collection
+        if dict_db.phrases_collection is not None:
+            phrases_found, phrases_modified = batch_update_collection(
+                dict_db.phrases_collection, query, confidence_score, "phrases"
+            )
+        
+        # Update all matching entries in paragraphs_collection
+        if hasattr(dict_db, 'paragraphs_collection') and dict_db.paragraphs_collection is not None:
+            paragraphs_found, paragraphs_modified = batch_update_collection(
+                dict_db.paragraphs_collection, query, confidence_score, "paragraphs"
+            )
+        
+        total_found = dict_found + phrases_found + paragraphs_found
+        total_modified = dict_modified + phrases_modified + paragraphs_modified
+        print(f"✅ Total: {total_found} entries processed, {total_modified} changed to {confidence_score}%")
+        
+        # Show "found" count in message (more meaningful than "modified" when values already match)
+        return jsonify({
+            'success': True,
+            'message': f'Set {total_found} entries to {confidence_score}% confidence ({total_modified} changed)',
+            'stats': {
+                'dictionary_entries': dict_found,
+                'phrase_entries': phrases_found,
+                'paragraph_entries': paragraphs_found,
+                'total': total_found,
+                'modified': total_modified
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error updating confidence: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # Disabled - handled by React Router
@@ -1934,6 +2052,7 @@ def api_create_database_entry():
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
             'references': data.get('references', ''),
+            'user_confirmed': data.get('user_confirmed', False),
             'source': 'User Input',
             'updated_date': datetime.now()
         }
@@ -1978,6 +2097,7 @@ def api_update_database_entry(entry_id):
     """API: Update a dictionary entry"""
     try:
         from bson import ObjectId
+        from bson.errors import InvalidId
         data = request.get_json()
         
         # Fetch scripture if provided
@@ -2004,6 +2124,7 @@ def api_update_database_entry(entry_id):
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
             'references': data.get('references', ''),
+            'user_confirmed': data.get('user_confirmed', False),
             'updated_date': datetime.now()
         }
         
@@ -2021,12 +2142,35 @@ def api_update_database_entry(entry_id):
             else:
                 update_data['confidence_level'] = 'low'
         
-        result = dict_db.dictionary_collection.update_one(
-            {'_id': ObjectId(entry_id)},
-            {'$set': update_data}
-        )
+        # Try to find the entry in different collections with flexible ID handling
+        result = None
+        collections_to_try = [
+            dict_db.dictionary_collection,
+            dict_db.phrases_collection
+        ]
         
-        if result.modified_count > 0:
+        for collection in collections_to_try:
+            # Try string ID first (for custom IDs like sentence_*)
+            result = collection.update_one(
+                {'_id': entry_id},
+                {'$set': update_data}
+            )
+            if result.matched_count > 0:
+                break
+            
+            # Try ObjectId if string didn't match
+            try:
+                obj_id = ObjectId(entry_id)
+                result = collection.update_one(
+                    {'_id': obj_id},
+                    {'$set': update_data}
+                )
+                if result.matched_count > 0:
+                    break
+            except InvalidId:
+                continue
+        
+        if result and result.matched_count > 0:
             return jsonify({'message': 'Entry updated successfully'}), 200
         else:
             return jsonify({'error': 'Entry not found'}), 404
@@ -2039,10 +2183,31 @@ def api_delete_database_entry(entry_id):
     """API: Delete a dictionary entry"""
     try:
         from bson import ObjectId
+        from bson.errors import InvalidId
         
-        result = dict_db.dictionary_collection.delete_one({'_id': ObjectId(entry_id)})
+        # Try to find and delete the entry in different collections with flexible ID handling
+        result = None
+        collections_to_try = [
+            dict_db.dictionary_collection,
+            dict_db.phrases_collection
+        ]
         
-        if result.deleted_count > 0:
+        for collection in collections_to_try:
+            # Try string ID first (for custom IDs like sentence_*)
+            result = collection.delete_one({'_id': entry_id})
+            if result.deleted_count > 0:
+                break
+            
+            # Try ObjectId if string didn't match
+            try:
+                obj_id = ObjectId(entry_id)
+                result = collection.delete_one({'_id': obj_id})
+                if result.deleted_count > 0:
+                    break
+            except InvalidId:
+                continue
+        
+        if result and result.deleted_count > 0:
             return jsonify({'message': 'Entry deleted successfully'}), 200
         else:
             return jsonify({'error': 'Entry not found'}), 404
@@ -2216,6 +2381,20 @@ def api_fetch_article():
                         return f"https://wol.jw.org{href}"
             return None
         
+        def extract_scripture_refs(element):
+            """Extract scripture references from links and format them properly"""
+            scripture_refs = []
+            # Find all scripture links (usually have class 'b' or contain scripture data attributes)
+            for link in element.find_all('a', href=True):
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                # Check if this is a scripture reference link
+                if '/nwtsty/' in href or '/bible/' in href or 'data-bid' in str(link) or link.get('data-bid'):
+                    # Get the scripture text (e.g., "1 Corinthians 15:33")
+                    if text and len(text) > 1:
+                        scripture_refs.append(text)
+            return scripture_refs
+        
         def parse_sentences(html):
             soup = BeautifulSoup(html, 'html.parser')
             article = soup.find('article') or soup.find('div', class_='bodyTxt')
@@ -2230,6 +2409,9 @@ def api_fetch_article():
             sentences = []
             
             for idx, para in enumerate(paragraphs):
+                # Extract scripture references from links before getting text
+                scripture_refs = extract_scripture_refs(para)
+                
                 text = para.get_text(separator=' ', strip=True)
                 
                 # Clean bullet points and other unwanted characters
@@ -2250,6 +2432,17 @@ def api_fetch_article():
                             'id': len(sentences) + 1,
                             'text': sent,
                             'paragraph_index': idx
+                        })
+                
+                # Add scripture references as separate sentences for easier matching
+                for ref in scripture_refs:
+                    # Only add if it looks like a scripture reference (has book name and numbers)
+                    if re.search(r'\d+:\d+', ref) or re.search(r'\d+\s+\w+\s+\d+', ref):
+                        sentences.append({
+                            'id': len(sentences) + 1,
+                            'text': f"📖 {ref}",
+                            'paragraph_index': idx,
+                            'is_scripture_ref': True
                         })
             
             return sentences, title
@@ -2314,12 +2507,14 @@ def api_save_brochure_match():
         phrase_data = {
             '_id': f"sentence_{hash(chuukese_text) & 0x7FFFFFFF}_{hash(english_text) & 0x7FFFFFFF}",
             'chuukese_sentence': chuukese_text.strip(),
+            'chuukese_word': chuukese_text.strip(),  # For compatibility with dictionary display
             'english_translation': english_text.strip(),
             'type': 'sentence',
             'confidence': 1.0,  # 100% confidence when user confirms
+            'confidence_score': 100,  # 100% confidence score
             'grammar': 'phrase',
             'search_direction': 'chk_to_en',
-            'definition': 'user_confirmed_match',
+            'definition': '',  # Leave blank, user_confirmed flag indicates source
             'source': source,
             'source_type': 'translation_game',
             'date_added': datetime.now(timezone.utc),
