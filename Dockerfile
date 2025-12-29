@@ -34,7 +34,7 @@ COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Create necessary directories
-RUN mkdir -p uploads logs models output data
+RUN mkdir -p uploads logs models output data config
 
 # Expose port
 EXPOSE 8000

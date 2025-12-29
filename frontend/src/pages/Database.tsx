@@ -1,10 +1,250 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard } from '@mantine/core'
 import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './Database.css'
+
+// Grammar type descriptions with examples
+const GRAMMAR_DESCRIPTIONS: Record<string, { description: string; englishExample: string; chuukeseExample: string }> = {
+  'noun': {
+    description: 'A word that represents a person, place, thing, or idea.',
+    englishExample: 'The house is big.',
+    chuukeseExample: 'Imw mei lап.'
+  },
+  'verb': {
+    description: 'A word that describes an action, state, or occurrence.',
+    englishExample: 'He runs fast.',
+    chuukeseExample: 'E pwéér ngonuk.'
+  },
+  'transitive verb': {
+    description: 'A verb that requires a direct object to complete its meaning.',
+    englishExample: 'She eats fish.',
+    chuukeseExample: 'E mongó iik.'
+  },
+  'intransitive verb': {
+    description: 'A verb that does not require a direct object.',
+    englishExample: 'The baby sleeps.',
+    chuukeseExample: 'Semirit e mééúr.'
+  },
+  'adjective': {
+    description: 'A word that describes or modifies a noun.',
+    englishExample: 'The beautiful flower.',
+    chuukeseExample: 'Séúséú mei chóóchó.'
+  },
+  'adverb': {
+    description: 'A word that modifies a verb, adjective, or other adverb.',
+    englishExample: 'He speaks slowly.',
+    chuukeseExample: 'E kapas féúnúfén.'
+  },
+  'pronoun': {
+    description: 'A word that takes the place of a noun.',
+    englishExample: 'He went there.',
+    chuukeseExample: 'E fééri ikéé.'
+  },
+  'preposition': {
+    description: 'A word that shows the relationship between a noun and other words.',
+    englishExample: 'The book is on the table.',
+    chuukeseExample: 'Puk mi won téépur.'
+  },
+  'conjunction': {
+    description: 'A word that connects words, phrases, or clauses.',
+    englishExample: 'I eat and drink.',
+    chuukeseExample: 'Úwa mongó me ún.'
+  },
+  'particle': {
+    description: 'A small word that adds grammatical meaning but has no fixed category.',
+    englishExample: 'Do you want it? (question particle)',
+    chuukeseExample: 'Kopwe mochen? (aa)'
+  },
+  'auxiliary': {
+    description: 'A helping verb used with main verbs to express tense, mood, or voice.',
+    englishExample: 'I will go.',
+    chuukeseExample: 'Upwe fééri.'
+  },
+  'classifier': {
+    description: 'A word used when counting that categorizes nouns by shape or type.',
+    englishExample: 'Three long things (sticks).',
+    chuukeseExample: 'Éénú kéú (for long objects).'
+  },
+  'numeral': {
+    description: 'A word that represents a number.',
+    englishExample: 'One, two, three.',
+    chuukeseExample: 'Éét, éruwa, éénú.'
+  },
+  'ordinal': {
+    description: 'A number word indicating position in a sequence.',
+    englishExample: 'The first one.',
+    chuukeseExample: 'Ekewe ewe maas.'
+  },
+  'demonstrative': {
+    description: 'A word that points to a specific noun (this, that, these, those).',
+    englishExample: 'This house is mine.',
+    chuukeseExample: 'Imwen iei mei néúi.'
+  },
+  'possessive': {
+    description: 'A word that shows ownership or possession.',
+    englishExample: 'My book.',
+    chuukeseExample: 'Néúi puk.'
+  },
+  'interjection': {
+    description: 'A word or phrase that expresses strong emotion.',
+    englishExample: 'Wow! That is amazing!',
+    chuukeseExample: 'Ioó! E pwúng!'
+  },
+  'quantifier': {
+    description: 'A word that indicates amount or quantity.',
+    englishExample: 'Many people came.',
+    chuukeseExample: 'Chóón meinisin ra wá.'
+  },
+  'article': {
+    description: 'A word that defines a noun as specific or unspecific (the, a, an).',
+    englishExample: 'The man is here.',
+    chuukeseExample: 'Mwáán e mi iéi.'
+  },
+  'verb + suffix': {
+    description: 'A verb with an attached suffix that modifies its meaning.',
+    englishExample: 'He is eating it (with object marker).',
+    chuukeseExample: 'E mongóóni.'
+  },
+  'verb + directional': {
+    description: 'A verb with a directional suffix indicating movement toward/away.',
+    englishExample: 'Come here / Go there.',
+    chuukeseExample: 'Wá me / Fééri nó.'
+  },
+  'verb + pronoun suffix': {
+    description: 'A verb with an attached pronoun indicating the object.',
+    englishExample: 'He sees me.',
+    chuukeseExample: 'E kúnééi.'
+  },
+  'verb (reduplicated)': {
+    description: 'A verb with repeated syllables to indicate ongoing or repeated action.',
+    englishExample: 'Walking around (repeatedly).',
+    chuukeseExample: 'Féénúféén (walking about).'
+  },
+  'verb + reciprocal': {
+    description: 'A verb form indicating mutual action between parties.',
+    englishExample: 'They see each other.',
+    chuukeseExample: 'Ra kúnééir.'
+  },
+  'transitive verb + suffix': {
+    description: 'A transitive verb with an attached suffix modifying its meaning.',
+    englishExample: 'He is cooking it.',
+    chuukeseExample: 'E téwéni.'
+  },
+  'transitive verb + pronoun suffix': {
+    description: 'A transitive verb with a pronoun suffix indicating the object.',
+    englishExample: 'She loves him.',
+    chuukeseExample: 'E tongeni.'
+  },
+  'noun + suffix': {
+    description: 'A noun with an attached suffix that modifies its meaning.',
+    englishExample: 'The houses (plural).',
+    chuukeseExample: 'Ekewe imw.'
+  },
+  'noun + possessive': {
+    description: 'A noun with a possessive suffix indicating ownership.',
+    englishExample: 'His hand.',
+    chuukeseExample: 'Péúéún.'
+  },
+  'adjective + suffix': {
+    description: 'An adjective with an attached suffix that modifies its meaning.',
+    englishExample: 'Very big.',
+    chuukeseExample: 'Mei lapelap.'
+  },
+  'adjective (reduplicated)': {
+    description: 'An adjective with repeated syllables for emphasis or intensity.',
+    englishExample: 'Very very small.',
+    chuukeseExample: 'Kúkúnú.'
+  },
+  'locational noun': {
+    description: 'A noun that indicates location or position.',
+    englishExample: 'Inside the house.',
+    chuukeseExample: 'Lón imw.'
+  },
+  'relational noun': {
+    description: 'A noun that expresses a relationship, often with possessive suffixes.',
+    englishExample: 'Beside him.',
+    chuukeseExample: 'Rééún.'
+  }
+}
+
+// Bible book sections with pastel colors (based on JW.org categorization)
+interface BibleSection {
+  name: string
+  color: string
+  backgroundColor: string
+  books: string[]
+}
+
+const BIBLE_SECTIONS: BibleSection[] = [
+  {
+    name: 'Pentateuch',
+    color: '#1e3a5f',
+    backgroundColor: '#e3f2fd', // Pastel blue
+    books: ['Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy']
+  },
+  {
+    name: 'Historical',
+    color: '#1b5e20',
+    backgroundColor: '#e8f5e9', // Pastel green
+    books: ['Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther']
+  },
+  {
+    name: 'Poetic',
+    color: '#4a148c',
+    backgroundColor: '#f3e5f5', // Pastel purple
+    books: ['Job', 'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon']
+  },
+  {
+    name: 'Major Prophets',
+    color: '#e65100',
+    backgroundColor: '#fff3e0', // Pastel orange
+    books: ['Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel']
+  },
+  {
+    name: 'Minor Prophets',
+    color: '#880e4f',
+    backgroundColor: '#fce4ec', // Pastel pink
+    books: ['Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi']
+  },
+  {
+    name: 'Gospels',
+    color: '#00695c',
+    backgroundColor: '#e0f2f1', // Pastel teal
+    books: ['Matthew', 'Mark', 'Luke', 'John']
+  },
+  {
+    name: 'Acts',
+    color: '#006064',
+    backgroundColor: '#e0f7fa', // Pastel cyan
+    books: ['Acts']
+  },
+  {
+    name: "Paul's Letters",
+    color: '#f57f17',
+    backgroundColor: '#fffde7', // Pastel yellow
+    books: ['Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians', '1 Timothy', '2 Timothy', 'Titus', 'Philemon']
+  },
+  {
+    name: 'Other Inspired Letters',
+    color: '#b71c1c',
+    backgroundColor: '#ffebee', // Pastel rose
+    books: ['Hebrews', 'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude']
+  },
+  {
+    name: 'Revelation',
+    color: '#311b92',
+    backgroundColor: '#ede7f6', // Pastel deep purple
+    books: ['Revelation']
+  }
+]
+
+// Helper function to get section info for a book
+const getBookSection = (bookName: string): BibleSection | undefined => {
+  return BIBLE_SECTIONS.find(section => section.books.includes(bookName))
+}
 
 interface BibleBookCoverage {
   book: string
@@ -55,8 +295,13 @@ interface DictionaryEntry {
 
 interface DatabaseStats {
   total_entries: number
-  total_chuukese_words: number // Includes phrases
-  total_english_words: number // Includes phrases
+  total_chuukese_words: number // Unique Chuukese entries
+  total_english_words: number // Unique English entries
+  total_words: number // Single word entries
+  total_phrases: number // Multi-word entries
+  total_sentences: number // Sentence type entries
+  total_with_scripture: number // Entries with scripture references
+  grammar_breakdown: Record<string, number> // Grammar type counts
   last_updated?: string
 }
 
@@ -548,20 +793,85 @@ function Database() {
         </Text>
 
         {stats && (
-          <Group gap="lg">
-            <div>
-              <Text size="sm" color="dimmed">Total Entries</Text>
-              <Text size="xl" fw={700} c="ocean.6">{stats.total_entries.toLocaleString()}</Text>
-            </div>
-            <div>
-              <Text size="sm" color="dimmed">Chuukese Entries</Text>
-              <Text size="xl" fw={700} c="coral.6">{stats.total_chuukese_words.toLocaleString()}</Text>
-            </div>
-            <div>
-              <Text size="sm" color="dimmed">English Translations</Text>
-              <Text size="xl" fw={700} c="teal.6">{stats.total_english_words.toLocaleString()}</Text>
-            </div>
-          </Group>
+          <Stack gap="md">
+            {/* Primary stats row */}
+            <Group gap="lg">
+              <div>
+                <Text size="sm" color="dimmed">Total Entries</Text>
+                <Text size="xl" fw={700} c="ocean.6">{stats.total_entries.toLocaleString()}</Text>
+              </div>
+              <div>
+                <Text size="sm" color="dimmed">Unique Chuukese</Text>
+                <Text size="xl" fw={700} c="coral.6">{stats.total_chuukese_words.toLocaleString()}</Text>
+              </div>
+              <div>
+                <Text size="sm" color="dimmed">Unique English</Text>
+                <Text size="xl" fw={700} c="teal.6">{stats.total_english_words.toLocaleString()}</Text>
+              </div>
+            </Group>
+            
+            {/* Secondary stats row */}
+            <Group gap="lg">
+              <div>
+                <Text size="sm" color="dimmed">Words</Text>
+                <Text size="lg" fw={600} c="blue">{stats.total_words?.toLocaleString() || 0}</Text>
+              </div>
+              <div>
+                <Text size="sm" color="dimmed">Phrases</Text>
+                <Text size="lg" fw={600} c="violet">{stats.total_phrases?.toLocaleString() || 0}</Text>
+              </div>
+              <div>
+                <Text size="sm" color="dimmed">Sentences</Text>
+                <Text size="lg" fw={600} c="grape">{stats.total_sentences?.toLocaleString() || 0}</Text>
+              </div>
+              <div>
+                <Text size="sm" color="dimmed">With Scripture</Text>
+                <Text size="lg" fw={600} c="indigo">{stats.total_with_scripture?.toLocaleString() || 0}</Text>
+              </div>
+            </Group>
+            
+            {/* Grammar breakdown */}
+            {stats.grammar_breakdown && Object.keys(stats.grammar_breakdown).length > 0 && (
+              <div>
+                <Text size="sm" color="dimmed" mb="xs">Grammar Types (hover for details)</Text>
+                <Group gap="xs">
+                  {Object.entries(stats.grammar_breakdown).map(([grammar, count]) => {
+                    const grammarInfo = GRAMMAR_DESCRIPTIONS[grammar]
+                    if (grammarInfo) {
+                      return (
+                        <HoverCard key={grammar} width={320} shadow="md" withArrow openDelay={200}>
+                          <HoverCard.Target>
+                            <Badge variant="light" color="orange" size="sm" style={{ cursor: 'help' }}>
+                              {grammar}: {count.toLocaleString()}
+                            </Badge>
+                          </HoverCard.Target>
+                          <HoverCard.Dropdown>
+                            <Stack gap="xs">
+                              <Text size="sm" fw={600} c="orange">{grammar}</Text>
+                              <Text size="xs">{grammarInfo.description}</Text>
+                              <div>
+                                <Text size="xs" fw={500} c="dimmed">English Example:</Text>
+                                <Text size="xs" fs="italic">{grammarInfo.englishExample}</Text>
+                              </div>
+                              <div>
+                                <Text size="xs" fw={500} c="dimmed">Chuukese Example:</Text>
+                                <Text size="xs" fs="italic">{grammarInfo.chuukeseExample}</Text>
+                              </div>
+                            </Stack>
+                          </HoverCard.Dropdown>
+                        </HoverCard>
+                      )
+                    }
+                    return (
+                      <Badge key={grammar} variant="light" color="orange" size="sm">
+                        {grammar}: {count.toLocaleString()}
+                      </Badge>
+                    )
+                  })}
+                </Group>
+              </div>
+            )}
+          </Stack>
         )}
       </Card>
 
@@ -1211,33 +1521,73 @@ function Database() {
           {!selectedBookDetail ? (
             <>
               <Text size="sm" c="dimmed">
-                Select a book to see which verses are loaded and which are missing.
+                Select a book to see which verses are loaded and which are missing. Colors represent Bible sections.
               </Text>
-              <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
-                {bibleBooks.map((book) => (
-                  <Card
-                    key={book.book}
-                    withBorder
-                    padding="xs"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => loadBookDetail(book.book)}
+              
+              {/* Section legend */}
+              <Group gap="xs" wrap="wrap">
+                {BIBLE_SECTIONS.map((section) => (
+                  <Badge 
+                    key={section.name}
+                    size="xs"
+                    style={{ 
+                      backgroundColor: section.backgroundColor,
+                      color: section.color,
+                      border: `1px solid ${section.color}30`
+                    }}
                   >
-                    <Text size="sm" fw={500} truncate>{book.book}</Text>
-                    <Progress 
-                      value={book.coverage_percent} 
-                      size="sm" 
-                      color={book.coverage_percent === 100 ? 'green' : book.coverage_percent > 0 ? 'blue' : 'gray'}
-                      mt={4}
-                    />
-                    <Text size="xs" c="dimmed" mt={2}>
-                      {book.loaded_verses}/{book.total_verses} verses ({book.coverage_percent}%)
-                    </Text>
-                  </Card>
+                    {section.name}
+                  </Badge>
                 ))}
-              </SimpleGrid>
+              </Group>
+              
+              {/* Books grouped by section */}
+              <Stack gap="lg">
+                {BIBLE_SECTIONS.map((section) => {
+                  const sectionBooks = bibleBooks.filter(book => section.books.includes(book.book))
+                  if (sectionBooks.length === 0) return null
+                  
+                  return (
+                    <div key={section.name}>
+                      <Text size="sm" fw={600} mb="xs" style={{ color: section.color }}>
+                        {section.name}
+                      </Text>
+                      <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
+                        {sectionBooks.map((book) => (
+                          <Card
+                            key={book.book}
+                            withBorder
+                            padding="xs"
+                            style={{ 
+                              cursor: 'pointer',
+                              backgroundColor: section.backgroundColor,
+                              borderColor: `${section.color}30`
+                            }}
+                            onClick={() => loadBookDetail(book.book)}
+                          >
+                            <Text size="sm" fw={500} truncate style={{ color: section.color }}>{book.book}</Text>
+                            <Progress 
+                              value={book.coverage_percent} 
+                              size="sm" 
+                              color={book.coverage_percent === 100 ? 'green' : book.coverage_percent > 0 ? 'blue' : 'gray'}
+                              mt={4}
+                            />
+                            <Text size="xs" c="dimmed" mt={2}>
+                              {book.loaded_verses}/{book.total_verses} ({book.coverage_percent}%)
+                            </Text>
+                          </Card>
+                        ))}
+                      </SimpleGrid>
+                    </div>
+                  )
+                })}
+              </Stack>
             </>
           ) : (
-            <>
+            (() => {
+              const bookSection = getBookSection(selectedBookDetail.book)
+              return (
+              <>
               <Group justify="space-between">
                 <Group>
                   <Button 
@@ -1248,7 +1598,19 @@ function Database() {
                   >
                     Back to Books
                   </Button>
-                  <Title order={4}>{selectedBookDetail.book}</Title>
+                  <Title order={4} style={{ color: bookSection?.color }}>{selectedBookDetail.book}</Title>
+                  {bookSection && (
+                    <Badge 
+                      size="sm"
+                      style={{ 
+                        backgroundColor: bookSection.backgroundColor,
+                        color: bookSection.color,
+                        border: `1px solid ${bookSection.color}30`
+                      }}
+                    >
+                      {bookSection.name}
+                    </Badge>
+                  )}
                 </Group>
                 <Badge size="lg" color={selectedBookDetail.coverage_percent === 100 ? 'green' : 'blue'}>
                   {selectedBookDetail.total_loaded}/{selectedBookDetail.total_verses} verses ({selectedBookDetail.coverage_percent}%)
@@ -1333,6 +1695,7 @@ function Database() {
                 ))}
               </Stack>
             </>
+          )})()
           )}
         </Stack>
       </Modal>

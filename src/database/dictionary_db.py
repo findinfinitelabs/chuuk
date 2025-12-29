@@ -9,6 +9,99 @@ from datetime import datetime, timezone
 from pymongo import MongoClient, TEXT, ASCENDING
 from pymongo.errors import DuplicateKeyError, ConnectionFailure
 
+# Grammar type normalization mapping - consolidates variations into standard forms
+GRAMMAR_NORMALIZATION = {
+    # Verb reduplicated variations
+    'v. (redup.)': 'verb (reduplicated)',
+    'v (redup)': 'verb (reduplicated)',
+    'v (redup.)': 'verb (reduplicated)',
+    'v. (reduplicated)': 'verb (reduplicated)',
+    'verb (redup.)': 'verb (reduplicated)',
+    'verb, reduplicated': 'verb (reduplicated)',
+    'verb (intensive reduplicated)': 'verb (reduplicated)',
+    
+    # Adjective reduplicated
+    'adj. (redup.)': 'adjective (reduplicated)',
+    
+    # Noun + possessive variations
+    'noun + poss': 'noun + possessive',
+    'noun + possessive suffix': 'noun + possessive',
+    'noun with possessive suffix': 'noun + possessive',
+    'noun (possessed)': 'noun + possessive',
+    'possessed noun': 'noun + possessive',
+    
+    # Verb + directional
+    'verb + dir': 'verb + directional',
+    
+    # Transitive verb + pronoun suffix variations
+    'transitive verb with pronoun suffix': 'transitive verb + pronoun suffix',
+    'transitive verb + object suffix': 'transitive verb + pronoun suffix',
+    'verb + obj suffix': 'verb + pronoun suffix',
+    
+    # Classifier variations
+    'classifier (counting word)': 'classifier',
+    'classifier (possessed)': 'classifier',
+    'numeral classifier': 'classifier',
+    
+    # Combined types - simplify to primary
+    'verb, transitive verb': 'transitive verb',
+    'verb, transitive verb + suffix': 'transitive verb + suffix',
+    'adjective, noun': 'adjective',
+    'adjective, ordinal': 'ordinal',
+    'noun, verb': 'noun',
+    'noun, intransitive verb': 'noun',
+    'verb / noun': 'verb',
+    'verb / stative': 'verb',
+    'adjective / verb': 'adjective',
+    'adjective / adverb': 'adverb',
+    'adverb / quantifier': 'adverb',
+    'n. / vt': 'noun',
+    'adv./v': 'adverb',
+    'v./adj': 'verb',
+    'verb/adj': 'verb',
+    'noun/verb': 'noun',
+    'adj./vt + poss': 'adjective',
+    'adj./mod': 'adjective',
+    
+    # Particle variations
+    'negative particle': 'particle',
+    'emphatic particle': 'particle',
+    'negative auxiliary': 'auxiliary',
+    'particle/copula': 'particle',
+    'particle / copula': 'particle',
+    
+    # Demonstrative variations
+    'demonstrative plural': 'demonstrative',
+    'demonstrative noun': 'demonstrative',
+    
+    # Locational variations
+    'locationals': 'locational noun',
+    'locational': 'locational noun',
+    
+    # Temporal
+    'negative temporal': 'adverb',
+    
+    # Relational variations
+    'relational': 'relational noun',
+    
+    # Phrase types (not grammar) - set to None to remove
+    'phrase': None,
+    'pronoun phrase': None,
+    'example phrase': None,
+    'prep/phrase': 'preposition',
+    'adv/phrase': 'adverb',
+    
+    # Other
+    '—': None,
+    'unknown': None,
+    'intr': 'intransitive verb',
+    'noun form': 'noun',
+    'existential': 'verb',
+    'pronoun suffix': 'pronoun',
+    'proper noun': 'noun',
+    'determiner': 'demonstrative',
+}
+
 
 class DictionaryDB:
     """Manages dictionary entries in MongoDB"""
@@ -479,14 +572,33 @@ class DictionaryDB:
         
         return 'unknown'  # Default if no type detected
     
+    def _normalize_grammar(self, grammar: str) -> Optional[str]:
+        """Normalize grammar type to a standard form"""
+        if not grammar:
+            return None
+        
+        grammar_lower = grammar.lower().strip()
+        
+        # Check if it's in the normalization map
+        if grammar_lower in GRAMMAR_NORMALIZATION:
+            return GRAMMAR_NORMALIZATION[grammar_lower]
+        
+        # Also check original case
+        if grammar in GRAMMAR_NORMALIZATION:
+            return GRAMMAR_NORMALIZATION[grammar]
+        
+        # Return as-is if not in normalization map (it's already normalized)
+        return grammar if grammar != 'unknown' else None
+    
     def _build_entry(self, chuukese_word: str, english_translation: str, line: str, 
                     pattern_num: int, page_id: str, publication_id: str, filename: str, 
                     page_number: int, line_number: int, base_word: str, is_base_word: bool = False) -> Dict:
         """Build a complete dictionary entry"""
         confidence = self._calculate_confidence(line, pattern_num, chuukese_word, english_translation)
         
-        # Extract grammatical type from the line
+        # Extract grammatical type from the line and normalize it
         word_type = self._extract_word_type(line, english_translation)
+        word_type = self._normalize_grammar(word_type)
         
         entry = {
             'chuukese_word': chuukese_word.lower(),
@@ -795,6 +907,7 @@ class DictionaryDB:
         # Query for phrases_collection (sentences/phrases)
         phrase_query = {
             '$or': [
+                {'chuukese_word': {'$regex': re.escape(word), '$options': 'i'}},
                 {'chuukese_sentence': {'$regex': re.escape(word), '$options': 'i'}},
                 {'chuukese_phrase': {'$regex': re.escape(word), '$options': 'i'}},
                 {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
@@ -923,13 +1036,20 @@ class DictionaryDB:
     
     def get_stats(self) -> Dict:
         """Get enhanced database statistics for API"""
+        empty_stats = {
+            'total_entries': 0,
+            'total_chuukese_words': 0,
+            'total_english_words': 0,
+            'total_words': 0,
+            'total_phrases': 0,
+            'total_sentences': 0,
+            'total_with_scripture': 0,
+            'grammar_breakdown': {},
+            'last_updated': None
+        }
+        
         if not self.client:
-            return {
-                'total_entries': 0,
-                'total_chuukese_words': 0,
-                'total_english_words': 0,
-                'last_updated': None
-            }
+            return empty_stats
         
         try:
             total_entries = self.dictionary_collection.count_documents({})
@@ -950,6 +1070,33 @@ class DictionaryDB:
             english_result = list(self.dictionary_collection.aggregate(english_words_pipeline))
             english_words = english_result[0]["total"] if english_result else 0
             
+            # Count words vs phrases (words have no spaces, phrases have spaces)
+            words_count = self.dictionary_collection.count_documents({
+                "chuukese_word": {"$not": {"$regex": " "}}
+            })
+            phrases_count = self.dictionary_collection.count_documents({
+                "chuukese_word": {"$regex": " "}
+            })
+            
+            # Count sentences (type = 'sentence')
+            sentences_count = self.dictionary_collection.count_documents({
+                "type": "sentence"
+            })
+            
+            # Count entries with scripture references
+            scripture_count = self.dictionary_collection.count_documents({
+                "scripture": {"$exists": True, "$ne": "", "$ne": None}
+            })
+            
+            # Get grammar breakdown
+            grammar_pipeline = [
+                {"$match": {"grammar": {"$exists": True, "$ne": "", "$ne": None}}},
+                {"$group": {"_id": "$grammar", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}}
+            ]
+            grammar_result = list(self.dictionary_collection.aggregate(grammar_pipeline))
+            grammar_breakdown = {item["_id"]: item["count"] for item in grammar_result if item["_id"]}
+            
             # Get last updated timestamp (avoid sorting by created_date due to Cosmos DB issues)
             last_updated = None
             sample_entry = self.dictionary_collection.find_one({})
@@ -960,16 +1107,16 @@ class DictionaryDB:
                 'total_entries': total_entries,
                 'total_chuukese_words': chuukese_words,
                 'total_english_words': english_words,
+                'total_words': words_count,
+                'total_phrases': phrases_count,
+                'total_sentences': sentences_count,
+                'total_with_scripture': scripture_count,
+                'grammar_breakdown': grammar_breakdown,
                 'last_updated': last_updated
             }
         except Exception as e:
             print(f"Error getting database stats: {e}")
-            return {
-                'total_entries': 0,
-                'total_chuukese_words': 0,
-                'total_english_words': 0,
-                'last_updated': None
-            }
+            return empty_stats
     
     def get_recent_entries(self, limit: int = 20) -> List[Dict]:
         """Get recently added dictionary entries"""
@@ -1296,7 +1443,7 @@ class DictionaryDB:
                                 'chuukese_word': chuukese_text.lower(),
                                 'english_translation': english_text,
                                 'definition': definition if definition else english_text,
-                                'grammar': mapped_grammar,  # noun, verb, adjective, etc. (full form)
+                                'grammar': self._normalize_grammar(mapped_grammar),  # noun, verb, adjective, etc. (full form)
                                 'type': 'word',  # Always 'word' for words collection
                                 'search_direction': search_direction,
                                 'page_id': page_id,
@@ -1316,7 +1463,7 @@ class DictionaryDB:
                                 'chuukese_phrase': chuukese_text,
                                 'english_translation': english_text,
                                 'type': entry_type,
-                                'grammar': grammar,
+                                'grammar': self._normalize_grammar(grammar),
                                 'search_direction': search_direction,
                                 'definition': definition,
                                 'page_id': page_id,
@@ -1334,7 +1481,7 @@ class DictionaryDB:
                                 'chuukese_sentence': chuukese_text,
                                 'english_translation': english_text,
                                 'type': entry_type,
-                                'grammar': grammar,
+                                'grammar': self._normalize_grammar(grammar),
                                 'search_direction': search_direction,
                                 'definition': definition,
                                 'page_id': page_id,
@@ -1352,7 +1499,7 @@ class DictionaryDB:
                                 'chuukese_paragraph': chuukese_text,
                                 'english_translation': english_text,
                                 'type': entry_type,
-                                'grammar': grammar,
+                                'grammar': self._normalize_grammar(grammar),
                                 'search_direction': search_direction,
                                 'definition': definition,
                                 'page_id': page_id,
@@ -1371,7 +1518,7 @@ class DictionaryDB:
                                 'chuukese_word': chuukese_text.lower(),
                                 'english_translation': english_text,
                                 'definition': definition if definition else english_text,
-                                'grammar': grammar if grammar else entry_type,
+                                'grammar': self._normalize_grammar(grammar if grammar else entry_type),
                                 'type': 'word',
                                 'search_direction': search_direction,
                                 'page_id': page_id,
@@ -1565,12 +1712,15 @@ class DictionaryDB:
         """
         if not self.client:
             return None
+        
+        # Normalize grammar type
+        normalized_grammar = self._normalize_grammar(grammar) if grammar else None
             
         word_data = {
             '_id': f"word_{chuukese}_{hash(english_translation) & 0x7FFFFFFF}",
             'chuukese': chuukese.strip(),
             'english_translation': english_translation.strip(),
-            'grammar': grammar or 'unknown',
+            'grammar': normalized_grammar,
             'date_added': datetime.now(timezone.utc),
             'date_modified': datetime.now(timezone.utc),
             **kwargs
