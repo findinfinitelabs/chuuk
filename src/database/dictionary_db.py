@@ -767,6 +767,7 @@ class DictionaryDB:
         # Build Cosmos DB compatible query using regex (no $text support)
         word_lower = word.lower().strip()
         
+        # Query for dictionary_collection (words)
         query = {
             '$and': [
                 {
@@ -791,8 +792,22 @@ class DictionaryDB:
             ]
         }
         
-        # Single query gets everything including related_words!
-        results = list(self.dictionary_collection.find(query).limit(limit))
+        # Query for phrases_collection (sentences/phrases)
+        phrase_query = {
+            '$or': [
+                {'chuukese_sentence': {'$regex': re.escape(word), '$options': 'i'}},
+                {'chuukese_phrase': {'$regex': re.escape(word), '$options': 'i'}},
+                {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
+                {'definition': {'$regex': re.escape(word), '$options': 'i'}}
+            ]
+        }
+        
+        # Query both collections
+        word_results = list(self.dictionary_collection.find(query).limit(limit))
+        phrase_results = list(self.phrases_collection.find(phrase_query).limit(limit))
+        
+        # Combine results
+        results = word_results + phrase_results
         
         # Use a dictionary to track unique entries by word+translation combination
         unique_entries = {}
@@ -802,13 +817,17 @@ class DictionaryDB:
             if result.get('search_direction') == 'en_to_chk':
                 continue
             
-            # Create unique key based on word and translation
-            word = result.get('chuukese_word', '').lower().strip()
+            # Create unique key - handle both word and sentence/phrase formats
+            word = result.get('chuukese_word') or result.get('chuukese_sentence') or result.get('chuukese_phrase') or ''
+            word = word.lower().strip()
             translation = result.get('english_translation', '').strip()
             unique_key = f"{word}|{translation}"
             
             # Keep the entry with highest confidence if duplicate
             if unique_key not in unique_entries or result.get('confidence', 0) > unique_entries[unique_key].get('confidence', 0):
+                # Normalize field names for consistency - ensure chuukese_word is populated
+                if not result.get('chuukese_word'):
+                    result['chuukese_word'] = result.get('chuukese_sentence') or result.get('chuukese_phrase') or result.get('chuukese') or ''
                 unique_entries[unique_key] = result
         
         # Convert to list

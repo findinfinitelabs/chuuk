@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider } from '@mantine/core'
 import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -48,6 +48,8 @@ interface DictionaryEntry {
   references?: string // Additional scripture references
   chuukese_scripture?: string // Fetched Chuukese scripture text
   english_scripture?: string // Fetched English scripture text
+  confidence_level?: string // low, medium, high, verified
+  confidence_score?: number // 0-100
 }
 
 interface DatabaseStats {
@@ -101,7 +103,8 @@ function Database() {
     examples: [] as string[],
     notes: '',
     scripture: '',
-    references: ''
+    references: '',
+    confidence_score: undefined as number | undefined
   })
 
   useEffect(() => {
@@ -266,7 +269,8 @@ function Database() {
         examples: entry.examples || [],
         notes: '',
         scripture: entry.scripture || '',
-        references: entry.references || ''
+        references: entry.references || '',
+        confidence_score: entry.confidence_score
       })
       setIsNewEntry(false)
     } else {
@@ -280,7 +284,8 @@ function Database() {
         examples: [],
         notes: '',
         scripture: '',
-        references: ''
+        references: '',
+        confidence_score: undefined
       })
       setIsNewEntry(true)
     }
@@ -749,13 +754,16 @@ function Database() {
                       <Group gap={4} wrap="nowrap">Definition {getSortIcon('definition')}</Group>
                     </Table.Th>
                     <Table.Th>Examples</Table.Th>
+                    <Table.Th onClick={() => handleSort('confidence_score')} style={{ cursor: 'pointer' }}>
+                      <Group gap={4} wrap="nowrap">Confidence {getSortIcon('confidence_score')}</Group>
+                    </Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {entries.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={9}>
+                      <Table.Td colSpan={10}>
                         {searchTerm ? (
                           <Group justify="center" gap="sm" p="md">
                             <Text size="sm" color="dimmed">
@@ -848,6 +856,24 @@ function Database() {
                           <Text size="sm" color="dimmed" className="text-max-width-200">
                             {formatExamples(entry.examples)}
                           </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          {entry.confidence_score !== undefined ? (
+                            <Badge
+                              color={
+                                entry.confidence_score >= 90 ? 'blue' :
+                                entry.confidence_score >= 70 ? 'green' :
+                                entry.confidence_score >= 40 ? 'yellow' : 'red'
+                              }
+                              variant="filled"
+                              size="sm"
+                              style={{ color: 'white' }}
+                            >
+                              {entry.confidence_score}%
+                            </Badge>
+                          ) : (
+                            <Text color="dimmed" size="sm">—</Text>
+                          )}
                         </Table.Td>
                         <Table.Td>
                           <Group gap="xs">
@@ -997,6 +1023,41 @@ function Database() {
             description="Additional scripture references related to this entry"
             rows={2}
           />
+          
+          <div>
+            <Text size="sm" fw={500} mb="xs">
+              Confidence Level: {formData.confidence_score !== undefined ? `${formData.confidence_score}%` : 'Not set'}
+            </Text>
+            <Slider
+              value={formData.confidence_score || 0}
+              onChange={(value) => setFormData({...formData, confidence_score: value})}
+              min={0}
+              max={100}
+              step={1}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 40, label: '40%' },
+                { value: 70, label: '70%' },
+                { value: 90, label: '90%' },
+                { value: 100, label: '100%' }
+              ]}
+              color={
+                !formData.confidence_score ? 'gray' :
+                formData.confidence_score >= 90 ? 'blue' :
+                formData.confidence_score >= 70 ? 'green' :
+                formData.confidence_score >= 40 ? 'yellow' : 'red'
+              }
+              mb="md"
+              mt="md"
+            />
+            <Text size="xs" c="dimmed">
+              {!formData.confidence_score ? 'Set a confidence level for this translation' :
+               formData.confidence_score >= 90 ? '🔥 Verified - Professionally confirmed' :
+               formData.confidence_score >= 70 ? '✅ High - Very confident' :
+               formData.confidence_score >= 40 ? '👍 Medium - Reasonably confident' :
+               '⚠️ Low - Needs verification'}
+            </Text>
+          </div>
           
           <Group justify="flex-end" mt="md">
             <Button variant="outline" onClick={close}>

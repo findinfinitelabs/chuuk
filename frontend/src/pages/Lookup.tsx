@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Card, Title, Text, TextInput, Button, Group, Stack, Loader, Alert, List, Badge, Accordion } from '@mantine/core'
 import { IconSearch, IconAlertCircle } from '@tabler/icons-react'
 import axios from 'axios'
@@ -17,10 +18,38 @@ interface DictionaryEntry {
 }
 
 function Lookup() {
+  const [searchParams] = useSearchParams()
   const [word, setWord] = useState('')
   const [loading, setLoading] = useState(false)
   const [localResults, setLocalResults] = useState<DictionaryEntry[]>([])
   const [error, setError] = useState('')
+
+  // Check for query parameter and auto-search
+  useEffect(() => {
+    const queryParam = searchParams.get('q')
+    if (queryParam) {
+      setWord(queryParam)
+      performSearch(queryParam)
+    }
+  }, [searchParams])
+
+  const performSearch = async (searchWord: string) => {
+    if (!searchWord.trim()) return
+
+    setLoading(true)
+    setError('')
+    setLocalResults([])
+
+    try {
+      const localResponse = await axios.get(`/api/lookup?word=${encodeURIComponent(searchWord)}`)
+      setLocalResults(localResponse.data.results || [])
+    } catch (err) {
+      setError('Error performing search')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const highlightText = (text: string, searchTerm: string): ReactElement => {
     if (!searchTerm.trim()) return <>{text}</>
@@ -43,21 +72,7 @@ function Lookup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!word.trim()) return
-
-    setLoading(true)
-    setError('')
-    setLocalResults([])
-
-    try {
-      const localResponse = await axios.get(`/api/lookup?word=${encodeURIComponent(word)}`)
-      setLocalResults(localResponse.data.results || [])
-    } catch (err) {
-      setError('Error performing search')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
+    performSearch(word)
   }
 
   return (

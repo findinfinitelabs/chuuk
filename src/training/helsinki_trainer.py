@@ -30,22 +30,33 @@ class HelsinkiFineTuner:
         """
         self.progress_callback = progress_callback
         
-        # Limit GPU usage to prevent system crashes
+        # Enhanced GPU configuration
         if torch.cuda.is_available():
-            # Use only 1 GPU
-            os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-            # Set memory fraction to 80% to leave room for system
-            torch.cuda.set_per_process_memory_fraction(0.8, 0)
+            gpu_count = torch.cuda.device_count()
+            # Use all available GPUs
+            os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(i) for i in range(gpu_count))
+            
+            # Set memory fraction to 90% to maximize usage while preventing OOM
+            for i in range(gpu_count):
+                torch.cuda.set_per_process_memory_fraction(0.9, i)
+            
             self.device = "cuda"
-            print(f"🎮 Using GPU with 80% memory limit")
+            self.num_gpus = gpu_count
+            print(f"🎮 Using {gpu_count} GPU(s) with 90% memory per GPU")
+            print(f"🔥 GPU 0: {torch.cuda.get_device_name(0)}")
+            
+            # Enable TF32 for faster training on Ampere GPUs
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            
+            # Enable cuDNN auto-tuner for optimal performance
+            torch.backends.cudnn.benchmark = True
         else:
             self.device = "cpu"
+            self.num_gpus = 0
             # Limit CPU threads to prevent overload
-            torch.set_num_threads(4)
-            print(f"🖥️  Using CPU with 4 threads")
-        
-        print(f"🖥️  Using device: {self.device}")
-        if self.device == "cpu":
+            torch.set_num_threads(min(8, os.cpu_count() or 4))
+            print(f"🖥️  Using CPU with {torch.get_num_threads()} threads")
             print("⚠️  Warning: Training on CPU will be slow. GPU recommended for production.")
         
         # Model paths
@@ -56,13 +67,13 @@ class HelsinkiFineTuner:
         self.chk_to_en_base = "Helsinki-NLP/opus-mt-mul-en"
         self.en_to_chk_base = "Helsinki-NLP/opus-mt-en-mul"
         
-        # Safety limits
-        self.max_length = 128  # Limit sequence length to save memory
-        self.gradient_accumulation_steps = 2  # Accumulate gradients to simulate larger batches
-        
-        print(f"🖥️  Using device: {self.device}")
-        if self.device == "cpu":
-            print("⚠️  Warning: Training on CPU will be slow. GPU recommended for production.")
+        # Adjusted safety limits based on hardware
+        if self.device == "cuda":
+            self.max_length = 256  # Longer sequences on GPU
+            self.gradient_accumulation_steps = 2
+        else:
+            self.max_length = 128  # Shorter on CPU to save memory
+            self.gradient_accumulation_steps = 4  # More accumulation on CPU
     
     def _update_progress(self, stage: str, progress: float):
         """Update progress through callback if provided"""

@@ -1,0 +1,41 @@
+.sentence-card {
+  transition: all 0.2s ease;
+}
+
+.sentence-card:hover:not(.matched) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sentence-card.selected {
+  animation: pulse 0.5s ease-in-out;
+}
+
+.sentence-card.matched {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 0.5;
+    transform: translateY(0);
+  }
+}
+
+.chuukese-text-style {
+  font-family: 'Georgia', serif;
+  line-height: 1.6;
+}

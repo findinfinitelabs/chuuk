@@ -5,7 +5,7 @@ import os
 import re
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 # from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -1544,8 +1544,10 @@ def api_database_entries():
         sort_by = request.args.get('sort_by', '')
         sort_order = request.args.get('sort_order', 'asc')
         filter_type = request.args.get('filter_type', '')
+        filter_type = request.args.get('type', filter_type)  # Support both parameter names
         filter_grammar = request.args.get('filter_grammar', '')
         filter_scripture = request.args.get('filter_scripture', '')
+        source_type = request.args.get('source_type', '')  # Add source_type filter
         
         # Build query with search and filters
         conditions = []
@@ -1568,6 +1570,8 @@ def api_database_entries():
         if filter_scripture:
             # For scripture, use regex to allow partial match
             conditions.append({'scripture': {'$regex': filter_scripture, '$options': 'i'}})
+        if source_type:
+            conditions.append({'source_type': source_type})
         
         query = {'$and': conditions} if conditions else {}
         
@@ -1582,8 +1586,55 @@ def api_database_entries():
             'definition': 'definition'
         }
         
-        # Fetch all matching entries (we'll sort and paginate in Python to handle nulls)
-        all_entries = list(dict_db.dictionary_collection.find(query))
+        # Determine which collection(s) to query based on type filter
+        # Sentences and phrases are in phrases_collection, words in dictionary_collection
+        all_entries = []
+        
+        if filter_type in ['sentence', 'phrase', 'question']:
+            # Query phrases_collection for sentences/phrases
+            # Adjust search fields for phrases_collection
+            phrase_query = query.copy()
+            if search and '$and' in phrase_query:
+                # Update search fields for phrases_collection
+                phrase_query['$and'] = [
+                    cond if '$or' not in cond else {
+                        '$or': [
+                            {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
+                            {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
+                            {'english_translation': {'$regex': search, '$options': 'i'}},
+                            {'definition': {'$regex': search, '$options': 'i'}}
+                        ]
+                    }
+                    for cond in phrase_query['$and']
+                ]
+            all_entries = list(dict_db.phrases_collection.find(phrase_query))
+        elif filter_type == 'word':
+            # Query dictionary_collection for words
+            all_entries = list(dict_db.dictionary_collection.find(query))
+        else:
+            # No filter - query both collections
+            # First get from phrases_collection
+            phrase_query = query.copy()
+            if search and ('$and' in phrase_query or len(phrase_query) == 0):
+                conditions_copy = conditions.copy() if conditions else []
+                # Add phrase-specific search if there's a search term
+                if search:
+                    phrase_search = {
+                        '$or': [
+                            {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
+                            {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
+                            {'english_translation': {'$regex': search, '$options': 'i'}},
+                            {'definition': {'$regex': search, '$options': 'i'}}
+                        ]
+                    }
+                    phrase_conditions = [c for c in conditions_copy if '$or' not in c]
+                    phrase_conditions.append(phrase_search)
+                    phrase_query = {'$and': phrase_conditions} if phrase_conditions else {}
+            
+            phrases = list(dict_db.phrases_collection.find(phrase_query))
+            words = list(dict_db.dictionary_collection.find(query))
+            all_entries = phrases + words
+        
         total = len(all_entries)
         
         # Sort in Python to handle null/missing values properly
@@ -1593,7 +1644,12 @@ def api_database_entries():
             
             # Sort with nulls/empty at the end, case-insensitive for strings
             def sort_key(entry):
+                # Handle different field names in different collections
                 value = entry.get(sort_field)
+                # For chuukese, also check chuukese_sentence and chuukese_phrase
+                if sort_field == 'chuukese_word' and not value:
+                    value = entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or entry.get('chuukese')
+                
                 if value is None or value == '':
                     # Put nulls/empty at the end
                     return (1, '')
@@ -1606,13 +1662,27 @@ def api_database_entries():
         skip = (page - 1) * limit
         entries = all_entries[skip:skip + limit]
         
-        # Convert ObjectId to string for JSON serialization
+        # Normalize field names for frontend display
+        normalized_entries = []
         for entry in entries:
-            if '_id' in entry:
-                entry['_id'] = str(entry['_id'])
+            normalized = {
+                '_id': str(entry['_id']) if '_id' in entry else '',
+                'chuukese_word': entry.get('chuukese_word') or entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or entry.get('chuukese') or '',
+                'english_translation': entry.get('english_translation') or entry.get('english') or '',
+                'type': entry.get('type', ''),
+                'grammar': entry.get('grammar', ''),
+                'scripture': entry.get('scripture', ''),
+                'search_direction': entry.get('search_direction', ''),
+                'definition': entry.get('definition', ''),
+                'source_type': entry.get('source_type', ''),
+                'confidence': entry.get('confidence', ''),
+                'confidence_score': entry.get('confidence_score', ''),
+                'date_added': entry.get('date_added') or entry.get('created_date')
+            }
+            normalized_entries.append(normalized)
         
         return jsonify({
-            'entries': entries,
+            'entries': normalized_entries,
             'total': total,
             'page': page,
             'limit': limit
@@ -1835,7 +1905,7 @@ def api_bible_coverage():
 
 @app.route('/api/database/entries', methods=['POST'])
 def api_create_database_entry():
-    """API: Create a new dictionary entry"""
+    """API: Create a new dictionary entry (upserts based on chuukese_word)"""
     try:
         data = request.get_json()
         
@@ -1851,7 +1921,8 @@ def api_create_database_entry():
                 chuukese_word = scripture_result['chuukese']
                 english_translation = scripture_result['english']
         
-        entry = {
+        # Prepare the update data
+        update_data = {
             'chuukese_word': chuukese_word,
             'english_translation': english_translation,
             'definition': data.get('definition', ''),
@@ -1864,13 +1935,40 @@ def api_create_database_entry():
             'scripture': scripture_ref,
             'references': data.get('references', ''),
             'source': 'User Input',
-            'created_date': datetime.now()
+            'updated_date': datetime.now()
         }
         
-        result = dict_db.dictionary_collection.insert_one(entry)
-        entry['_id'] = str(result.inserted_id)
+        # Add confidence fields if provided
+        if 'confidence_score' in data and data['confidence_score'] is not None:
+            update_data['confidence_score'] = data['confidence_score']
+            # Calculate confidence level based on score
+            score = data['confidence_score']
+            if score >= 90:
+                update_data['confidence_level'] = 'verified'
+            elif score >= 70:
+                update_data['confidence_level'] = 'high'
+            elif score >= 40:
+                update_data['confidence_level'] = 'medium'
+            else:
+                update_data['confidence_level'] = 'low'
         
-        return jsonify({'message': 'Entry created successfully', 'entry': entry}), 201
+        # Use upsert: update if exists, insert if not
+        result = dict_db.dictionary_collection.update_one(
+            {'chuukese_word': chuukese_word},
+            {
+                '$set': update_data,
+                '$setOnInsert': {'created_date': datetime.now()}
+            },
+            upsert=True
+        )
+        
+        # Get the entry to return
+        entry = dict_db.dictionary_collection.find_one({'chuukese_word': chuukese_word})
+        if entry:
+            entry['_id'] = str(entry['_id'])
+        
+        message = 'Entry updated successfully' if result.matched_count > 0 else 'Entry created successfully'
+        return jsonify({'message': message, 'entry': entry, 'upserted': result.matched_count == 0}), 200 if result.matched_count > 0 else 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1908,6 +2006,20 @@ def api_update_database_entry(entry_id):
             'references': data.get('references', ''),
             'updated_date': datetime.now()
         }
+        
+        # Add confidence fields if provided
+        if 'confidence_score' in data and data['confidence_score'] is not None:
+            update_data['confidence_score'] = data['confidence_score']
+            # Calculate confidence level based on score
+            score = data['confidence_score']
+            if score >= 90:
+                update_data['confidence_level'] = 'verified'
+            elif score >= 70:
+                update_data['confidence_level'] = 'high'
+            elif score >= 40:
+                update_data['confidence_level'] = 'medium'
+            else:
+                update_data['confidence_level'] = 'low'
         
         result = dict_db.dictionary_collection.update_one(
             {'_id': ObjectId(entry_id)},
@@ -2035,7 +2147,273 @@ Allow: /
 """
     return Response(robots_content, mimetype='text/plain')
 
+
+# =============================================================================
+# Translation Game / Brochure Matching API
+# =============================================================================
+
+@app.route('/api/brochures/sentences', methods=['GET'])
+def api_get_brochure_sentences():
+    """API: Get sentences from English and Chuukese brochures for matching game"""
+    try:
+        import json
+        from pathlib import Path
+        
+        # Load sentences from JSON file
+        sentences_file = Path(__file__).parent / 'data' / 'brochure_sentences.json'
+        
+        if not sentences_file.exists():
+            return jsonify({'error': 'Brochure sentences not found. Run extract_brochure_sentences.py first.'}), 404
+        
+        with open(sentences_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        return jsonify({
+            'english': data['english'],
+            'chuukese': data['chuukese'],
+            'metadata': data['metadata']
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/articles/fetch', methods=['POST'])
+def api_fetch_article():
+    """API: Fetch article content from wol.jw.org in English and Chuukese"""
+    try:
+        data = request.get_json()
+        english_url = data.get('url') or data.get('englishUrl')
+        chuukese_url = data.get('chuukeseUrl')
+        
+        if not english_url:
+            return jsonify({'error': 'English URL is required'}), 400
+        
+        if 'wol.jw.org' not in english_url:
+            return jsonify({'error': 'Only wol.jw.org URLs are supported'}), 400
+        
+        def fetch_content(target_url):
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+            }
+            response = requests.get(target_url, headers=headers, timeout=60)
+            response.raise_for_status()
+            return response.text
+        
+        def find_chuukese_url(html):
+            """Try to find Chuukese version link in the English page"""
+            soup = BeautifulSoup(html, 'html.parser')
+            # Look for language selector links
+            all_links = soup.find_all('a', href=True)
+            for link in all_links:
+                href = link.get('href', '')
+                if '/chk/' in href and '/lp-te/' in href:
+                    if href.startswith('http'):
+                        return href
+                    else:
+                        return f"https://wol.jw.org{href}"
+            return None
+        
+        def parse_sentences(html):
+            soup = BeautifulSoup(html, 'html.parser')
+            article = soup.find('article') or soup.find('div', class_='bodyTxt')
+            
+            if not article:
+                return [], None
+            
+            title_elem = soup.find('h1')
+            title = title_elem.get_text(strip=True) if title_elem else "Untitled"
+            
+            paragraphs = article.find_all(['p', 'li'])
+            sentences = []
+            
+            for idx, para in enumerate(paragraphs):
+                text = para.get_text(separator=' ', strip=True)
+                
+                # Clean bullet points and other unwanted characters
+                text = re.sub(r'^[•●◦▪▫■□‣⁃∙]+\s*', '', text)  # Remove leading bullets
+                text = re.sub(r'^\*+\s*', '', text)  # Remove asterisk bullets
+                text = re.sub(r'^\d+\.\s*', '', text)  # Remove numbered list markers
+                text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+                text = text.strip()
+                
+                if len(text) < 15:
+                    continue
+                
+                sent_list = re.split(r'(?<=[.!?])\s+', text)
+                for sent in sent_list:
+                    sent = sent.strip()
+                    if len(sent) > 20:
+                        sentences.append({
+                            'id': len(sentences) + 1,
+                            'text': sent,
+                            'paragraph_index': idx
+                        })
+            
+            return sentences, title
+        
+        # Fetch English
+        print(f"📖 Fetching English article from: {english_url}")
+        english_html = fetch_content(english_url)
+        english_sentences, english_title = parse_sentences(english_html)
+        print(f"   Found {len(english_sentences)} English sentences")
+        
+        # Get Chuukese URL - try provided URL, then search, then return error
+        if not chuukese_url:
+            print("   🔍 Looking for Chuukese version link...")
+            chuukese_url = find_chuukese_url(english_html)
+            
+        if not chuukese_url:
+            return jsonify({
+                'error': 'Chuukese URL not found. Please provide the Chuukese article URL.',
+                'english': {
+                    'url': english_url,
+                    'title': english_title,
+                    'sentences': english_sentences
+                }
+            }), 400
+        
+        # Fetch Chuukese
+        print(f"📖 Fetching Chuukese article from: {chuukese_url}")
+        chuukese_html = fetch_content(chuukese_url)
+        chuukese_sentences, chuukese_title = parse_sentences(chuukese_html)
+        print(f"   Found {len(chuukese_sentences)} Chuukese sentences")
+        
+        return jsonify({
+            'success': True,
+            'english': {
+                'url': english_url,
+                'title': english_title,
+                'sentences': english_sentences
+            },
+            'chuukese': {
+                'url': chuukese_url,
+                'title': chuukese_title,
+                'sentences': chuukese_sentences
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error fetching article: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/brochures/match', methods=['POST'])
+def api_save_brochure_match():
+    """API: Save a translation match from the game"""
+    try:
+        data = request.get_json()
+        
+        english_text = data.get('english_text', '')
+        chuukese_text = data.get('chuukese_text', '')
+        source = data.get('source', 'translation_game')
+        
+        # Create a proper database entry in phrases_collection
+        phrase_data = {
+            '_id': f"sentence_{hash(chuukese_text) & 0x7FFFFFFF}_{hash(english_text) & 0x7FFFFFFF}",
+            'chuukese_sentence': chuukese_text.strip(),
+            'english_translation': english_text.strip(),
+            'type': 'sentence',
+            'confidence': 1.0,  # 100% confidence when user confirms
+            'grammar': 'phrase',
+            'search_direction': 'chk_to_en',
+            'definition': 'user_confirmed_match',
+            'source': source,
+            'source_type': 'translation_game',
+            'date_added': datetime.now(timezone.utc),
+            'date_modified': datetime.now(timezone.utc),
+            'created_date': datetime.now(timezone.utc),
+            'user_confirmed': True,
+            'game_metadata': {
+                'english_id': data.get('english_id'),
+                'chuukese_ids': data.get('chuukese_ids', []),
+                'original_english_text': data.get('original_english_text'),
+                'was_edited': data.get('original_english_text') and english_text != data.get('original_english_text'),
+                'user_id': data.get('user_id', 'anonymous'),
+                'timestamp': datetime.now(timezone.utc)
+            }
+        }
+        
+        try:
+            # Save to phrases collection (sentences are stored there)
+            result = dict_db.phrases_collection.insert_one(phrase_data)
+            phrase_id = str(result.inserted_id)
+        except DuplicateKeyError:
+            # If duplicate, update existing entry
+            phrase_id = phrase_data['_id']
+            dict_db.phrases_collection.update_one(
+                {'_id': phrase_id},
+                {'$set': {
+                    'date_modified': datetime.now(timezone.utc),
+                    'confidence': 1.0,
+                    'user_confirmed': True
+                }}
+            )
+        
+        # Also save to game matches for statistics
+        match_data = {
+            'english_id': data.get('english_id'),
+            'chuukese_ids': data.get('chuukese_ids', []),
+            'english_text': english_text,
+            'original_english_text': data.get('original_english_text'),
+            'chuukese_text': chuukese_text,
+            'is_correct': data.get('is_correct', True),
+            'user_id': data.get('user_id', 'anonymous'),
+            'was_edited': data.get('original_english_text') and english_text != data.get('original_english_text'),
+            'phrase_id': phrase_id,
+            'timestamp': datetime.now(timezone.utc)
+        }
+        
+        dict_db.db['brochure_matches'].insert_one(match_data)
+        
+        return jsonify({
+            'message': 'Match saved successfully',
+            'phrase_id': phrase_id,
+            'entry_type': 'sentence',
+            'confidence': 1.0
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/brochures/stats', methods=['GET'])
+def api_get_brochure_stats():
+    """API: Get user statistics for the translation game"""
+    try:
+        user_id = request.args.get('user_id', 'anonymous')
+        
+        # Get total matches
+        total_matches = dict_db.db['brochure_matches'].count_documents({'user_id': user_id})
+        
+        # Get correct matches
+        correct_matches = dict_db.db['brochure_matches'].count_documents({
+            'user_id': user_id,
+            'is_correct': True
+        })
+        
+        # Calculate score (10 points per correct match)
+        score = correct_matches * 10
+        
+        # Calculate accuracy
+        accuracy = (correct_matches / total_matches * 100) if total_matches > 0 else 0
+        
+        return jsonify({
+            'user_id': user_id,
+            'total_matches': total_matches,
+            'correct_matches': correct_matches,
+            'incorrect_matches': total_matches - correct_matches,
+            'score': score,
+            'accuracy': round(accuracy, 1)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
 # React app routes - handle all non-API routes
+# =============================================================================
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
