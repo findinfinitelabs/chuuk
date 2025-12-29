@@ -14,7 +14,7 @@ from markupsafe import Markup
 from pathlib import Path
 import ebooklib
 from ebooklib import epub
-from nwt_epub_parser import NWTEpubParser
+from src.utils.nwt_epub_parser import NWTEpubParser
 
 # Load environment variables from absolute path
 env_path = Path(__file__).parent / '.env'
