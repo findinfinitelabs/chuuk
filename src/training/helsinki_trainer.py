@@ -30,7 +30,7 @@ class HelsinkiFineTuner:
         """
         self.progress_callback = progress_callback
         
-        # Enhanced GPU configuration
+        # Enhanced GPU configuration - support both CUDA and MPS (Apple Silicon)
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
             # Use all available GPUs
@@ -42,7 +42,7 @@ class HelsinkiFineTuner:
             
             self.device = "cuda"
             self.num_gpus = gpu_count
-            print(f"🎮 Using {gpu_count} GPU(s) with 90% memory per GPU")
+            print(f"🎮 Using {gpu_count} CUDA GPU(s) with 90% memory per GPU")
             print(f"🔥 GPU 0: {torch.cuda.get_device_name(0)}")
             
             # Enable TF32 for faster training on Ampere GPUs
@@ -51,6 +51,12 @@ class HelsinkiFineTuner:
             
             # Enable cuDNN auto-tuner for optimal performance
             torch.backends.cudnn.benchmark = True
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            # Apple Silicon GPU (Metal Performance Shaders)
+            self.device = "mps"
+            self.num_gpus = 1
+            print(f"🍎 Using Apple Silicon GPU (MPS) for acceleration")
+            print(f"⚡ Metal Performance Shaders enabled")
         else:
             self.device = "cpu"
             self.num_gpus = 0
@@ -68,7 +74,7 @@ class HelsinkiFineTuner:
         self.en_to_chk_base = "Helsinki-NLP/opus-mt-en-mul"
         
         # Adjusted safety limits based on hardware
-        if self.device == "cuda":
+        if self.device in ["cuda", "mps"]:
             self.max_length = 256  # Longer sequences on GPU
             self.gradient_accumulation_steps = 2
         else:

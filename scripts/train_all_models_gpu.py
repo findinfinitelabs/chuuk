@@ -174,11 +174,10 @@ class ComprehensiveModelTrainer:
             # Train Chuukese → English
             self.log("\n🔄 Training Chuukese → English model...")
             chk_to_en_success = trainer.fine_tune_model(
-                training_pairs=all_pairs,
                 direction='chk_to_en',
-                epochs=3,  # More epochs for overnight training
-                batch_size=8 if self.use_gpu else 2,
-                learning_rate=5e-5
+                num_epochs=5,  # More epochs for overnight training
+                batch_size=16 if self.use_gpu else 2,
+                learning_rate=3e-5
             )
             
             if chk_to_en_success:
@@ -189,9 +188,8 @@ class ComprehensiveModelTrainer:
             # Train English → Chuukese
             self.log("\n🔄 Training English → Chuukese model...")
             en_to_chk_success = trainer.fine_tune_model(
-                training_pairs=all_pairs,
                 direction='en_to_chk',
-                epochs=5,  # More epochs for better learning
+                num_epochs=5,  # More epochs for better learning
                 batch_size=16 if self.use_gpu else 2,  # Larger batches on GPU
                 learning_rate=3e-5  # Slightly lower for stability
             )
