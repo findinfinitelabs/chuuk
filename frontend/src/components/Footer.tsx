@@ -1,21 +1,11 @@
 import { Box, Text, Group, Anchor, Modal } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { useState, useRef } from 'react'
-import { Stack, ScrollArea, Divider, Checkbox, Button, Title } from '@mantine/core'
+import { Stack, ScrollArea, Divider, Button, Title } from '@mantine/core'
 
 export default function Footer() {
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
-  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
-
-  const handleScroll = () => {
-    if (viewport.current) {
-      const { scrollTop, scrollHeight, clientHeight } = viewport.current
-      if (scrollHeight - scrollTop - clientHeight < 20) {
-        setHasScrolledToBottom(true)
-      }
-    }
-  }
 
   return (
     <>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import {
   Container,
   Paper,
@@ -19,7 +19,7 @@ import {
   Group
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconAlertCircle, IconLanguage, IconMail, IconCheck } from '@tabler/icons-react'
+import { IconAlertCircle, IconLanguage, IconCheck } from '@tabler/icons-react'
 import axios from 'axios'
 import './Login.css'
 
@@ -31,7 +31,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [email, setEmail] = useState('')
   const [accessCode, setAccessCode] = useState('')
   const [loading, setLoading] = useState(false)
-  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
   const [error, setError] = useState('')
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
@@ -100,28 +99,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       setError(err.response?.data?.error || 'Login failed. Please try again.')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleMagicLink = async () => {
-    if (!email.trim()) {
-      setError('Please enter your email address first')
-      return
-    }
-    
-    setMagicLinkLoading(true)
-    setError('')
-    setMagicLinkSent(false)
-
-    try {
-      const response = await axios.post('/api/auth/request-magic-link', { email })
-      if (response.data.success) {
-        setMagicLinkSent(true)
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to send login link. Please try again.')
-    } finally {
-      setMagicLinkLoading(false)
     }
   }
 
