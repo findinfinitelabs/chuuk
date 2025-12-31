@@ -19,7 +19,7 @@ import {
   Group
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconAlertCircle, IconLanguage, IconCheck } from '@tabler/icons-react'
+import { IconAlertCircle, IconLanguage } from '@tabler/icons-react'
 import axios from 'axios'
 import './Login.css'
 
