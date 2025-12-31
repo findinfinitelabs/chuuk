@@ -30,7 +30,7 @@ function Translate() {
   const [translations, setTranslations] = useState<TranslationResults>({})
   const [phraseTranslations, setPhraseTranslations] = useState<PhraseTranslation[]>([])
   const [correction, setCorrection] = useState('')
-  const [direction, setDirection] = useState<'auto' | 'chk_to_en' | 'en_to_chk'>('auto')
+  const [direction, setDirection] = useState<'chk_to_en' | 'en_to_chk'>('chk_to_en')
   const [loading, setLoading] = useState(false)
   const [savingCorrection, setSavingCorrection] = useState(false)
   const [error, setError] = useState('')
@@ -398,7 +398,6 @@ function Translate() {
         <Title order={3} mb="md">Translation Direction</Title>
         <Radio.Group value={direction} onChange={(val) => setDirection(val as any)}>
           <Stack gap="sm">
-            <Radio value="auto" label="🔮 Auto-Detect Language" />
             <Radio value="chk_to_en" label="➡️ Chuukese → English" />
             <Radio value="en_to_chk" label="⬅️ English → Chuukese" />
           </Stack>

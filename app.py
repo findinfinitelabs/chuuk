@@ -221,6 +221,23 @@ def load_users():
     print("⚠️ No users configured. Set APP_USERS_JSON env var or create config/users.json")
     return []
 
+def save_users(users):
+    """Save users to config file"""
+    users_file = Path(__file__).parent / 'config' / 'users.json'
+    with open(users_file, 'w') as f:
+        json.dump({'users': users}, f, indent=2)
+
+def update_user_terms_acceptance(email, terms_accepted_at):
+    """Update user's terms acceptance timestamp"""
+    users = load_users()
+    for user in users:
+        if user['email'].lower() == email.lower():
+            user['terms_accepted'] = True
+            user['terms_accepted_at'] = terms_accepted_at
+            save_users(users)
+            return True
+    return False
+
 def authenticate_user(email, access_code):
     """Authenticate user by email and access code"""
     users = load_users()
@@ -279,12 +296,18 @@ def api_login():
     data = request.get_json()
     email = data.get('email', '').strip()
     access_code = data.get('access_code', '').strip()
+    terms_accepted = data.get('terms_accepted', False)
+    terms_accepted_at = data.get('terms_accepted_at')
     
     if not email or not access_code:
         return jsonify({'error': 'Email and access code are required'}), 400
     
     user = authenticate_user(email, access_code)
     if user:
+        # Update terms acceptance if provided
+        if terms_accepted and terms_accepted_at:
+            update_user_terms_acceptance(email, terms_accepted_at)
+        
         # Generate unique session ID for single active session enforcement
         new_session_id = secrets.token_hex(32)
         
@@ -315,6 +338,27 @@ def api_login():
         })
     else:
         return jsonify({'error': 'Invalid email or access code'}), 401
+
+@app.route('/api/auth/check-terms', methods=['POST'])
+def api_check_terms():
+    """Check if user has already accepted terms"""
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    users = load_users()
+    for user in users:
+        if user['email'].lower() == email.lower():
+            has_accepted = user.get('terms_accepted', False)
+            accepted_at = user.get('terms_accepted_at')
+            return jsonify({
+                'has_accepted': has_accepted,
+                'accepted_at': accepted_at
+            })
+    
+    return jsonify({'has_accepted': False})
 
 @app.route('/api/auth/request-magic-link', methods=['POST'])
 def api_request_magic_link():
@@ -2390,6 +2434,7 @@ def api_create_database_entry():
             'scripture': scripture_ref,
             'references': data.get('references', ''),
             'user_confirmed': data.get('user_confirmed', False),
+            'is_base_word': data.get('is_base_word', False),
             'source': 'User Input',
             'updated_date': datetime.now()
         }
@@ -2466,6 +2511,7 @@ def api_update_database_entry(entry_id):
             'scripture': scripture_ref,
             'references': data.get('references', ''),
             'user_confirmed': data.get('user_confirmed', False),
+            'is_base_word': data.get('is_base_word', False),
             'updated_date': datetime.now()
         }
         

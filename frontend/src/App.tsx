@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconPlus, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -14,6 +14,7 @@ import Database from './pages/Database'
 import Translate from './pages/Translate'
 import TranslationGame from './pages/TranslationGame'
 import Login from './pages/Login'
+import Footer from './components/Footer'
 import { chuukTheme } from './theme'
 import './App.css'
 
@@ -286,6 +287,7 @@ function App() {
             <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <Footer />
         </AppShell.Main>
       </AppShell>
     </MantineProvider>

@@ -1,282 +1,49 @@
-import { useState, useRef, useEffect } from 'react'
-import {
-  Container,
-  Paper,
-  Title,
-  TextInput,
-  PasswordInput,
-  Button,
-  Stack,
-  Text,
-  Alert,
-  Center,
-  Box,
-  Divider,
-  Modal,
-  Checkbox,
-  ScrollArea,
-  Anchor,
-  Group
-} from '@mantine/core'
+import { Box, Text, Group, Anchor, Modal } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconAlertCircle, IconLanguage, IconMail, IconCheck } from '@tabler/icons-react'
-import axios from 'axios'
-import './Login.css'
+import { useState, useRef } from 'react'
+import { Stack, ScrollArea, Divider, Checkbox, Button, Title } from '@mantine/core'
 
-interface LoginProps {
-  onLoginSuccess: () => void
-}
-
-export default function Login({ onLoginSuccess }: LoginProps) {
-  const [email, setEmail] = useState('')
-  const [accessCode, setAccessCode] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
+export default function Footer() {
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
-  const [agreedToTerms, setAgreedToTerms] = useState(false)
-  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false)
-  const [agreedToAI, setAgreedToAI] = useState(false)
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
 
   const handleScroll = () => {
     if (viewport.current) {
       const { scrollTop, scrollHeight, clientHeight } = viewport.current
-      // Check if user scrolled to within 20px of bottom
       if (scrollHeight - scrollTop - clientHeight < 20) {
         setHasScrolledToBottom(true)
       }
     }
   }
 
-  const handleAcceptTerms = () => {
-    if (!agreedToTerms || !agreedToPrivacy || !agreedToAI) {
-      return
-    }
-    closeTerms()
-  }
-
-  const allAgreed = agreedToTerms && agreedToPrivacy && agreedToAI
-
-  const checkIfUserAcceptedTerms = async (userEmail: string) => {
-    if (!userEmail.trim()) return
-    
-    try {
-      const response = await axios.post('/api/auth/check-terms', { email: userEmail })
-      if (response.data.has_accepted) {
-        setHasAcceptedTerms(true)
-        setAgreedToTerms(true)
-        setAgreedToPrivacy(true)
-        setAgreedToAI(true)
-      } else {
-        setHasAcceptedTerms(false)
-      }
-    } catch (err) {
-      console.error('Failed to check terms acceptance:', err)
-      setHasAcceptedTerms(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-
-    try {
-      const response = await axios.post('/api/auth/login', {
-        email,
-        access_code: accessCode,
-        terms_accepted: true,
-        terms_accepted_at: new Date().toISOString()
-      })
-
-      if (response.data.success) {
-        onLoginSuccess()
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleMagicLink = async () => {
-    if (!email.trim()) {
-      setError('Please enter your email address first')
-      return
-    }
-    
-    setMagicLinkLoading(true)
-    setError('')
-    setMagicLinkSent(false)
-
-    try {
-      const response = await axios.post('/api/auth/request-magic-link', { email })
-      if (response.data.success) {
-        setMagicLinkSent(true)
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to send login link. Please try again.')
-    } finally {
-      setMagicLinkLoading(false)
-    }
-  }
-
   return (
-    <Box className="login-container">
-      <Container size={420}>
-        <Center mb="xl">
-          <IconLanguage size={64} color="#0277bd" />
-        </Center>
-        
-        <Title ta="center" mb="xs" size="2rem" fw={700} c="blue.9">
-          Learn Chuukese
-        </Title>
-        
-        <Text c="gray.6" size="md" ta="center" mb="xl">
-          Welcome! Sign in to continue
+    <>
+      <Box mt="xl" py="lg" ta="center" style={{ borderTop: '1px solid #e0e0e0' }}>
+        <Text size="xs" c="black">
+          © {new Date().getFullYear()} FindInfinite Labs. All rights reserved.
         </Text>
-
-        <Paper withBorder shadow="xl" p={40} radius="lg" bg="white">
-          <form onSubmit={handleSubmit}>
-            <Stack gap="lg">
-              {error && (
-                <Alert 
-                  icon={<IconAlertCircle size={16} />} 
-                  color="red" 
-                  variant="light"
-                  radius="md"
-                >
-                  {error}
-                </Alert>
-              )}
-              
-              {magicLinkSent && (
-                <Alert 
-                  icon={<IconCheck size={16} />} 
-                  color="green" 
-                  variant="light"
-                  radius="md"
-                >
-                  Login link sent! Check your email.
-                </Alert>
-              )}
-
-              <TextInput
-                label="Email"
-                placeholder="your@email.com"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={(e) => checkIfUserAcceptedTerms(e.target.value)}
-                size="md"
-                radius="md"
-              />
-
-              <PasswordInput
-                label="Access Code"
-                placeholder="Enter your access code"
-                required
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
-                size="md"
-                radius="md"
-              />
-
-              {!hasAcceptedTerms && (
-                <Stack gap="sm">
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          Terms of Use
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToTerms}
-                    onChange={(e) => setAgreedToTerms(e.currentTarget.checked)}
-                    required
-                  />
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          Privacy Policy
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToPrivacy}
-                    onChange={(e) => setAgreedToPrivacy(e.currentTarget.checked)}
-                    required
-                  />
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          AI Ethical Use Agreement
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToAI}
-                    onChange={(e) => setAgreedToAI(e.currentTarget.checked)}
-                    required
-                  />
-                </Stack>
-              )}
-
-              <Button 
-                type="submit" 
-                fullWidth 
-                mt="md" 
-                size="lg"
-                radius="md"
-                loading={loading}
-                disabled={!allAgreed}
-              >
-                Sign In
-              </Button>
-            </Stack>
-          </form>
-        </Paper>
-
-        <Box mt="xl" ta="center">
-          <Text size="xs" c="black">
-            © {new Date().getFullYear()} FindInfinite Labs. All rights reserved.
-          </Text>
-          <Group justify="center" gap="xs" mt="xs">
-            <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
-              Terms of Use
-            </Anchor>
-            <Text size="xs" c="black">•</Text>
-            <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
-              Privacy Policy
-            </Anchor>
-            <Text size="xs" c="black">•</Text>
-            <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
-              AI Ethical Use
-            </Anchor>
-          </Group>
-        </Box>
-      </Container>
+        <Group justify="center" gap="xs" mt="xs">
+          <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
+            Terms of Use
+          </Anchor>
+          <Text size="xs" c="black">•</Text>
+          <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
+            Privacy Policy
+          </Anchor>
+          <Text size="xs" c="black">•</Text>
+          <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
+            AI Ethical Use
+          </Anchor>
+        </Group>
+      </Box>
 
       {/* Terms and Conditions Modal */}
       <Modal
         opened={termsOpened}
-        onClose={() => {
-          if (allAgreed) {
-            closeTerms()
-          }
-        }}
+        onClose={closeTerms}
         title={<Text size="xl" fw={700}>Terms and Conditions</Text>}
         size="lg"
-        closeOnClickOutside={false}
-        closeOnEscape={false}
       >
         <Stack gap="md">
           <ScrollArea h={400} viewportRef={viewport} onScrollPositionChange={handleScroll}>
@@ -424,36 +191,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   FindInfinite Labs takes responsibility for maintaining ethical AI practices and will address concerns about AI-generated content promptly and transparently.
                 </Text>
               </div>
-
-              <Divider />
-              <Text size="sm" fw={500} c="blue.7" ta="center">
-                Please scroll to the bottom to accept these terms
-              </Text>
             </Stack>
           </ScrollArea>
 
-          <Checkbox
-            label="I have read and agree to all the terms and conditions above"
-            checked={agreedToTerms && agreedToPrivacy && agreedToAI}
-            onChange={(e) => {
-              const checked = e.currentTarget.checked
-              setAgreedToTerms(checked)
-              setAgreedToPrivacy(checked)
-              setAgreedToAI(checked)
-            }}
-            disabled={!hasScrolledToBottom}
-          />
-
           <Group justify="flex-end">
-            <Button
-              onClick={handleAcceptTerms}
-              disabled={!allAgreed || !hasScrolledToBottom}
-            >
-              Accept and Continue
+            <Button onClick={closeTerms}>
+              Close
             </Button>
           </Group>
         </Stack>
       </Modal>
-    </Box>
+    </>
   )
 }
