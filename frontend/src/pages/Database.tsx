@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider } from '@mantine/core'
 import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -167,6 +167,51 @@ const GRAMMAR_DESCRIPTIONS: Record<string, { description: string; englishExample
     description: 'A noun that expresses a relationship, often with possessive suffixes.',
     englishExample: 'Beside him.',
     chuukeseExample: 'Rééún.'
+  },
+  'transitive verb + directional': {
+    description: 'A transitive verb with a directional suffix indicating movement.',
+    englishExample: 'Bring it here.',
+    chuukeseExample: 'Wáténg me.'
+  },
+  'interrogative classifier': {
+    description: 'A question word used for counting or classifying.',
+    englishExample: 'How many (of a type)?',
+    chuukeseExample: 'Efén?'
+  },
+  'possessed form': {
+    description: 'A word in its possessed state, marked for ownership.',
+    englishExample: 'My thing (possessed).',
+    chuukeseExample: 'Néúi (possessed form).'
+  },
+  'locational noun + possessive': {
+    description: 'A locational noun with possessive marking.',
+    englishExample: 'On top of it.',
+    chuukeseExample: 'Wónúún.'
+  },
+  'temporal noun': {
+    description: 'A noun that expresses time or temporal concepts.',
+    englishExample: 'Yesterday, today, tomorrow.',
+    chuukeseExample: 'Néésor, ráán, némén.'
+  },
+  'temporal noun + possessive': {
+    description: 'A temporal noun with possessive marking.',
+    englishExample: 'In his time.',
+    chuukeseExample: 'Ráánnúún.'
+  },
+  'temporal phrase': {
+    description: 'A phrase expressing time or temporal relationships.',
+    englishExample: 'A long time ago.',
+    chuukeseExample: 'Mé ewe ngonuk.'
+  },
+  'verb participle': {
+    description: 'A verb form used as an adjective or noun.',
+    englishExample: 'The running man.',
+    chuukeseExample: 'Mwáán e pwéér.'
+  },
+  'noun (reduplicated)': {
+    description: 'A noun with repeated syllables for emphasis or plurality.',
+    englishExample: 'Many houses.',
+    chuukeseExample: 'Imwimw.'
   }
 }
 
@@ -291,6 +336,7 @@ interface DictionaryEntry {
   confidence_level?: string // low, medium, high, verified
   confidence_score?: number // 0-100
   user_confirmed?: boolean // User confirmed match from translation game
+  is_base_word?: boolean // Whether this is a base word (not inflected)
 }
 
 interface DatabaseStats {
@@ -323,7 +369,7 @@ function Database() {
   const [scriptureRef, setScriptureRef] = useState('')
   const [scripturePreview, setScripturePreview] = useState<{ chuukese: string; english: string; error?: string } | null>(null)
   const [loadingScripture, setLoadingScripture] = useState(false)
-  const [sortBy, setSortBy] = useState<string>('')
+  const [sortBy, setSortBy] = useState<string>('chuukese')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [filterType, setFilterType] = useState<string>('')
   const [filterGrammar, setFilterGrammar] = useState<string>('')
@@ -339,6 +385,14 @@ function Database() {
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Column order state
+  const defaultColumnOrder = ['chuukese', 'english', 'type', 'grammar', 'scripture', 'definition', 'examples']
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const saved = localStorage.getItem('databaseColumnOrder')
+    return saved ? JSON.parse(saved) : defaultColumnOrder
+  })
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
+
   // Form state for editing
   const [formData, setFormData] = useState({
     chuukese_word: '',
@@ -351,7 +405,8 @@ function Database() {
     scripture: '',
     references: '',
     confidence_score: undefined as number | undefined,
-    user_confirmed: false
+    user_confirmed: false,
+    is_base_word: false
   })
 
   useEffect(() => {
@@ -440,6 +495,154 @@ function Database() {
     )
   }
 
+  const handleDragStart = (column: string) => {
+    setDraggedColumn(column)
+  }
+
+  const handleDragOver = (e: React.DragEvent, column: string) => {
+    e.preventDefault()
+    if (draggedColumn && draggedColumn !== column) {
+      const newOrder = [...columnOrder]
+      const draggedIndex = newOrder.indexOf(draggedColumn)
+      const targetIndex = newOrder.indexOf(column)
+      
+      newOrder.splice(draggedIndex, 1)
+      newOrder.splice(targetIndex, 0, draggedColumn)
+      
+      setColumnOrder(newOrder)
+      localStorage.setItem('databaseColumnOrder', JSON.stringify(newOrder))
+    }
+  }
+
+  const handleDragEnd = () => {
+    setDraggedColumn(null)
+  }
+
+  const getColumnHeader = (column: string) => {
+    const headers: Record<string, string> = {
+      'chuukese': 'Chuukese',
+      'english': 'English Translation',
+      'type': 'Type',
+      'grammar': 'Grammar',
+      'scripture': 'Scripture',
+      'definition': 'Definition',
+      'examples': 'Examples'
+    }
+    return headers[column] || column
+  }
+
+  const renderTableCell = (entry: DictionaryEntry, column: string, index: number) => {
+    switch (column) {
+      case 'chuukese':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            <Text fw={500} className="chuukese-text-style">
+              {renderChuukeseWord(entry, searchTerm)}
+            </Text>
+          </Table.Td>
+        )
+      case 'english':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            <Text>{highlightText(entry.english_translation, searchTerm)}</Text>
+          </Table.Td>
+        )
+      case 'type':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            {entry.type ? (
+              <Badge color="blue" variant="light" size="sm">
+                {entry.type}
+              </Badge>
+            ) : (
+              <Text color="dimmed">—</Text>
+            )}
+          </Table.Td>
+        )
+      case 'grammar':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            {entry.grammar ? (
+              GRAMMAR_DESCRIPTIONS[entry.grammar] ? (
+                <HoverCard width={320} shadow="md" withArrow openDelay={200}>
+                  <HoverCard.Target>
+                    <Badge color="orange" variant="light" size="sm" style={{ cursor: 'help' }}>
+                      {entry.grammar}
+                    </Badge>
+                  </HoverCard.Target>
+                  <HoverCard.Dropdown>
+                    <Stack gap="xs">
+                      <Text size="sm" fw={600} c="orange">{entry.grammar}</Text>
+                      <Text size="xs">{GRAMMAR_DESCRIPTIONS[entry.grammar].description}</Text>
+                      <div>
+                        <Text size="xs" fw={500} c="dimmed">English Example:</Text>
+                        <Text size="xs" fs="italic">{GRAMMAR_DESCRIPTIONS[entry.grammar].englishExample}</Text>
+                      </div>
+                      <div>
+                        <Text size="xs" fw={500} c="dimmed">Chuukese Example:</Text>
+                        <Text size="xs" fs="italic">{GRAMMAR_DESCRIPTIONS[entry.grammar].chuukeseExample}</Text>
+                      </div>
+                    </Stack>
+                  </HoverCard.Dropdown>
+                </HoverCard>
+              ) : (
+                <Badge color="orange" variant="light" size="sm">
+                  {entry.grammar}
+                </Badge>
+              )
+            ) : (
+              <Text color="dimmed">—</Text>
+            )}
+          </Table.Td>
+        )
+      case 'scripture':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            {entry.scripture ? (
+              <Button
+                size="xs"
+                variant="subtle"
+                color="blue"
+                onClick={() => {
+                  setSelectedScripture(entry)
+                  openScriptureModal()
+                }}
+              >
+                {entry.scripture}
+              </Button>
+            ) : (
+              <Text color="dimmed">—</Text>
+            )}
+          </Table.Td>
+        )
+      case 'definition':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            <Text size="sm" color="dimmed" className="text-max-width-200">
+              {entry.definition ? 
+                highlightText(
+                  entry.definition.length > 100 ? 
+                    entry.definition.substring(0, 97) + '...' : 
+                    entry.definition,
+                  searchTerm
+                ) : '—'
+              }
+            </Text>
+          </Table.Td>
+        )
+      case 'examples':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            <Text size="sm" color="dimmed" className="text-max-width-200">
+              {formatExamples(entry.examples)}
+            </Text>
+          </Table.Td>
+        )
+      default:
+        return <Table.Td key={`${column}-${index}`}>—</Table.Td>
+    }
+  }
+
   const loadSuggestions = async () => {
     if (!searchTerm || searchTerm.length < 2) {
       setSuggestions([])
@@ -518,7 +721,8 @@ function Database() {
         scripture: entry.scripture || '',
         references: entry.references || '',
         confidence_score: entry.confidence_score,
-        user_confirmed: entry.user_confirmed || false
+        user_confirmed: entry.user_confirmed || false,
+        is_base_word: entry.is_base_word || false
       })
       setIsNewEntry(false)
     } else {
@@ -534,7 +738,8 @@ function Database() {
         scripture: '',
         references: '',
         confidence_score: undefined,
-        user_confirmed: false
+        user_confirmed: false,
+        is_base_word: false
       })
       setIsNewEntry(true)
     }
@@ -740,6 +945,34 @@ function Database() {
         )}
       </>
     )
+  }
+
+  const renderChuukeseWord = (entry: DictionaryEntry, highlight: string) => {
+    const word = entry.chuukese_word
+    
+    // If this is a base word, render it with special styling
+    if (entry.is_base_word) {
+      if (!highlight.trim()) {
+        return <span style={{ color: '#5B21B6', fontWeight: 700 }}>{word}</span>
+      }
+      
+      // Apply both base word styling and search highlighting
+      const parts = word.split(new RegExp(`(${highlight})`, 'gi'))
+      return (
+        <>
+          {parts.map((part, i) => 
+            part.toLowerCase() === highlight.toLowerCase() ? (
+              <mark key={i} className="search-highlight" style={{ color: '#5B21B6', fontWeight: 700 }}>{part}</mark>
+            ) : (
+              <span key={i} style={{ color: '#5B21B6', fontWeight: 700 }}>{part}</span>
+            )
+          )}
+        </>
+      )
+    }
+    
+    // Regular word - just apply search highlighting
+    return highlightText(word, highlight)
   }
 
   const insertAccent = (char: string) => {
@@ -1046,28 +1279,22 @@ function Database() {
               <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th onClick={() => handleSort('chuukese')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Chuukese {getSortIcon('chuukese')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('english')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">English Translation {getSortIcon('english')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('type')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Type {getSortIcon('type')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('grammar')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Grammar {getSortIcon('grammar')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('scripture')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Scripture {getSortIcon('scripture')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('search_direction')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Search Dir {getSortIcon('search_direction')}</Group>
-                    </Table.Th>
-                    <Table.Th onClick={() => handleSort('definition')} style={{ cursor: 'pointer' }}>
-                      <Group gap={4} wrap="nowrap">Definition {getSortIcon('definition')}</Group>
-                    </Table.Th>
-                    <Table.Th>Examples</Table.Th>
+                    {columnOrder.map((column) => (
+                      <Table.Th 
+                        key={column}
+                        onClick={() => handleSort(column)} 
+                        onDragStart={() => handleDragStart(column)}
+                        onDragOver={(e) => handleDragOver(e, column)}
+                        onDragEnd={handleDragEnd}
+                        draggable
+                        style={{ 
+                          cursor: 'move',
+                          opacity: draggedColumn === column ? 0.5 : 1
+                        }}
+                      >
+                        <Group gap={4} wrap="nowrap">{getColumnHeader(column)} {getSortIcon(column)}</Group>
+                      </Table.Th>
+                    ))}
                     <Table.Th onClick={() => handleSort('confidence_score')} style={{ cursor: 'pointer' }}>
                       <Group gap={4} wrap="nowrap">Confidence {getSortIcon('confidence_score')}</Group>
                     </Table.Th>
@@ -1077,7 +1304,7 @@ function Database() {
                 <Table.Tbody>
                   {entries.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={10}>
+                      <Table.Td colSpan={9}>
                         {searchTerm ? (
                           <Group justify="center" gap="sm" p="md">
                             <Text size="sm" color="dimmed">
@@ -1102,75 +1329,7 @@ function Database() {
                   ) : (
                     entries.map((entry, index) => (
                       <Table.Tr key={entry._id || index}>
-                        <Table.Td>
-                          <Text fw={500} className="chuukese-text-style">
-                            {highlightText(entry.chuukese_word, searchTerm)}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text>{highlightText(entry.english_translation, searchTerm)}</Text>
-                        </Table.Td>
-                        <Table.Td>
-                          {entry.type ? (
-                            <Badge color="blue" variant="light" size="sm">
-                              {entry.type}
-                            </Badge>
-                          ) : (
-                            <Text color="dimmed">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {entry.grammar ? (
-                            <Badge color="orange" variant="light" size="sm">
-                              {entry.grammar}
-                            </Badge>
-                          ) : (
-                            <Text color="dimmed">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {entry.scripture ? (
-                            <Button
-                              size="xs"
-                              variant="subtle"
-                              color="blue"
-                              onClick={() => {
-                                setSelectedScripture(entry)
-                                openScriptureModal()
-                              }}
-                            >
-                              {entry.scripture}
-                            </Button>
-                          ) : (
-                            <Text color="dimmed">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {entry.search_direction ? (
-                            <Badge color="violet" variant="light" size="sm">
-                              {entry.search_direction === 'chk_to_eng' || entry.search_direction === 'chk_to_en' ? 'Chk→Eng' : 'Eng→Chk'}
-                            </Badge>
-                          ) : (
-                            <Text color="dimmed" size="sm">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="sm" color="dimmed" className="text-max-width-200">
-                            {entry.definition ? 
-                              highlightText(
-                                entry.definition.length > 100 ? 
-                                  entry.definition.substring(0, 97) + '...' : 
-                                  entry.definition,
-                                searchTerm
-                              ) : '—'
-                            }
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="sm" color="dimmed" className="text-max-width-200">
-                            {formatExamples(entry.examples)}
-                          </Text>
-                        </Table.Td>
+                        {columnOrder.map((column) => renderTableCell(entry, column, index))}
                         <Table.Td>
                           <Group gap="xs">
                             {entry.confidence_score !== undefined ? (
@@ -1197,7 +1356,7 @@ function Database() {
                           </Group>
                         </Table.Td>
                         <Table.Td>
-                          <Group gap="xs">
+                          <Group gap="xs" wrap="nowrap">
                             <Button 
                               size="xs" 
                               variant="outline" 
@@ -1208,12 +1367,12 @@ function Database() {
                             </Button>
                             <Button 
                               size="xs" 
-                              variant="outline" 
+                              variant="subtle" 
                               color="red"
-                              leftSection={<IconTrash size={12} />}
                               onClick={() => entry._id && deleteEntry(entry._id)}
+                              p={4}
                             >
-                              Delete
+                              <IconTrash size={16} />
                             </Button>
                           </Group>
                         </Table.Td>
@@ -1242,10 +1401,70 @@ function Database() {
       <Modal 
         opened={opened} 
         onClose={close} 
-        title={isNewEntry ? 'Add New Dictionary Entry' : 'Edit Dictionary Entry'}
+        title={
+          <Text size="xl" fw={700}>
+            {isNewEntry ? 'Add New Dictionary Entry' : 'Edit Dictionary Entry'}
+          </Text>
+        }
         size="lg"
       >
         <Stack gap="md">
+          <Checkbox
+            label="User Confirmed Match"
+            description="Check if this translation has been manually verified by a user"
+            checked={formData.user_confirmed}
+            onChange={(e) => setFormData({...formData, user_confirmed: e.currentTarget.checked})}
+            color="teal"
+          />
+          
+          <Checkbox
+            label="Base Word (Root Form)"
+            description="Check if this is a base/root word (not inflected). Base words will be shown in dark purple and bold."
+            checked={formData.is_base_word}
+            onChange={(e) => setFormData({...formData, is_base_word: e.currentTarget.checked})}
+            color="violet"
+          />
+          
+          <Divider />
+          
+          <div>
+            <Text size="sm" fw={500} mb="xs">
+              Confidence Level: {formData.confidence_score !== undefined ? `${formData.confidence_score}%` : 'Not set'}
+            </Text>
+            <Slider
+              value={formData.confidence_score || 0}
+              onChange={(value) => setFormData({...formData, confidence_score: value})}
+              min={0}
+              max={100}
+              step={1}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 40, label: '40%' },
+                { value: 70, label: '70%' },
+                { value: 90, label: '90%' },
+                { value: 100, label: '100%' }
+              ]}
+              color={
+                !formData.confidence_score ? 'gray' :
+                formData.confidence_score >= 90 ? 'blue' :
+                formData.confidence_score >= 70 ? 'green' :
+                formData.confidence_score >= 40 ? 'yellow' : 'red'
+              }
+              mb="md"
+              mt="md"
+            />
+            {formData.confidence_score !== undefined && formData.confidence_score > 0 && (
+              <Text size="xs" c="dimmed">
+                {formData.confidence_score >= 90 ? '🔥 Verified - Professionally confirmed' :
+                 formData.confidence_score >= 70 ? '✅ High - Very confident' :
+                 formData.confidence_score >= 40 ? '👍 Medium - Reasonably confident' :
+                 '⚠️ Low - Needs verification'}
+              </Text>
+            )}
+          </div>
+          
+          <Divider />
+          
           <TextInput
             label="Chuukese Word or Phrase"
             placeholder="Enter Chuukese word or phrase..."
@@ -1343,49 +1562,6 @@ function Database() {
             onChange={(e) => setFormData({...formData, references: e.target.value})}
             description="Additional scripture references related to this entry"
             rows={2}
-          />
-          
-          <div>
-            <Text size="sm" fw={500} mb="xs">
-              Confidence Level: {formData.confidence_score !== undefined ? `${formData.confidence_score}%` : 'Not set'}
-            </Text>
-            <Slider
-              value={formData.confidence_score || 0}
-              onChange={(value) => setFormData({...formData, confidence_score: value})}
-              min={0}
-              max={100}
-              step={1}
-              marks={[
-                { value: 0, label: '0%' },
-                { value: 40, label: '40%' },
-                { value: 70, label: '70%' },
-                { value: 90, label: '90%' },
-                { value: 100, label: '100%' }
-              ]}
-              color={
-                !formData.confidence_score ? 'gray' :
-                formData.confidence_score >= 90 ? 'blue' :
-                formData.confidence_score >= 70 ? 'green' :
-                formData.confidence_score >= 40 ? 'yellow' : 'red'
-              }
-              mb="md"
-              mt="md"
-            />
-            <Text size="xs" c="dimmed">
-              {!formData.confidence_score ? 'Set a confidence level for this translation' :
-               formData.confidence_score >= 90 ? '🔥 Verified - Professionally confirmed' :
-               formData.confidence_score >= 70 ? '✅ High - Very confident' :
-               formData.confidence_score >= 40 ? '👍 Medium - Reasonably confident' :
-               '⚠️ Low - Needs verification'}
-            </Text>
-          </div>
-          
-          <Checkbox
-            label="User Confirmed Match"
-            description="Check if this translation has been manually verified by a user"
-            checked={formData.user_confirmed}
-            onChange={(e) => setFormData({...formData, user_confirmed: e.currentTarget.checked})}
-            color="teal"
           />
           
           <Group justify="flex-end" mt="md">
