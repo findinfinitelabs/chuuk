@@ -32,7 +32,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [accessCode, setAccessCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
@@ -128,17 +127,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   radius="md"
                 >
                   {error}
-                </Alert>
-              )}
-              
-              {magicLinkSent && (
-                <Alert 
-                  icon={<IconCheck size={16} />} 
-                  color="green" 
-                  variant="light"
-                  radius="md"
-                >
-                  Login link sent! Check your email.
                 </Alert>
               )}
 

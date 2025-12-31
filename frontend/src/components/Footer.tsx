@@ -1,6 +1,6 @@
 import { Box, Text, Group, Anchor, Modal } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
 import { Stack, ScrollArea, Divider, Button, Title } from '@mantine/core'
 
 export default function Footer() {
@@ -36,7 +36,7 @@ export default function Footer() {
         size="lg"
       >
         <Stack gap="md">
-          <ScrollArea h={400} viewportRef={viewport} onScrollPositionChange={handleScroll}>
+          <ScrollArea h={400} viewportRef={viewport}>
             <Stack gap="lg" pr="md">
               {/* Terms of Use */}
               <div>
