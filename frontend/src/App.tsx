@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -13,6 +13,7 @@ import PublicationDetail from './pages/PublicationDetail'
 import Database from './pages/Database'
 import Translate from './pages/Translate'
 import TranslationGame from './pages/TranslationGame'
+import Grammar from './pages/Grammar'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import { chuukTheme } from './theme'
@@ -38,7 +39,7 @@ function AccessDenied() {
 function App() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+  const [navOpened, { toggle: toggleNav }] = useDisclosure()
   const [globalSearch, setGlobalSearch] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -140,7 +141,7 @@ function App() {
         navbar={{
           width: 300,
           breakpoint: 'sm',
-          collapsed: { mobile: !mobileOpened },
+          collapsed: { mobile: !navOpened, desktop: !navOpened },
         }}
         header={{
           height: 70,
@@ -161,7 +162,7 @@ function App() {
                 to="/"
                 active={location.pathname === '/'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
               />
             )}
             {hasPermission('lookup') && (
@@ -172,7 +173,7 @@ function App() {
                 to="/lookup"
                 active={location.pathname === '/lookup'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
               />
             )}
             {hasPermission('translate') && (
@@ -183,7 +184,7 @@ function App() {
                 to="/translate"
                 active={location.pathname === '/translate'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
               />
             )}
             {hasPermission('game') && (
@@ -194,7 +195,7 @@ function App() {
                 to="/game"
                 active={location.pathname === '/game'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
               />
             )}
             {hasPermission('publications') && (
@@ -205,7 +206,7 @@ function App() {
                 to="/publications"
                 active={location.pathname === '/publications'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
               />
             )}
             {hasPermission('database') && (
@@ -216,7 +217,18 @@ function App() {
                 to="/database"
                 active={location.pathname === '/database'}
                 className="nav-link"
-                onClick={toggleMobile}
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('grammar') && (
+              <NavLink 
+                label="Grammar" 
+                leftSection={<IconAbc size="1.2rem" />} 
+                component={Link}
+                to="/grammar"
+                active={location.pathname === '/grammar'}
+                className="nav-link"
+                onClick={toggleNav}
               />
             )}
           </AppShell.Section>
@@ -226,9 +238,8 @@ function App() {
           <Group justify="space-between" h="100%">
             <Group>
               <Burger
-                opened={mobileOpened}
-                onClick={toggleMobile}
-                hiddenFrom="sm"
+                opened={navOpened}
+                onClick={toggleNav}
                 size="sm"
                 color="white"
               />
@@ -285,6 +296,7 @@ function App() {
             <Route path="/publications/new" element={hasPermission('new_publication') ? <NewPublication /> : <AccessDenied />} />
             <Route path="/publications/:id" element={hasPermission('publications') ? <PublicationDetail /> : <AccessDenied />} />
             <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
+            <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Footer />

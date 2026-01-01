@@ -285,9 +285,9 @@ def role_required(*allowed_roles):
 
 # Role permissions mapping
 ROLE_PERMISSIONS = {
-    'user': ['home', 'lookup', 'translate'],
-    'translator': ['home', 'lookup', 'translate', 'database', 'game'],
-    'admin': ['home', 'lookup', 'translate', 'database', 'game', 'publications', 'new_publication']
+    'user': ['home', 'lookup', 'translate', 'grammar'],
+    'translator': ['home', 'lookup', 'translate', 'database', 'game', 'grammar'],
+    'admin': ['home', 'lookup', 'translate', 'database', 'game', 'publications', 'new_publication', 'grammar']
 }
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -1779,6 +1779,44 @@ def api_lookup_jworg_post():
         
         results = jworg_lookup.search_word(word, lang)
         return jsonify({'word': word, 'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/grammar/types', methods=['GET'])
+def api_grammar_types():
+    """API: Get grammar types with counts and examples"""
+    try:
+        # Aggregate grammar types from dictionary collection
+        pipeline = [
+            {'$match': {'grammar': {'$exists': True, '$ne': '', '$ne': None}}},
+            {'$group': {
+                '_id': '$grammar',
+                'count': {'$sum': 1},
+                'examples': {'$push': {
+                    'chuukese_word': '$chuukese_word',
+                    'english_translation': '$english_translation'
+                }}
+            }},
+            {'$project': {
+                'grammar': '$_id',
+                'count': 1,
+                'examples': {'$slice': ['$examples', 12]}  # Limit examples to 12
+            }},
+            {'$sort': {'count': -1}}
+        ]
+        
+        results = list(dict_db.dictionary_collection.aggregate(pipeline))
+        
+        grammar_types = []
+        for r in results:
+            grammar_types.append({
+                'grammar': r.get('grammar', 'Unknown'),
+                'count': r.get('count', 0),
+                'examples': r.get('examples', [])
+            })
+        
+        return jsonify({'grammar_types': grammar_types})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
