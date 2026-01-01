@@ -167,6 +167,7 @@ class HelsinkiFineTuner:
     def fine_tune_model(
         self, 
         direction: str,
+        training_pairs: Optional[List[Dict[str, str]]] = None,
         num_epochs: int = 3,
         batch_size: int = 2,  # Reduced default for safety
         learning_rate: float = 3e-5,
@@ -177,6 +178,7 @@ class HelsinkiFineTuner:
         
         Args:
             direction: 'chk_to_en' or 'en_to_chk'
+            training_pairs: Optional list of training pairs. If None, loads from database.
             num_epochs: Number of training epochs
             batch_size: Training batch size (keep small: 2-4)
             learning_rate: Learning rate for optimizer
@@ -201,6 +203,14 @@ class HelsinkiFineTuner:
             
             print(f"\n🔧 Fine-tuning {stage_name} model...")
             self._update_progress(f"Loading {stage_name} model", 15)
+            
+            # Load training data
+            if training_pairs is not None:
+                print(f"📚 Using provided training pairs: {len(training_pairs)}")
+                self._update_progress("Using provided training data", 20)
+            else:
+                print("📚 Loading training data from database...")
+                training_pairs = self.load_training_data_from_db()
             
             # Load model and tokenizer
             # Check if we have a valid trained model (with actual model files)
@@ -230,7 +240,8 @@ class HelsinkiFineTuner:
             
             # Load training data
             self._update_progress(f"Preparing {stage_name} data", 20)
-            training_pairs = self.load_training_data_from_db()
+            if training_pairs is None:
+                training_pairs = self.load_training_data_from_db()
             
             if len(training_pairs) < 10:
                 print(f"⚠️  Warning: Only {len(training_pairs)} training pairs. More data recommended.")
