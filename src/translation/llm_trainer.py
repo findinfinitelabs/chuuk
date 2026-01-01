@@ -158,9 +158,9 @@ When translating:
 
 TEMPLATE """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-{{ .System }}<|eot_id|><|start_header_id|>user<|end_header_id|>
+{{{{ .System }}}}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-{{ .Prompt }}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+{{{{ .Prompt }}}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 '''
