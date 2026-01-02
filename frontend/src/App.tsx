@@ -1,6 +1,6 @@
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert } from '@mantine/core'
+import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
 import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc } from '@tabler/icons-react'
@@ -17,6 +17,7 @@ import Grammar from './pages/Grammar'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import { chuukTheme } from './theme'
+import { UserContext } from './contexts/UserContext'
 import './App.css'
 
 interface User {
@@ -44,6 +45,19 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [permissions, setPermissions] = useState<string[]>([])
+  const [showHighlights, setShowHighlights] = useState(false)
+  
+  // Show highlights on home page, hide after interaction
+  useEffect(() => {
+    if (location.pathname === '/') {
+      setShowHighlights(true)
+      // Auto-hide after 5 seconds
+      const timer = setTimeout(() => setShowHighlights(false), 5000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowHighlights(false)
+    }
+  }, [location.pathname])
   
   // Check authentication status on mount
   useEffect(() => {
@@ -162,18 +176,7 @@ function App() {
                 to="/"
                 active={location.pathname === '/'}
                 className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('lookup') && (
-              <NavLink 
-                label="Word Lookup" 
-                leftSection={<IconSearch size="1.2rem" />} 
-                component={Link}
-                to="/lookup"
-                active={location.pathname === '/lookup'}
-                className="nav-link"
-                onClick={toggleNav}
+                onClick={() => { toggleNav(); setShowHighlights(false); }}
               />
             )}
             {hasPermission('translate') && (
@@ -183,39 +186,6 @@ function App() {
                 component={Link}
                 to="/translate"
                 active={location.pathname === '/translate'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('game') && (
-              <NavLink 
-                label="Translation Game" 
-                leftSection={<IconPuzzle size="1.2rem" />} 
-                component={Link}
-                to="/game"
-                active={location.pathname === '/game'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('publications') && (
-              <NavLink 
-                label="Publications" 
-                leftSection={<IconBooks size="1.2rem" />} 
-                component={Link}
-                to="/publications"
-                active={location.pathname === '/publications'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('database') && (
-              <NavLink 
-                label="Database" 
-                leftSection={<IconDatabase size="1.2rem" />} 
-                component={Link}
-                to="/database"
-                active={location.pathname === '/database'}
                 className="nav-link"
                 onClick={toggleNav}
               />
@@ -231,6 +201,53 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('lookup') && (
+              <NavLink 
+                label="Word Lookup" 
+                leftSection={<IconSearch size="1.2rem" />} 
+                component={Link}
+                to="/lookup"
+                active={location.pathname === '/lookup'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            
+            <Divider my="sm" />
+            
+            {hasPermission('database') && (
+              <NavLink 
+                label="Database" 
+                leftSection={<IconDatabase size="1.2rem" />} 
+                component={Link}
+                to="/database"
+                active={location.pathname === '/database'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('publications') && (
+              <NavLink 
+                label="Publications" 
+                leftSection={<IconBooks size="1.2rem" />} 
+                component={Link}
+                to="/publications"
+                active={location.pathname === '/publications'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('game') && (
+              <NavLink 
+                label="Translation Game" 
+                leftSection={<IconPuzzle size="1.2rem" />} 
+                component={Link}
+                to="/game"
+                active={location.pathname === '/game'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
           </AppShell.Section>
         </AppShell.Navbar>
 
@@ -239,9 +256,10 @@ function App() {
             <Group>
               <Burger
                 opened={navOpened}
-                onClick={toggleNav}
+                onClick={() => { toggleNav(); setShowHighlights(false); }}
                 size="sm"
                 color="white"
+                className={showHighlights ? 'highlight-burger' : ''}
               />
               <Title order={1} className="app-title">Chuuk Dictionary AI Copilot</Title>
             </Group>
@@ -252,7 +270,9 @@ function App() {
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 onKeyDown={handleGlobalSearch}
+                onFocus={() => setShowHighlights(false)}
                 style={{ width: '250px' }}
+                className={showHighlights ? 'highlight-element' : ''}
                 styles={{
                   input: {
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -287,18 +307,20 @@ function App() {
         </AppShell.Header>
 
         <AppShell.Main bg="gray.0">
-          <Routes>
-            <Route path="/" element={hasPermission('home') ? <Home /> : <AccessDenied />} />
-            <Route path="/lookup" element={hasPermission('lookup') ? <Lookup /> : <AccessDenied />} />
-            <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
-            <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
-            <Route path="/publications" element={hasPermission('publications') ? <Publications /> : <AccessDenied />} />
-            <Route path="/publications/new" element={hasPermission('new_publication') ? <NewPublication /> : <AccessDenied />} />
-            <Route path="/publications/:id" element={hasPermission('publications') ? <PublicationDetail /> : <AccessDenied />} />
-            <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
-            <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <UserContext.Provider value={{ email: user?.email || null, name: user?.name || null, role: user?.role || null }}>
+            <Routes>
+              <Route path="/" element={hasPermission('home') ? <Home /> : <AccessDenied />} />
+              <Route path="/lookup" element={hasPermission('lookup') ? <Lookup /> : <AccessDenied />} />
+              <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
+              <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
+              <Route path="/publications" element={hasPermission('publications') ? <Publications /> : <AccessDenied />} />
+              <Route path="/publications/new" element={hasPermission('new_publication') ? <NewPublication /> : <AccessDenied />} />
+              <Route path="/publications/:id" element={hasPermission('publications') ? <PublicationDetail /> : <AccessDenied />} />
+              <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
+              <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </UserContext.Provider>
           <Footer />
         </AppShell.Main>
       </AppShell>

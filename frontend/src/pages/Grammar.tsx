@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Title, Text, Stack, Loader, Alert, Badge, Grid, Accordion, Table, Group, Divider, NavLink, Paper, Button, Box, Switch } from '@mantine/core'
+import { Card, Title, Text, Stack, Loader, Alert, Badge, Grid, Accordion, Table, Group, Divider, NavLink, Paper, Button, Box, Switch, SimpleGrid } from '@mantine/core'
 import { IconAlertCircle, IconBook, IconChevronRight, IconNumbers, IconUsers, IconClock, IconMapPin, IconHandFinger, IconUser, IconPalette, IconRun, IconEye, IconPuzzle, IconRefresh, IconCheck, IconX } from '@tabler/icons-react'
 import axios from 'axios'
 import grammarData from '../data/grammarData.json'
@@ -42,25 +42,30 @@ const grammarCategories = [
 ]
 
 // Data from JSON
-const { numbers: numberSystems, nouns, locations, existentialVerb, article } = grammarData as {
+const { numbers: numberSystems, nouns, locations, existentialVerb, article, sentences, pronouns } = grammarData as {
   numbers: Record<string, { label: string; words: { chuukese: string; english: string }[] }>
   nouns: Noun[]
   locations: Location[]
   existentialVerb: { chuukese: string; english: string }
   article: { chuukese: string; english: string }
+  sentences: { id: string; name: string; pattern: string; english: string; example: { chuukese: string; english: string } }[]
+  pronouns: { chuukese: string; english: string }[]
 }
 
 function Grammar() {
   const [loading, setLoading] = useState(true)
   const [grammarTypes, setGrammarTypes] = useState<GrammarType[]>([])
   const [error, setError] = useState('')
-  const [activeCategory, setActiveCategory] = useState<GrammarCategory>('numbers')
+  const [activeCategory, setActiveCategory] = useState<GrammarCategory | null>(null)
+  const [activeSentence, setActiveSentence] = useState<string>('existential')
   const [selectedNumber, setSelectedNumber] = useState<number | null>(1)
   const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null)
   const [selectedNoun, setSelectedNoun] = useState<number>(0)
   const [highlightedNoun, setHighlightedNoun] = useState<number | null>(null)
   const [selectedLocation, setSelectedLocation] = useState<number>(0)
   const [highlightedLocation, setHighlightedLocation] = useState<number | null>(null)
+  const [selectedPronoun] = useState<number>(0)
+  // const [highlightedPronoun, setHighlightedPronoun] = useState<number | null>(null)
   
   // Build Mode state
   type BuildSlot = 'subject' | 'verb' | 'number' | 'noun' | 'prep' | 'article' | 'location'
@@ -75,8 +80,15 @@ function Grammar() {
   const [showBuildResult, setShowBuildResult] = useState(false)
   const [cumulativeScore, setCumulativeScore] = useState(0)
 
-  // The correct sentence structure order: A wor eu puk woon ewe sanif
-  const sentenceSlots: BuildSlot[] = ['subject', 'verb', 'number', 'noun', 'prep', 'article', 'location']
+  // The correct sentence structure order depends on active sentence
+  const getSentenceSlots = useCallback((): BuildSlot[] => {
+    if (activeSentence === 'possession') {
+      return ['subject', 'verb', 'number', 'noun']
+    }
+    return ['subject', 'verb', 'number', 'noun', 'prep', 'article', 'location']
+  }, [activeSentence])
+  
+  const sentenceSlots = getSentenceSlots()
   
   // Get badge based on cumulative score
   const getBadge = useCallback(() => {
@@ -271,13 +283,15 @@ function Grammar() {
     const activeNumberSystem = numberSystems[currentCategory]
     const currentNumberWord = selectedNumber ? activeNumberSystem.words[selectedNumber - 1].chuukese : ''
     const currentLocation = locations[selectedLocation]
+    const currentPronoun = pronouns[selectedPronoun]
     const isNumberHighlighted = highlightedNumber !== null
     const isNounHighlighted = highlightedNoun !== null
     const isLocationHighlighted = highlightedLocation !== null
     
-    // Scrambled order for build mode (consistent scramble based on sentence)
-    // Correct order: subject, verb, number, noun, prep, article, location
-    const scrambledSlots: BuildSlot[] = ['noun', 'location', 'subject', 'verb', 'article', 'prep', 'number']
+    // Scrambled order for build mode depends on sentence type
+    const scrambledSlots: BuildSlot[] = activeSentence === 'possession' 
+      ? ['noun', 'subject', 'verb', 'number']
+      : ['noun', 'location', 'subject', 'verb', 'article', 'prep', 'number']
     
     // Get remaining unplaced slots
     const remainingSlots = scrambledSlots.filter(slot => !buildOrder.includes(slot))
@@ -342,7 +356,7 @@ function Grammar() {
         {mode === 'build' && (
           <Stack gap="md" style={{ position: 'relative' }}>
             {/* Page-level Confetti animation */}
-            {showBuildResult && getBuildScore() === 6 && (
+            {showBuildResult && getBuildScore() === sentenceSlots.length && (
               <Box
                 style={{
                   position: 'fixed',
@@ -388,12 +402,25 @@ function Grammar() {
             {/* Target Chuukese sentence to arrange */}
             <Paper p="md" withBorder style={{ backgroundColor: '#f3f0f7' }} radius="md">
               <Text size="sm" fw={600} style={{ color: '#3B1898' }} mb="xs">Arrange the parts to build this sentence:</Text>
-              <Text size="xl" fw={700} style={{ color: '#3B1898', fontSize: '1.5rem' }}>
-                A {existentialVerb.chuukese} {currentNumberWord} {currentNoun.chuukese} {currentLocation.preposition} {article.chuukese} {currentLocation.chuukese}
-              </Text>
-              <Text size="sm" c="dimmed" mt="xs">
-                (There {selectedNumber === 1 ? 'is' : 'are'} {selectedNumber ? getEnglishNumber(selectedNumber) : 'one'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english} {currentLocation.englishPreposition} {currentLocation.english})
-              </Text>
+              {activeSentence === 'possession' ? (
+                <>
+                  <Text size="xl" fw={700} style={{ color: '#3B1898', fontSize: '1.5rem' }}>
+                    {currentPronoun.chuukese} {existentialVerb.chuukese} {currentNumberWord} {currentNoun.chuukese}
+                  </Text>
+                  <Text size="sm" c="dimmed" mt="xs">
+                    ({currentPronoun.english} {selectedNumber === 1 ? 'have' : 'have'} {selectedNumber ? getEnglishNumber(selectedNumber) : 'one'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english})
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text size="xl" fw={700} style={{ color: '#3B1898', fontSize: '1.5rem' }}>
+                    A {existentialVerb.chuukese} {currentNumberWord} {currentNoun.chuukese} {currentLocation.preposition} {article.chuukese} {currentLocation.chuukese}
+                  </Text>
+                  <Text size="sm" c="dimmed" mt="xs">
+                    (There {selectedNumber === 1 ? 'is' : 'are'} {selectedNumber ? getEnglishNumber(selectedNumber) : 'one'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english} {currentLocation.englishPreposition} {currentLocation.english})
+                  </Text>
+                </>
+              )}
             </Paper>
 
             {/* Available pills to pick from */}
@@ -411,6 +438,9 @@ function Grammar() {
                         cursor: 'pointer',
                         padding: '12px 16px',
                         fontSize: '0.95rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                       onClick={() => handleBuildSlotClick(slot)}
                     >
@@ -448,6 +478,9 @@ function Grammar() {
                           backgroundColor: isCorrect ? '#27B249' : '#e03131',
                           color: 'white',
                           cursor: !isCorrect && !showBuildResult ? 'pointer' : 'default',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                         rightSection={
                           isCorrect 
@@ -480,7 +513,15 @@ function Grammar() {
                 <Text size="sm" fw={600} c="blue.7" mb="md">The Chuukese sentence:</Text>
                 <Group gap="xl" justify="flex-start" wrap="wrap">
                   {buildOrder.map((slot, idx) => {
-                    const wordMap: Record<BuildSlot, { chuukese: string; english: string }> = {
+                    const wordMap: Record<BuildSlot, { chuukese: string; english: string }> = activeSentence === 'possession' ? {
+                      subject: { chuukese: currentPronoun.chuukese, english: currentPronoun.english },
+                      verb: { chuukese: existentialVerb.chuukese, english: 'have' },
+                      number: { chuukese: currentNumberWord || '—', english: selectedNumber ? getEnglishNumber(selectedNumber) : '—' },
+                      noun: { chuukese: currentNoun.chuukese, english: currentNoun.english },
+                      prep: { chuukese: '', english: '' },
+                      article: { chuukese: '', english: '' },
+                      location: { chuukese: '', english: '' },
+                    } : {
                       subject: { chuukese: 'A', english: 'There' },
                       verb: { chuukese: existentialVerb.chuukese, english: existentialVerb.english },
                       number: { chuukese: currentNumberWord || '—', english: selectedNumber ? getEnglishNumber(selectedNumber) : '—' },
@@ -514,12 +555,14 @@ function Grammar() {
             {/* Score result after completion */}
             {showBuildResult && (
               <Alert 
-                color={getBuildScore() === 7 ? 'green' : 'red'} 
-                title={getBuildScore() === 7 ? 'Perfect! 🎉' : `Score: ${getBuildScore()}/7`}
+                color={getBuildScore() === sentenceSlots.length ? 'green' : 'red'} 
+                title={getBuildScore() === sentenceSlots.length ? 'Perfect! 🎉' : `Score: ${getBuildScore()}/${sentenceSlots.length}`}
               >
-                {getBuildScore() === 7 
+                {getBuildScore() === sentenceSlots.length 
                   ? 'You got the sentence structure correct!' 
-                  : 'Correct order: Subject → Verb → Number → Noun → Preposition → Article → Location'}
+                  : activeSentence === 'possession'
+                    ? 'Correct order: Subject → Verb → Number → Noun'
+                    : 'Correct order: Subject → Verb → Number → Noun → Preposition → Article → Location'}
               </Alert>
             )}
           </Stack>
@@ -528,170 +571,249 @@ function Grammar() {
         {/* Explore Mode UI */}
         {mode === 'explore' && (
           <>
-            {/* Pattern display */}
-            <Paper p="sm" withBorder bg="gray.0" radius="md">
-              <Group gap="xs" justify="center" wrap="wrap">
-                {sentenceSlots.map((slot, idx) => (
-                  <Group key={slot} gap={4}>
-                    <Badge size="md" variant="outline" color="gray">
-                      {slotLabels[slot]}
-                    </Badge>
-                    {idx < sentenceSlots.length - 1 && <Text c="dimmed" size="sm">→</Text>}
-                  </Group>
-                ))}
-              </Group>
-            </Paper>
-
             {/* Chuukese sentence with English below each word */}
-            <Paper p="lg" withBorder radius="md">
+            <Box py="sm">
               <Group gap="xl" justify="center" wrap="wrap">
-                <Box ta="center">
-                  <Text size="xl" fw={700} style={{ fontSize: '1.6rem' }}>A</Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Subject</Text>
-                  <Text size="sm" c="dimmed">There</Text>
-                </Box>
-                <Box ta="center">
-                  <Text size="xl" fw={700} style={{ fontSize: '1.6rem' }}>{existentialVerb.chuukese}</Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Verb</Text>
-                  <Text size="sm" c="dimmed">{selectedNumber === 1 ? 'is' : 'are'}</Text>
-                </Box>
-                <Box ta="center">
-                  <Text 
-                    size="xl" 
-                    fw={700} 
-                    style={{ fontSize: '1.6rem', color: isNumberHighlighted ? '#27B249' : 'inherit' }}
-                  >
-                    {currentNumberWord || '—'}
-                  </Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Number</Text>
-                  <Text size="sm" c="dimmed">{selectedNumber ? getEnglishNumber(selectedNumber) : '—'}</Text>
-                </Box>
-                <Box ta="center">
-                  <Text 
-                    size="xl" 
-                    fw={700} 
-                    style={{ fontSize: '1.6rem', color: isNounHighlighted ? '#27B249' : 'inherit' }}
-                  >
-                    {currentNoun.chuukese}
-                  </Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Noun</Text>
-                  <Text size="sm" c="dimmed">{selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}</Text>
-                </Box>
-                <Box ta="center">
-                  <Text size="xl" fw={700} style={{ fontSize: '1.6rem' }}>{currentLocation.preposition}</Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Prep</Text>
-                  <Text size="sm" c="dimmed">{currentLocation.englishPreposition.split(' ')[0]}</Text>
-                </Box>
-                <Box ta="center">
-                  <Text size="xl" fw={700} style={{ fontSize: '1.6rem' }}>{article.chuukese}</Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Article</Text>
-                  <Text size="sm" c="dimmed">{article.english}</Text>
-                </Box>
-                <Box ta="center">
-                  <Text 
-                    size="xl" 
-                    fw={700} 
-                    style={{ fontSize: '1.6rem', color: isLocationHighlighted ? '#27B249' : 'inherit' }}
-                  >
-                    {currentLocation.chuukese}
-                  </Text>
-                  <Text size="xs" c="dimmed" tt="uppercase">Location</Text>
-                  <Text size="sm" c="dimmed">{currentLocation.english}</Text>
-                </Box>
+                {activeSentence === 'possession' ? (
+                  <>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{currentPronoun.chuukese}</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Subject</Text>
+                      <Text size="sm" c="dimmed">{currentPronoun.english}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{existentialVerb.chuukese}</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Verb</Text>
+                      <Text size="sm" c="dimmed">have</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNumberHighlighted ? '#27B249' : 'inherit' }}
+                      >
+                        {currentNumberWord || '—'}
+                      </Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Number</Text>
+                      <Text size="sm" c="dimmed">{selectedNumber ? getEnglishNumber(selectedNumber) : '—'}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNounHighlighted ? '#27B249' : 'inherit' }}
+                      >
+                        {currentNoun.chuukese}
+                      </Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Noun</Text>
+                      <Text size="sm" c="dimmed">{selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}</Text>
+                    </Box>
+                  </>
+                ) : (
+                  <>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>A</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Subject</Text>
+                      <Text size="sm" c="dimmed">There</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{existentialVerb.chuukese}</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Verb</Text>
+                      <Text size="sm" c="dimmed">{selectedNumber === 1 ? 'is' : 'are'}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNumberHighlighted ? '#27B249' : 'inherit' }}
+                      >
+                        {currentNumberWord || '—'}
+                      </Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Number</Text>
+                      <Text size="sm" c="dimmed">{selectedNumber ? getEnglishNumber(selectedNumber) : '—'}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNounHighlighted ? '#27B249' : 'inherit' }}
+                      >
+                        {currentNoun.chuukese}
+                      </Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Noun</Text>
+                      <Text size="sm" c="dimmed">{selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{currentLocation.preposition}</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Prep</Text>
+                      <Text size="sm" c="dimmed">{currentLocation.englishPreposition.split(' ')[0]}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{article.chuukese}</Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Article</Text>
+                      <Text size="sm" c="dimmed">{article.english}</Text>
+                    </Box>
+                    <Box ta="center">
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isLocationHighlighted ? '#27B249' : 'inherit' }}
+                      >
+                        {currentLocation.chuukese}
+                      </Text>
+                      <Text size="xs" c="dimmed" tt="uppercase">Location</Text>
+                      <Text size="sm" c="dimmed">{currentLocation.english}</Text>
+                    </Box>
+                  </>
+                )}
               </Group>
-              
-              {/* Full English translation */}
-              <Divider my="md" />
-              <Text ta="center" size="lg" c="dimmed">
-                "There {selectedNumber === 1 ? 'is' : 'are'} {selectedNumber ? getEnglishNumber(selectedNumber) : '—'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english + 's'} {currentLocation.englishPreposition} {currentLocation.english}."
+              <Text ta="center" size="sm" c="dimmed" mt="xs">
+                {activeSentence === 'possession' 
+                  ? `"${currentPronoun.english} have ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}."`
+                  : `"There ${selectedNumber === 1 ? 'is' : 'are'} ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english + 's'} ${currentLocation.englishPreposition} ${currentLocation.english}."`
+                }
               </Text>
-            </Paper>
+            </Box>
 
-            <Divider />
+            <Divider my="sm" />
 
-            {/* Word selection buttons - only in Explore mode */}
-            <Stack gap="md">
-              {Object.entries(numberSystems).map(([systemKey, system]) => {
-                const isActiveSystem = systemKey === currentCategory
-                return (
-                  <Box key={systemKey}>
-                    <Text size="sm" fw={600} mb="xs" c={isActiveSystem ? 'blue' : 'dimmed'}>
-                      {system.label}:
-                    </Text>
-                    <Group gap="xs">
-                      {system.words.map((word, idx) => {
-                        const isSelected = selectedNumber === idx + 1 && isActiveSystem
-                        const isHighlighted = highlightedNumber === idx + 1 && isActiveSystem
-                        return (
-                          <Button
-                            key={`${systemKey}-${idx}`}
-                            variant={isHighlighted ? 'filled' : isSelected ? 'light' : 'outline'}
-                            color={isActiveSystem ? 'blue' : 'gray'}
-                            size="xs"
-                            disabled={!isActiveSystem}
-                            onClick={() => handleNumberSelect(idx + 1)}
-                            style={{
+            {/* Word selection - side by side cards */}
+            <Grid gutter="xs">
+              {/* Numbers Card - takes more space */}
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card shadow="xs" p="xs" radius="sm" withBorder h="100%">
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Numbers:</Text>
+                  <Stack gap={0}>
+                    {Object.entries(numberSystems).map(([systemKey, system], systemIdx, arr) => {
+                      const isActiveSystem = systemKey === currentCategory
+                      const isLast = systemIdx === arr.length - 1
+                      return (
+                        <Box key={systemKey}>
+                          <Group gap="xs" align="center" wrap="nowrap" py={4}>
+                            <Text size="xs" c={isActiveSystem ? 'blue' : 'dimmed'} w={100} style={{ flexShrink: 0, fontSize: '0.7rem' }}>
+                              {system.label.split('(')[0].trim()}:
+                            </Text>
+                            <Group gap={2} style={{ flexWrap: 'wrap' }}>
+                              {system.words.map((word, idx) => {
+                                const isSelected = selectedNumber === idx + 1 && isActiveSystem
+                                const isHighlighted = highlightedNumber === idx + 1 && isActiveSystem
+                                return (
+                                  <Button
+                                    key={`${systemKey}-${idx}`}
+                                    variant="subtle"
+                                    color={isActiveSystem ? 'blue' : 'gray'}
+                                    size="xs"
+                                    disabled={!isActiveSystem}
+                                    onClick={() => handleNumberSelect(idx + 1)}
+                                    styles={{
+                                      root: {
+                                        transition: 'all 0.3s ease',
+                                        borderRadius: '1px',
+                                        border: 'none',
+                                        outline: 'none',
+                                        padding: '10px 12px',
+                                        minHeight: 'auto',
+                                        height: 'auto',
+                                        opacity: isActiveSystem ? 1 : 0.4,
+                                        backgroundColor: isHighlighted ? '#27B249' : isSelected ? 'rgba(34, 139, 230, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                                        color: isHighlighted ? 'white' : isSelected ? '#228be6' : 'inherit',
+                                        '&:focus': { outline: 'none', boxShadow: 'none' },
+                                        '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                                      }
+                                    }}
+                                  >
+                                    {word.chuukese}
+                                  </Button>
+                                )
+                              })}
+                            </Group>
+                          </Group>
+                          {!isLast && <Divider my={6} />}
+                        </Box>
+                      )
+                    })}
+                  </Stack>
+                </Card>
+              </Grid.Col>
+
+              {/* Nouns Card */}
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Card shadow="xs" p="xs" radius="sm" withBorder h="100%">
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Nouns:</Text>
+                  <SimpleGrid cols={2} spacing={4}>
+                    {nouns.map((noun, idx) => {
+                      const isSelected = selectedNoun === idx
+                      const isHighlighted = highlightedNoun === idx
+                      return (
+                        <Button
+                          key={`noun-${idx}`}
+                          variant="subtle"
+                          color="orange"
+                          size="xs"
+                          onClick={() => handleNounSelect(idx)}
+                          styles={{
+                            root: {
                               transition: 'all 0.3s ease',
-                              opacity: isActiveSystem ? 1 : 0.4,
-                              ...(isHighlighted && { backgroundColor: '#27B249', borderColor: '#27B249' }),
-                            }}
-                          >
-                            {word.chuukese}
-                          </Button>
-                        )
-                      })}
-                    </Group>
-                  </Box>
-                )
-              })}
+                              borderRadius: '1px',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '10px 12px',
+                              minHeight: 'auto',
+                              height: 'auto',
+                              backgroundColor: isHighlighted ? '#27B249' : isSelected ? 'rgba(255, 146, 43, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isHighlighted ? 'white' : isSelected ? '#fd7e14' : 'inherit',
+                              '&:focus': { outline: 'none', boxShadow: 'none' },
+                              '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                            }
+                          }}
+                        >
+                          {noun.chuukese}
+                        </Button>
+                      )
+                    })}
+                  </SimpleGrid>
+                </Card>
+              </Grid.Col>
 
-              <Box>
-                <Text size="sm" fw={600} mb="xs" c="dimmed">Nouns (select to change counting system):</Text>
-                <Group gap="xs" wrap="wrap">
-                  {nouns.map((noun, idx) => (
-                    <Button
-                      key={`noun-${idx}`}
-                      variant={selectedNoun === idx && highlightedNoun === idx ? 'filled' : selectedNoun === idx ? 'light' : 'outline'}
-                      color="orange"
-                      size="xs"
-                      onClick={() => handleNounSelect(idx)}
-                      style={{
-                        transition: 'all 0.3s ease',
-                        ...(highlightedNoun === idx && { backgroundColor: '#27B249', borderColor: '#27B249' }),
-                      }}
-                    >
-                      {noun.chuukese}
-                    </Button>
-                  ))}
-                </Group>
-              </Box>
-
-              <Box>
-                <Text size="sm" fw={600} mb="xs" c="dimmed">Locations:</Text>
-                <Group gap="xs" wrap="wrap">
-                  {locations.map((location, idx) => (
-                    <Button
-                      key={`location-${idx}`}
-                      variant={selectedLocation === idx && highlightedLocation === idx ? 'filled' : selectedLocation === idx ? 'light' : 'outline'}
-                      color="cyan"
-                      size="xs"
-                      onClick={() => handleLocationSelect(idx)}
-                      style={{
-                        transition: 'all 0.3s ease',
-                        ...(highlightedLocation === idx && { backgroundColor: '#27B249', borderColor: '#27B249' }),
-                      }}
-                    >
-                      {location.chuukese}
-                    </Button>
-                  ))}
-                </Group>
-              </Box>
-            </Stack>
-
-            <Text size="sm" c="dimmed" mt="md">
-              <strong>Note:</strong> In Chuukese, number words change based on the type of object being counted.
-              The tense marker (like Ua, Upwe, Use) combines the subject pronoun with the verb tense.
-            </Text>
+              {/* Locations Card */}
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Card shadow="xs" p="xs" radius="sm" withBorder h="100%">
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Locations:</Text>
+                  <SimpleGrid cols={2} spacing={4}>
+                    {locations.map((location, idx) => {
+                      const isSelected = selectedLocation === idx
+                      const isHighlighted = highlightedLocation === idx
+                      return (
+                        <Button
+                          key={`location-${idx}`}
+                          variant="subtle"
+                          color="cyan"
+                          size="xs"
+                          onClick={() => handleLocationSelect(idx)}
+                          styles={{
+                            root: {
+                              transition: 'all 0.3s ease',
+                              borderRadius: '1px',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '10px 12px',
+                              minHeight: 'auto',
+                              height: 'auto',
+                              backgroundColor: isHighlighted ? '#27B249' : isSelected ? 'rgba(21, 170, 191, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isHighlighted ? 'white' : isSelected ? '#15aabf' : 'inherit',
+                              '&:focus': { outline: 'none', boxShadow: 'none' },
+                              '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                            }
+                          }}
+                        >
+                          {location.chuukese}
+                        </Button>
+                      )
+                    })}
+                  </SimpleGrid>
+                </Card>
+              </Grid.Col>
+            </Grid>
           </>
         )}
       </Stack>
@@ -752,31 +874,103 @@ function Grammar() {
       {/* Grammar Teaching Section with Left Nav */}
       <Grid gutter="lg">
         <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
-          <Paper shadow="sm" p="md" radius="md" withBorder>
-            <Title order={5} mb="sm">Grammar Topics</Title>
-            <Stack gap={4}>
-              {grammarCategories.map((category) => {
-                const Icon = category.icon
-                return (
-                  <NavLink
-                    key={category.id}
-                    label={category.label}
-                    leftSection={<Icon size="1rem" />}
-                    rightSection={<IconChevronRight size="0.8rem" stroke={1.5} />}
-                    active={activeCategory === category.id}
-                    onClick={() => setActiveCategory(category.id)}
-                    variant="light"
-                    style={{ borderRadius: '8px' }}
-                  />
-                )
-              })}
-            </Stack>
+          <Paper shadow="sm" p="md" radius="md" withBorder style={{ overflow: 'hidden' }}>
+            {/* Show Grammar Topics OR Sentence Patterns based on activeCategory */}
+            {activeCategory === null ? (
+              <>
+                <Title order={5} mb="sm">Grammar Topics</Title>
+                <Stack gap={4}>
+                  {grammarCategories.map((category) => {
+                    const Icon = category.icon
+                    return (
+                      <NavLink
+                        key={category.id}
+                        label={category.label}
+                        leftSection={<Icon size="1rem" />}
+                        rightSection={<IconChevronRight size="0.8rem" stroke={1.5} />}
+                        onClick={() => setActiveCategory(category.id)}
+                        variant="light"
+                        style={{ borderRadius: '8px' }}
+                      />
+                    )
+                  })}
+                </Stack>
+              </>
+            ) : activeCategory === 'numbers' ? (
+              <>
+                <Group justify="space-between" align="center" mb="sm">
+                  <Button 
+                    variant="subtle" 
+                    size="xs" 
+                    leftSection={<IconChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />}
+                    onClick={() => setActiveCategory(null)}
+                    px="xs"
+                  >
+                    Back
+                  </Button>
+                  <Title order={5}>Numbers</Title>
+                  <Box w={50} /> {/* Spacer for centering */}
+                </Group>
+                <Divider mb="md" />
+                <Stack gap={4}>
+                  {sentences.map((sentence) => (
+                    <Button
+                      key={sentence.id}
+                      variant={activeSentence === sentence.id ? 'filled' : 'subtle'}
+                      color={activeSentence === sentence.id ? 'violet' : 'gray'}
+                      size="xs"
+                      fullWidth
+                      justify="flex-start"
+                      onClick={() => {
+                        setActiveSentence(sentence.id)
+                        resetBuildMode()
+                      }}
+                      styles={{
+                        root: {
+                          borderRadius: '8px',
+                          fontWeight: activeSentence === sentence.id ? 500 : 400,
+                          fontSize: '0.75rem',
+                          padding: '8px 10px',
+                        }
+                      }}
+                    >
+                      {sentence.example.chuukese}
+                    </Button>
+                  ))}
+                </Stack>
+              </>
+            ) : (
+              <>
+                <Group justify="space-between" align="center" mb="sm">
+                  <Button 
+                    variant="subtle" 
+                    size="xs" 
+                    leftSection={<IconChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />}
+                    onClick={() => setActiveCategory(null)}
+                    px="xs"
+                  >
+                    Back
+                  </Button>
+                  <Title order={5}>{grammarCategories.find(c => c.id === activeCategory)?.label}</Title>
+                  <Box w={50} /> {/* Spacer for centering */}
+                </Group>
+                <Divider mb="md" />
+                <Text c="dimmed" size="sm">Coming soon...</Text>
+              </>
+            )}
           </Paper>
         </Grid.Col>
         
         <Grid.Col span={{ base: 12, sm: 8, md: 9 }}>
           <Paper shadow="sm" p="lg" radius="md" withBorder style={{ minHeight: '400px' }}>
-            {renderCategoryContent()}
+            {activeCategory === null ? (
+              <Stack align="center" justify="center" h={300}>
+                <IconBook size={48} color="#adb5bd" />
+                <Text c="dimmed" ta="center">Select a grammar topic from the left to start learning</Text>
+              </Stack>
+            ) : (
+              renderCategoryContent()
+            )}
           </Paper>
         </Grid.Col>
       </Grid>

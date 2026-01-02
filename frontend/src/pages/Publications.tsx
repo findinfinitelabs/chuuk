@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Card, Title, Text, Button, Grid, Group } from '@mantine/core'
-import { IconBooks, IconPlus } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Grid, Group, List, ThemeIcon, Divider } from '@mantine/core'
+import { IconBooks, IconPlus, IconEye, IconWorld, IconDatabase } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 
@@ -64,6 +64,27 @@ function Publications() {
           ))}
         </Grid>
       )}
+
+      <Divider my="xl" />
+
+      {/* Getting Started */}
+      <Card withBorder radius="md" p="lg">
+        <Title order={2} mb="md">Getting Started</Title>
+        <List spacing="md">
+          <List.Item icon={<ThemeIcon color="#4A6DA7" size={24} radius="xl"><IconPlus size={16} /></ThemeIcon>}>
+            <Text><strong>Upload Publication:</strong> Start by uploading a dictionary publication</Text>
+          </List.Item>
+          <List.Item icon={<ThemeIcon color="#4A6DA7" size={24} radius="xl"><IconEye size={16} /></ThemeIcon>}>
+            <Text><strong>AI Text Processing:</strong> Extract text with high accuracy for Chuukese characters</Text>
+          </List.Item>
+          <List.Item icon={<ThemeIcon color="#4A6DA7" size={24} radius="xl"><IconWorld size={16} /></ThemeIcon>}>
+            <Text><strong>Cross-Reference:</strong> Match words with JW.org resources</Text>
+          </List.Item>
+          <List.Item icon={<ThemeIcon color="#4A6DA7" size={24} radius="xl"><IconDatabase size={16} /></ThemeIcon>}>
+            <Text><strong>Organize:</strong> Store and search your digitized dictionary entries</Text>
+          </List.Item>
+        </List>
+      </Card>
     </div>
   )
 }

@@ -3,6 +3,8 @@ import { Card, Title, Text, Textarea, Button, Group, Stack, Radio, Alert, Badge,
 import { IconLanguage, IconArrowsExchange, IconCheck, IconAlertCircle, IconRobot, IconRefresh, IconBrandGoogle, IconDeviceFloppy, IconBrain, IconBook, IconPlus } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
+import { useUser } from '../contexts/UserContext'
+import { useUserCache } from '../hooks/useUserCache'
 
 interface TranslationResults {
   google?: string
@@ -26,11 +28,18 @@ interface PhraseTranslation {
 }
 
 function Translate() {
-  const [text, setText] = useState('')
-  const [translations, setTranslations] = useState<TranslationResults>({})
+  const { email: userEmail } = useUser()
+  
+  // Cached state - persists across sessions
+  const [cachedText, setCachedText] = useUserCache('translate_text', '', userEmail)
+  const [cachedDirection, setCachedDirection] = useUserCache<'chk_to_en' | 'en_to_chk'>('translate_direction', 'chk_to_en', userEmail)
+  const [cachedTranslations, setCachedTranslations] = useUserCache<TranslationResults>('translate_results', {}, userEmail)
+  
+  const [text, setText] = useState(cachedText)
+  const [translations, setTranslations] = useState<TranslationResults>(cachedTranslations)
   const [phraseTranslations, setPhraseTranslations] = useState<PhraseTranslation[]>([])
   const [correction, setCorrection] = useState('')
-  const [direction, setDirection] = useState<'chk_to_en' | 'en_to_chk'>('chk_to_en')
+  const [direction, setDirection] = useState<'chk_to_en' | 'en_to_chk'>(cachedDirection)
   const [loading, setLoading] = useState(false)
   const [savingCorrection, setSavingCorrection] = useState(false)
   const [error, setError] = useState('')
@@ -43,6 +52,28 @@ function Translate() {
   const [userConfidence, setUserConfidence] = useState<number>(3)
   const [existingPhraseMatch, setExistingPhraseMatch] = useState<any>(null)
   const textInputRef = useRef<HTMLInputElement>(null)
+
+  // Sync local state to cache when it changes
+  useEffect(() => {
+    setCachedText(text)
+  }, [text, setCachedText])
+
+  useEffect(() => {
+    setCachedDirection(direction)
+  }, [direction, setCachedDirection])
+
+  useEffect(() => {
+    if (Object.keys(translations).length > 0) {
+      setCachedTranslations(translations)
+    }
+  }, [translations, setCachedTranslations])
+
+  // Load cached state on mount (when userEmail changes)
+  useEffect(() => {
+    setText(cachedText)
+    setDirection(cachedDirection)
+    setTranslations(cachedTranslations)
+  }, [userEmail])
 
   // Poll training status
   useEffect(() => {

@@ -4,6 +4,8 @@ import { Card, Title, Text, TextInput, Button, Group, Stack, Loader, Alert, Badg
 import { IconSearch, IconAlertCircle, IconBook } from '@tabler/icons-react'
 import axios from 'axios'
 import type { ReactElement } from 'react'
+import { useUser } from '../contexts/UserContext'
+import { useUserCache } from '../hooks/useUserCache'
 
 interface DictionaryEntry {
   _id?: string
@@ -23,15 +25,42 @@ interface DictionaryEntry {
 }
 
 function Lookup() {
+  const { email: userEmail } = useUser()
   const [searchParams] = useSearchParams()
-  const [word, setWord] = useState('')
+  
+  // Cached state - persists across sessions
+  const [cachedWord, setCachedWord] = useUserCache('lookup_word', '', userEmail)
+  const [cachedResults, setCachedResults] = useUserCache<DictionaryEntry[]>('lookup_results', [], userEmail)
+  
+  const [word, setWord] = useState(cachedWord)
   const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState<DictionaryEntry[]>([])
+  const [results, setResults] = useState<DictionaryEntry[]>(cachedResults)
   const [error, setError] = useState('')
   const [filterType, setFilterType] = useState<string>('')
   const [filterGrammar, setFilterGrammar] = useState<string>('')
   const [filterScripture, setFilterScripture] = useState<string>('')
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Sync local state to cache when it changes
+  useEffect(() => {
+    setCachedWord(word)
+  }, [word, setCachedWord])
+
+  useEffect(() => {
+    if (results.length > 0) {
+      setCachedResults(results)
+    }
+  }, [results, setCachedResults])
+
+  // Load cached state on mount (when userEmail changes)
+  useEffect(() => {
+    // Only load from cache if no query param
+    const queryParam = searchParams.get('q')
+    if (!queryParam && cachedWord) {
+      setWord(cachedWord)
+      setResults(cachedResults)
+    }
+  }, [userEmail])
 
   // Check for query parameter and auto-search
   useEffect(() => {
