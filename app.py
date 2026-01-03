@@ -2741,6 +2741,7 @@ def api_database_import():
         inserted_count = 0
         error_count = 0
         errors = []
+        changes = []  # Track detailed changes
         
         for row_num, row in enumerate(entries_data, start=1):
             try:
@@ -2795,6 +2796,23 @@ def api_database_import():
                 else:
                     collection = dict_db.dictionary_collection
                 
+                # Helper to track changes between old and new
+                def get_field_changes(existing_doc, new_doc):
+                    field_changes = []
+                    track_fields = ['chuukese_word', 'english_translation', 'definition', 'type', 'grammar', 'scripture', 'notes', 'examples', 'confidence_score', 'user_confirmed', 'is_base_word']
+                    for field in track_fields:
+                        old_val = existing_doc.get(field)
+                        new_val = new_doc.get(field)
+                        # Normalize for comparison
+                        if old_val is None:
+                            old_val = '' if field not in ['examples', 'confidence_score', 'user_confirmed', 'is_base_word'] else old_val
+                        if isinstance(old_val, list) and isinstance(new_val, list):
+                            if old_val != new_val:
+                                field_changes.append({'field': field, 'old': old_val, 'new': new_val})
+                        elif str(old_val) != str(new_val) if new_val is not None else False:
+                            field_changes.append({'field': field, 'old': old_val, 'new': new_val})
+                    return field_changes
+
                 # Upsert based on _id if provided
                 if entry_id:
                     # Try to find by ID
@@ -2804,6 +2822,14 @@ def api_database_import():
                         obj_id = ObjectId(entry_id)
                         existing = collection.find_one({'_id': obj_id})
                         if existing:
+                            field_changes = get_field_changes(existing, update_doc)
+                            if field_changes:
+                                changes.append({
+                                    '_id': entry_id,
+                                    'chuukese_word': chuukese_word,
+                                    'action': 'updated',
+                                    'field_changes': field_changes
+                                })
                             collection.update_one({'_id': obj_id}, {'$set': update_doc})
                             updated_count += 1
                             continue
@@ -2813,6 +2839,14 @@ def api_database_import():
                     # Try string ID
                     existing = collection.find_one({'_id': entry_id})
                     if existing:
+                        field_changes = get_field_changes(existing, update_doc)
+                        if field_changes:
+                            changes.append({
+                                '_id': entry_id,
+                                'chuukese_word': chuukese_word,
+                                'action': 'updated',
+                                'field_changes': field_changes
+                            })
                         collection.update_one({'_id': entry_id}, {'$set': update_doc})
                         updated_count += 1
                         continue
@@ -2823,6 +2857,14 @@ def api_database_import():
                         obj_id = ObjectId(entry_id)
                         existing = other_collection.find_one({'_id': obj_id})
                         if existing:
+                            field_changes = get_field_changes(existing, update_doc)
+                            if field_changes:
+                                changes.append({
+                                    '_id': entry_id,
+                                    'chuukese_word': chuukese_word,
+                                    'action': 'updated',
+                                    'field_changes': field_changes
+                                })
                             other_collection.update_one({'_id': obj_id}, {'$set': update_doc})
                             updated_count += 1
                             continue
@@ -2831,6 +2873,14 @@ def api_database_import():
                     
                     existing = other_collection.find_one({'_id': entry_id})
                     if existing:
+                        field_changes = get_field_changes(existing, update_doc)
+                        if field_changes:
+                            changes.append({
+                                '_id': entry_id,
+                                'chuukese_word': chuukese_word,
+                                'action': 'updated',
+                                'field_changes': field_changes
+                            })
                         other_collection.update_one({'_id': entry_id}, {'$set': update_doc})
                         updated_count += 1
                         continue
@@ -2838,6 +2888,12 @@ def api_database_import():
                 # No existing entry found or no ID provided - insert new
                 update_doc['date_added'] = datetime.now().isoformat()
                 collection.insert_one(update_doc)
+                changes.append({
+                    '_id': str(update_doc.get('_id', '')),
+                    'chuukese_word': chuukese_word,
+                    'action': 'inserted',
+                    'field_changes': []
+                })
                 inserted_count += 1
                 
             except Exception as row_error:
@@ -2849,7 +2905,8 @@ def api_database_import():
             'updated': updated_count,
             'inserted': inserted_count,
             'errors': error_count,
-            'error_details': errors[:10]  # Limit error details to first 10
+            'error_details': errors[:10],  # Limit error details to first 10
+            'changes': changes  # Detailed change report
         })
     except Exception as e:
         import traceback

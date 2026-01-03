@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider, FileInput } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider, FileInput, ScrollArea } from '@mantine/core'
 import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX, IconDownload, IconUpload } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -386,6 +386,8 @@ function Database() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [changesModalOpened, { open: openChangesModal, close: closeChangesModal }] = useDisclosure(false)
+  const [importChanges, setImportChanges] = useState<any[]>([])
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -781,6 +783,12 @@ function Database() {
       
       if (result.error_details && result.error_details.length > 0) {
         console.log('Import errors:', result.error_details)
+      }
+      
+      // Show changes modal if there were any changes
+      if (result.changes && result.changes.length > 0) {
+        setImportChanges(result.changes)
+        openChangesModal()
       }
       
       closeImportModal()
@@ -2040,6 +2048,70 @@ function Database() {
             >
               Import & Upsert
             </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Import Changes Report Modal */}
+      <Modal
+        opened={changesModalOpened}
+        onClose={closeChangesModal}
+        title="Import Changes Report"
+        size="xl"
+      >
+        <Stack gap="md">
+          <Group gap="md">
+            <Badge color="blue" size="lg">
+              {importChanges.filter(c => c.action === 'updated').length} Updated
+            </Badge>
+            <Badge color="green" size="lg">
+              {importChanges.filter(c => c.action === 'inserted').length} Inserted
+            </Badge>
+          </Group>
+
+          <ScrollArea h={400}>
+            <Stack gap="sm">
+              {importChanges.map((change, index) => (
+                <Card key={index} withBorder p="sm" bg={change.action === 'inserted' ? 'green.0' : 'blue.0'}>
+                  <Group justify="space-between" mb="xs">
+                    <Group gap="xs">
+                      <Badge color={change.action === 'inserted' ? 'green' : 'blue'} size="sm">
+                        {change.action}
+                      </Badge>
+                      <Text fw={600} size="sm">{change.chuukese_word}</Text>
+                    </Group>
+                    <Text size="xs" c="dimmed">ID: {change._id}</Text>
+                  </Group>
+                  
+                  {change.action === 'updated' && change.field_changes && change.field_changes.length > 0 && (
+                    <Stack gap={4}>
+                      {change.field_changes.map((fc: any, fcIndex: number) => (
+                        <Box key={fcIndex} pl="md" style={{ borderLeft: '2px solid var(--mantine-color-blue-4)' }}>
+                          <Text size="xs" fw={500} c="dimmed">{fc.field}</Text>
+                          <Group gap="xs" wrap="nowrap">
+                            <Text size="xs" c="red" style={{ textDecoration: 'line-through', maxWidth: '45%', wordBreak: 'break-word' }}>
+                              {Array.isArray(fc.old) ? JSON.stringify(fc.old) : String(fc.old || '(empty)')}
+                            </Text>
+                            <Text size="xs" c="dimmed">→</Text>
+                            <Text size="xs" c="green" fw={500} style={{ maxWidth: '45%', wordBreak: 'break-word' }}>
+                              {Array.isArray(fc.new) ? JSON.stringify(fc.new) : String(fc.new || '(empty)')}
+                            </Text>
+                          </Group>
+                        </Box>
+                      ))}
+                    </Stack>
+                  )}
+                  
+                  {change.action === 'inserted' && (
+                    <Text size="xs" c="dimmed" pl="md">New entry created</Text>
+                  )}
+                </Card>
+              ))}
+            </Stack>
+          </ScrollArea>
+
+          <Group justify="flex-end">
+            <Button onClick={closeChangesModal}>Close</Button>
           </Group>
         </Stack>
       </Modal>
