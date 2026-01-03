@@ -1,29 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Card, Title, Text, Button, Group, Grid, List, ThemeIcon, Stack, Badge, Container } from '@mantine/core'
-import { IconEye, IconWorld, IconDatabase, IconPlus, IconSearch, IconLanguage } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Grid, ThemeIcon, Stack, Badge, Container } from '@mantine/core'
+import { IconEye, IconWorld, IconSearch, IconLanguage } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
-
-interface Publication {
-  id: string
-  title: string
-  description?: string
-  created_date: string
-  page_count?: number
-}
 
 function Home() {
-  const [publications, setPublications] = useState<Publication[]>([])
-
-  useEffect(() => {
-    axios.get('/api/publications')
-      .then(response => {
-        // Ensure response.data is an array
-        const data = Array.isArray(response.data) ? response.data : response.data.publications || []
-        setPublications(data)
-      })
-      .catch(error => console.error('Error fetching publications:', error))
-  }, [])
 
   return (
     <Container size="lg">

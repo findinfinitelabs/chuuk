@@ -35,8 +35,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
-  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false)
-  const [agreedToAI, setAgreedToAI] = useState(false)
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
 
@@ -51,13 +49,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   }
 
   const handleAcceptTerms = () => {
-    if (!agreedToTerms || !agreedToPrivacy || !agreedToAI) {
+    if (!agreedToTerms) {
       return
     }
     closeTerms()
   }
-
-  const allAgreed = agreedToTerms && agreedToPrivacy && agreedToAI
 
   const checkIfUserAcceptedTerms = async (userEmail: string) => {
     if (!userEmail.trim()) return
@@ -67,8 +63,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       if (response.data.has_accepted) {
         setHasAcceptedTerms(true)
         setAgreedToTerms(true)
-        setAgreedToPrivacy(true)
-        setAgreedToAI(true)
       } else {
         setHasAcceptedTerms(false)
       }
@@ -152,47 +146,19 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               />
 
               {!hasAcceptedTerms && (
-                <Stack gap="sm">
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          Terms of Use
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToTerms}
-                    onChange={(e) => setAgreedToTerms(e.currentTarget.checked)}
-                    required
-                  />
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          Privacy Policy
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToPrivacy}
-                    onChange={(e) => setAgreedToPrivacy(e.currentTarget.checked)}
-                    required
-                  />
-                  <Checkbox
-                    label={
-                      <Text size="sm">
-                        I agree to the{' '}
-                        <Anchor component="button" type="button" onClick={openTerms}>
-                          AI Ethical Use Agreement
-                        </Anchor>
-                      </Text>
-                    }
-                    checked={agreedToAI}
-                    onChange={(e) => setAgreedToAI(e.currentTarget.checked)}
-                    required
-                  />
-                </Stack>
+                <Checkbox
+                  label={
+                    <Text size="sm">
+                      I agree to the{' '}
+                      <Anchor component="button" type="button" onClick={openTerms}>
+                        Terms of Use
+                      </Anchor>
+                    </Text>
+                  }
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.currentTarget.checked)}
+                  required
+                />
               )}
 
               <Button 
@@ -202,7 +168,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 size="lg"
                 radius="md"
                 loading={loading}
-                disabled={!allAgreed}
+                disabled={!agreedToTerms}
               >
                 Sign In
               </Button>
@@ -234,7 +200,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       <Modal
         opened={termsOpened}
         onClose={() => {
-          if (allAgreed) {
+          if (agreedToTerms) {
             closeTerms()
           }
         }}
@@ -398,21 +364,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </ScrollArea>
 
           <Checkbox
-            label="I have read and agree to all the terms and conditions above"
-            checked={agreedToTerms && agreedToPrivacy && agreedToAI}
-            onChange={(e) => {
-              const checked = e.currentTarget.checked
-              setAgreedToTerms(checked)
-              setAgreedToPrivacy(checked)
-              setAgreedToAI(checked)
-            }}
+            label="I have read and agree to the Terms of Use"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.currentTarget.checked)}
             disabled={!hasScrolledToBottom}
           />
 
           <Group justify="flex-end">
             <Button
               onClick={handleAcceptTerms}
-              disabled={!allAgreed || !hasScrolledToBottom}
+              disabled={!agreedToTerms || !hasScrolledToBottom}
             >
               Accept and Continue
             </Button>

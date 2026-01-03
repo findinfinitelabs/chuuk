@@ -50,6 +50,7 @@ from src.core.jworg_lookup import JWOrgLookup
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
 from scripts.processing_logger import processing_logger
+from pymongo.errors import DuplicateKeyError
 import requests
 from bs4 import BeautifulSoup
 try:
@@ -2637,6 +2638,222 @@ def api_delete_database_entry(entry_id):
         else:
             return jsonify({'error': 'Entry not found'}), 404
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/export', methods=['GET'])
+def api_database_export():
+    """API: Export database entries to JSON format"""
+    try:
+        import json
+        
+        # Get filter parameters (same as entries endpoint)
+        search = request.args.get('search', '')
+        filter_type = request.args.get('filter_type', '')
+        filter_grammar = request.args.get('filter_grammar', '')
+        filter_scripture = request.args.get('filter_scripture', '')
+        
+        # Build query
+        conditions = []
+        if search:
+            conditions.append({
+                '$or': [
+                    {'chuukese_word': {'$regex': search, '$options': 'i'}},
+                    {'english_translation': {'$regex': search, '$options': 'i'}},
+                    {'definition': {'$regex': search, '$options': 'i'}}
+                ]
+            })
+        if filter_type:
+            conditions.append({'type': filter_type})
+        if filter_grammar:
+            conditions.append({'grammar': filter_grammar})
+        if filter_scripture:
+            conditions.append({'scripture': {'$regex': filter_scripture, '$options': 'i'}})
+        
+        query = {'$and': conditions} if conditions else {}
+        
+        # Get entries from dictionary collection
+        entries = list(dict_db.dictionary_collection.find(query))
+        
+        # Also get from phrases collection if no type filter or if type is sentence/phrase
+        if not filter_type or filter_type in ['sentence', 'phrase', 'question']:
+            try:
+                phrase_entries = list(dict_db.phrases_collection.find(query))
+                entries.extend(phrase_entries)
+            except Exception as phrase_err:
+                print(f"Warning: Could not query phrases collection: {phrase_err}")
+        
+        # Normalize entries for export
+        export_data = []
+        for entry in entries:
+            row = {
+                '_id': str(entry.get('_id', '')),
+                'chuukese_word': entry.get('chuukese_word') or entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or '',
+                'english_translation': entry.get('english_translation') or entry.get('english') or '',
+                'definition': entry.get('definition', ''),
+                'type': entry.get('type', ''),
+                'grammar': entry.get('grammar', ''),
+                'scripture': entry.get('scripture', ''),
+                'examples': entry.get('examples', []) if isinstance(entry.get('examples'), list) else [],
+                'notes': entry.get('notes', ''),
+                'confidence_score': entry.get('confidence_score'),
+                'user_confirmed': entry.get('user_confirmed'),
+                'is_base_word': entry.get('is_base_word')
+            }
+            export_data.append(row)
+        
+        # Return as downloadable JSON
+        from flask import Response
+        return Response(
+            json.dumps(export_data, indent=2, ensure_ascii=False),
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment; filename=chuuk_dictionary_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/database/import', methods=['POST'])
+def api_database_import():
+    """API: Import/upsert database entries from JSON"""
+    try:
+        import json
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if not file.filename.endswith('.json'):
+            return jsonify({'error': 'File must be a JSON file'}), 400
+        
+        # Read JSON content
+        content = file.read().decode('utf-8')
+        entries_data = json.loads(content)
+        
+        if not isinstance(entries_data, list):
+            return jsonify({'error': 'JSON must be an array of entries'}), 400
+        
+        updated_count = 0
+        inserted_count = 0
+        error_count = 0
+        errors = []
+        
+        for row_num, row in enumerate(entries_data, start=1):
+            try:
+                entry_id = str(row.get('_id', '') or '').strip()
+                chuukese_word = str(row.get('chuukese_word', '') or '').strip()
+                english_translation = str(row.get('english_translation', '') or '').strip()
+                
+                if not chuukese_word and not english_translation:
+                    errors.append(f"Row {row_num}: Missing both chuukese_word and english_translation")
+                    error_count += 1
+                    continue
+                
+                # Build the update document
+                update_doc = {
+                    'chuukese_word': chuukese_word,
+                    'english_translation': english_translation,
+                }
+                
+                # Add optional fields if present
+                if row.get('definition'):
+                    update_doc['definition'] = str(row['definition']).strip()
+                if row.get('type'):
+                    update_doc['type'] = str(row['type']).strip()
+                if row.get('grammar'):
+                    update_doc['grammar'] = str(row['grammar']).strip()
+                if row.get('scripture'):
+                    update_doc['scripture'] = str(row['scripture']).strip()
+                if row.get('notes'):
+                    update_doc['notes'] = str(row['notes']).strip()
+                if row.get('examples'):
+                    # Examples should be an array in JSON
+                    if isinstance(row['examples'], list):
+                        update_doc['examples'] = row['examples']
+                    else:
+                        update_doc['examples'] = [str(row['examples'])]
+                if row.get('confidence_score') is not None:
+                    try:
+                        update_doc['confidence_score'] = float(row['confidence_score'])
+                    except (ValueError, TypeError):
+                        pass
+                if row.get('user_confirmed') is not None:
+                    update_doc['user_confirmed'] = bool(row['user_confirmed'])
+                if row.get('is_base_word') is not None:
+                    update_doc['is_base_word'] = bool(row['is_base_word'])
+                
+                update_doc['last_modified'] = datetime.now().isoformat()
+                
+                # Determine target collection based on type
+                entry_type = row.get('type', '').strip().lower()
+                if entry_type in ['sentence', 'phrase', 'question']:
+                    collection = dict_db.phrases_collection
+                else:
+                    collection = dict_db.dictionary_collection
+                
+                # Upsert based on _id if provided
+                if entry_id:
+                    # Try to find by ID
+                    existing = None
+                    try:
+                        # Try ObjectId first
+                        obj_id = ObjectId(entry_id)
+                        existing = collection.find_one({'_id': obj_id})
+                        if existing:
+                            collection.update_one({'_id': obj_id}, {'$set': update_doc})
+                            updated_count += 1
+                            continue
+                    except InvalidId:
+                        pass
+                    
+                    # Try string ID
+                    existing = collection.find_one({'_id': entry_id})
+                    if existing:
+                        collection.update_one({'_id': entry_id}, {'$set': update_doc})
+                        updated_count += 1
+                        continue
+                    
+                    # Also check the other collection
+                    other_collection = dict_db.phrases_collection if collection == dict_db.dictionary_collection else dict_db.dictionary_collection
+                    try:
+                        obj_id = ObjectId(entry_id)
+                        existing = other_collection.find_one({'_id': obj_id})
+                        if existing:
+                            other_collection.update_one({'_id': obj_id}, {'$set': update_doc})
+                            updated_count += 1
+                            continue
+                    except InvalidId:
+                        pass
+                    
+                    existing = other_collection.find_one({'_id': entry_id})
+                    if existing:
+                        other_collection.update_one({'_id': entry_id}, {'$set': update_doc})
+                        updated_count += 1
+                        continue
+                
+                # No existing entry found or no ID provided - insert new
+                update_doc['date_added'] = datetime.now().isoformat()
+                collection.insert_one(update_doc)
+                inserted_count += 1
+                
+            except Exception as row_error:
+                errors.append(f"Row {row_num}: {str(row_error)}")
+                error_count += 1
+        
+        return jsonify({
+            'success': True,
+            'updated': updated_count,
+            'inserted': inserted_count,
+            'errors': error_count,
+            'error_details': errors[:10]  # Limit error details to first 10
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

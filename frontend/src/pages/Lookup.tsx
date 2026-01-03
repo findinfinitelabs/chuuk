@@ -130,17 +130,6 @@ function Lookup() {
     }, 0)
   }
 
-  const handleLetterClick = (letter: string) => {
-    setWord(letter)
-    performSearch(letter)
-  }
-
-  // Chuukese alphabet letters
-  const chuukeseLetters = [
-    'A', 'Á', 'E', 'É', 'I', 'Í', 'O', 'Ó', 'U', 'Ú',
-    'Ch', 'F', 'K', 'M', 'N', 'Ng', 'P', 'Pw', 'R', 'S', 'T', 'W'
-  ]
-
   // Accent characters for insertion
   const accentChars = [
     'á', 'à', 'â', 'ä', 'ã',
@@ -250,23 +239,6 @@ function Lookup() {
             description="Searches both Chuukese and English"
             mb="sm"
           />
-
-          {/* Chuukese alphabet letters */}
-          <Text size="xs" c="dimmed" mb="xs">Chuukese Letters:</Text>
-          <Group gap={4} mb="sm">
-            {chuukeseLetters.map((letter) => (
-              <Button
-                key={letter}
-                size="xs"
-                variant="light"
-                color="blue"
-                onClick={() => handleLetterClick(letter.toLowerCase())}
-                style={{ minWidth: 32, padding: '0 6px' }}
-              >
-                {letter}
-              </Button>
-            ))}
-          </Group>
 
           {/* Accent buttons */}
           <Text size="xs" c="dimmed" mb="xs">Insert Accents:</Text>

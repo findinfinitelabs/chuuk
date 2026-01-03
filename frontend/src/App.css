@@ -206,6 +206,24 @@
   .dictionary-card {
     margin: 0 0.5rem;
   }
+  
+  .app-title {
+    font-size: 1.25rem;
+  }
+}
+
+/* Tablet-specific adjustments */
+@media (max-width: 992px) and (min-width: 577px) {
+  .app-title {
+    font-size: 1.25rem;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 576px) {
+  .app-title {
+    font-size: 1rem;
+  }
 }
 
 /* Print styles for dictionary entries */

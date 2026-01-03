@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider } from '@mantine/core'
-import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider, FileInput } from '@mantine/core'
+import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX, IconDownload, IconUpload } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
@@ -382,6 +382,10 @@ function Database() {
   const [selectedBookDetail, setSelectedBookDetail] = useState<BookDetail | null>(null)
   const [bibleCoverageOpened, { open: openBibleCoverage, close: closeBibleCoverage }] = useDisclosure(false)
   const [expandedChapters, setExpandedChapters] = useState<number[]>([])
+  const [importModalOpened, { open: openImportModal, close: closeImportModal }] = useDisclosure(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -415,17 +419,22 @@ function Database() {
     loadFilterOptions()
   }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterScripture, filterBook])
 
-  // Live search effect
+  // Live search effect - debounced
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchTerm) {
-        setCurrentPage(1)
-        loadEntries()
+        // Only reset page if not already on page 1
+        if (currentPage !== 1) {
+          setCurrentPage(1) // This triggers the first useEffect to load
+        } else {
+          loadEntries() // Already on page 1, load directly
+        }
         loadSuggestions()
-      } else {
+      } else if (currentPage === 1) {
+        // No search term and on page 1, load entries
         loadEntries()
       }
-    }, 300) // Debounce for 300ms
+    }, 300)
 
     return () => clearTimeout(timeoutId)
   }, [searchTerm])
@@ -705,6 +714,88 @@ function Database() {
     setCurrentPage(1)
     loadDatabaseStats()
     loadEntries()
+  }
+
+  // Export database to JSON
+  const exportToJSON = async () => {
+    setExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (searchTerm) params.append('search', searchTerm)
+      if (filterType) params.append('filter_type', filterType)
+      if (filterGrammar) params.append('filter_grammar', filterGrammar)
+      if (filterScripture || filterBook) params.append('filter_scripture', filterScripture || filterBook)
+      
+      const response = await axios.get(`/api/database/export?${params.toString()}`, {
+        responseType: 'blob'
+      })
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      const filename = `chuuk_dictionary_export_${new Date().toISOString().slice(0, 10)}.json`
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      notifications.show({
+        title: 'Export Complete',
+        message: `Downloaded ${filename}`,
+        color: 'green'
+      })
+    } catch (err) {
+      notifications.show({
+        title: 'Export Failed',
+        message: 'Failed to export database',
+        color: 'red'
+      })
+      console.error('Export error:', err)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Import JSON and upsert
+  const importFromJSON = async () => {
+    if (!importFile) return
+    
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      
+      const response = await axios.post('/api/database/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      
+      const result = response.data
+      
+      notifications.show({
+        title: 'Import Complete',
+        message: `Updated: ${result.updated}, Inserted: ${result.inserted}, Errors: ${result.errors}`,
+        color: result.errors > 0 ? 'yellow' : 'green'
+      })
+      
+      if (result.error_details && result.error_details.length > 0) {
+        console.log('Import errors:', result.error_details)
+      }
+      
+      closeImportModal()
+      setImportFile(null)
+      refreshDatabase()
+    } catch (err: any) {
+      notifications.show({
+        title: 'Import Failed',
+        message: err.response?.data?.error || 'Failed to import JSON',
+        color: 'red'
+      })
+      console.error('Import error:', err)
+    } finally {
+      setImporting(false)
+    }
   }
 
   const openEditModal = (entry?: DictionaryEntry, preFillWord?: string) => {
@@ -1260,6 +1351,23 @@ function Database() {
               onClick={openAddScriptureModal}
             >
               Add Scripture
+            </Button>
+            <Button
+              leftSection={<IconDownload size={16} />}
+              variant="light"
+              color="green"
+              onClick={exportToJSON}
+              loading={exporting}
+            >
+              Export JSON
+            </Button>
+            <Button
+              leftSection={<IconUpload size={16} />}
+              variant="light"
+              color="orange"
+              onClick={openImportModal}
+            >
+              Import JSON
             </Button>
             <Text size="sm" color="dimmed">
               {searchTerm && `Filtered by: "${searchTerm}" • `}
@@ -1873,6 +1981,66 @@ function Database() {
             </>
           )})()
           )}
+        </Stack>
+      </Modal>
+
+      {/* Import JSON Modal */}
+      <Modal
+        opened={importModalOpened}
+        onClose={() => {
+          closeImportModal()
+          setImportFile(null)
+        }}
+        title="Import JSON"
+        size="lg"
+      >
+        <Stack gap="md">
+          <Alert color="blue" variant="light">
+            <Text size="sm">
+              <strong>JSON Format:</strong> Export first to see the correct format. 
+              The <code>_id</code> field is used to update existing entries. 
+              Entries without an _id will create new entries.
+            </Text>
+          </Alert>
+          
+          <Text size="sm" c="dimmed">
+            <strong>Fields:</strong> _id, chuukese_word, english_translation, definition, type, grammar, scripture, examples (array), notes, confidence_score, user_confirmed, is_base_word
+          </Text>
+          
+          <FileInput
+            label="Select JSON File"
+            placeholder="Click to select a file"
+            accept=".json"
+            value={importFile}
+            onChange={setImportFile}
+            leftSection={<IconUpload size={16} />}
+          />
+          
+          {importFile && (
+            <Text size="sm" c="green">
+              Selected: {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
+            </Text>
+          )}
+          
+          <Group justify="flex-end">
+            <Button
+              variant="light"
+              onClick={() => {
+                closeImportModal()
+                setImportFile(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={importFromJSON}
+              loading={importing}
+              disabled={!importFile}
+              leftSection={<IconUpload size={16} />}
+            >
+              Import & Upsert
+            </Button>
+          </Group>
         </Stack>
       </Modal>
     </Stack>

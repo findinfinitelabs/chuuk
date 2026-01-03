@@ -252,8 +252,8 @@ function App() {
         </AppShell.Navbar>
 
         <AppShell.Header p="md">
-          <Group justify="space-between" h="100%">
-            <Group>
+          <Group justify="space-between" h="100%" wrap="nowrap">
+            <Group wrap="nowrap" gap="sm">
               <Burger
                 opened={navOpened}
                 onClick={() => { toggleNav(); setShowHighlights(false); }}
@@ -261,19 +261,23 @@ function App() {
                 color="white"
                 className={showHighlights ? 'highlight-burger' : ''}
               />
-              <Title order={1} className="app-title">Chuuk Dictionary AI Copilot</Title>
+              <Title order={1} className="app-title" visibleFrom="sm">Chuuk Dictionary AI Copilot</Title>
+              <Title order={1} className="app-title" hiddenFrom="sm">Chuuk AI</Title>
             </Group>
-            <Group>
+            <Group wrap="nowrap" gap="sm">
               <TextInput
-                placeholder="Search site..."
+                placeholder="Search..."
                 leftSection={<IconSearch size={16} />}
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 onKeyDown={handleGlobalSearch}
                 onFocus={() => setShowHighlights(false)}
-                style={{ width: '250px' }}
                 className={showHighlights ? 'highlight-element' : ''}
+                visibleFrom="xs"
                 styles={{
+                  root: {
+                    width: 'clamp(120px, 20vw, 250px)'
+                  },
                   input: {
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     color: 'white',
@@ -286,8 +290,8 @@ function App() {
               />
               <Menu shadow="md" width={200}>
                 <Menu.Target>
-                  <Button variant="subtle" color="gray" leftSection={<Avatar size="sm" color="blue"><IconUser size={16} /></Avatar>}>
-                    <Text size="sm" c="white">{user?.name || 'User'}</Text>
+                  <Button variant="subtle" color="gray" px="xs" leftSection={<Avatar size="sm" color="blue"><IconUser size={16} /></Avatar>}>
+                    <Text size="sm" c="white" visibleFrom="md">{user?.name || 'User'}</Text>
                   </Button>
                 </Menu.Target>
                 <Menu.Dropdown>
