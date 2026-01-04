@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 /**
  * A custom hook for caching user-specific data in localStorage.
@@ -15,6 +15,9 @@ export function useUserCache<T>(
   initialValue: T,
   userEmail: string | null | undefined
 ): [T, (value: T | ((prev: T) => T)) => void, () => void] {
+  // Store initial value in a ref to avoid re-render loops
+  const initialValueRef = useRef(initialValue)
+  
   // Build the cache key with user email prefix
   const getCacheKey = useCallback(() => {
     const userPrefix = userEmail || 'anonymous'
@@ -74,23 +77,23 @@ export function useUserCache<T>(
           return
         }
       }
-      setValue(initialValue)
+      setValue(initialValueRef.current)
     } catch (error) {
       console.warn(`Error reading cache for ${key}:`, error)
-      setValue(initialValue)
+      setValue(initialValueRef.current)
     }
-  }, [userEmail, key, getCacheKey, initialValue])
+  }, [userEmail, key, getCacheKey])
 
   // Clear cache function
   const clearCache = useCallback(() => {
     try {
       const cacheKey = getCacheKey()
       localStorage.removeItem(cacheKey)
-      setValue(initialValue)
+      setValue(initialValueRef.current)
     } catch (error) {
       console.warn(`Error clearing cache for ${key}:`, error)
     }
-  }, [key, getCacheKey, initialValue])
+  }, [key, getCacheKey])
 
   return [value, setValue, clearCache]
 }

@@ -97,7 +97,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   return (
     <Box className="login-container">
-      <Container size={420}>
+      <Container size={480}>
         <Center mb="xl">
           <IconLanguage size={64} color="#0277bd" />
         </Center>
@@ -110,7 +110,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           Welcome! Sign in to continue
         </Text>
 
-        <Paper withBorder shadow="xl" p={40} radius="lg" bg="white">
+        <Paper withBorder shadow="xl" p={50} radius="lg" bg="white">
           <form onSubmit={handleSubmit}>
             <Stack gap="lg">
               {error && (
@@ -131,8 +131,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onBlur={(e) => checkIfUserAcceptedTerms(e.target.value)}
-                size="md"
+                size="lg"
                 radius="md"
+                styles={{ input: { minWidth: 320 } }}
               />
 
               <PasswordInput
@@ -141,8 +142,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 required
                 value={accessCode}
                 onChange={(e) => setAccessCode(e.target.value)}
-                size="md"
+                size="lg"
                 radius="md"
+                styles={{ input: { minWidth: 320 } }}
               />
 
               {!hasAcceptedTerms && (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Card, Title, Text, TextInput, Button, Group, Stack, Loader, Alert, Badge, Grid, Select, ScrollArea } from '@mantine/core'
-import { IconSearch, IconAlertCircle, IconBook } from '@tabler/icons-react'
+import { Card, Title, Text, TextInput, Button, Group, Stack, Loader, Alert, Badge, Grid, Select, ScrollArea, Checkbox } from '@mantine/core'
+import { IconSearch, IconAlertCircle, IconBook, IconX } from '@tabler/icons-react'
 import axios from 'axios'
 import type { ReactElement } from 'react'
 import { useUser } from '../contexts/UserContext'
@@ -39,6 +39,7 @@ function Lookup() {
   const [filterType, setFilterType] = useState<string>('')
   const [filterGrammar, setFilterGrammar] = useState<string>('')
   const [filterScripture, setFilterScripture] = useState<string>('')
+  const [exactMatch, setExactMatch] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Sync local state to cache when it changes
@@ -71,7 +72,7 @@ function Lookup() {
     }
   }, [searchParams])
 
-  const performSearch = async (searchWord: string) => {
+  const performSearch = async (searchWord: string, useExact?: boolean) => {
     if (!searchWord.trim()) return
 
     setLoading(true)
@@ -79,7 +80,8 @@ function Lookup() {
     setResults([])
 
     try {
-      const response = await axios.get(`/api/lookup?word=${encodeURIComponent(searchWord)}&limit=100`)
+      const exact = useExact !== undefined ? useExact : exactMatch
+      const response = await axios.get(`/api/lookup?word=${encodeURIComponent(searchWord)}&limit=100&exact=${exact}`)
       setResults(response.data.results || [])
     } catch (err) {
       setError('Error performing search')
@@ -140,10 +142,18 @@ function Lookup() {
     'ñ', 'ç'
   ]
 
-  // Filter results
+  // Filter results - case-insensitive comparison
   const filteredResults = results.filter(entry => {
-    if (filterType && entry.type !== filterType) return false
-    if (filterGrammar && entry.grammar !== filterGrammar) return false
+    if (filterType) {
+      const entryType = (entry.type || '').toLowerCase().trim()
+      const filter = filterType.toLowerCase().trim()
+      if (entryType !== filter) return false
+    }
+    if (filterGrammar) {
+      const entryGrammar = (entry.grammar || '').toLowerCase().trim()
+      const filter = filterGrammar.toLowerCase().trim()
+      if (entryGrammar !== filter) return false
+    }
     if (filterScripture) {
       if (filterScripture === 'has_scripture' && !entry.scripture) return false
       if (filterScripture === 'no_scripture' && entry.scripture) return false
@@ -165,9 +175,9 @@ function Lookup() {
     (a.chuukese_word || '').toLowerCase().localeCompare((b.chuukese_word || '').toLowerCase())
   )
 
-  // Get unique filter options from results
-  const typeOptions = [...new Set(results.map(r => r.type).filter(Boolean))]
-  const grammarOptions = [...new Set(results.map(r => r.grammar).filter(Boolean))]
+  // Get unique filter options from results (normalized)
+  const typeOptions = [...new Set(results.map(r => (r.type || '').trim()).filter(Boolean))].sort()
+  const grammarOptions = [...new Set(results.map(r => (r.grammar || '').trim()).filter(Boolean))].sort()
 
   const renderResultCard = (entry: DictionaryEntry, index: number, darkMode = false) => (
     <Card key={entry._id || index} withBorder p="sm" style={{ width: '100%' }} bg={darkMode ? 'dark.5' : undefined}>
@@ -256,9 +266,35 @@ function Lookup() {
             ))}
           </Group>
 
-          <Button type="submit" loading={loading} leftSection={<IconSearch size={16} />}>
-            Search
-          </Button>
+          <Group gap="md" align="center">
+            <Button type="submit" loading={loading} leftSection={<IconSearch size={16} />}>
+              Search
+            </Button>
+            <Button 
+              variant="outline" 
+              color="gray" 
+              leftSection={<IconX size={16} />}
+              onClick={() => {
+                setWord('')
+                setResults([])
+                setCachedWord('')
+                setCachedResults([])
+                setFilterType('')
+                setFilterGrammar('')
+                setFilterScripture('')
+                setError('')
+                searchInputRef.current?.focus()
+              }}
+            >
+              Reset
+            </Button>
+            <Checkbox
+              label="Exact match only"
+              checked={exactMatch}
+              onChange={(e) => setExactMatch(e.currentTarget.checked)}
+              description="Only find entries that exactly match your search"
+            />
+          </Group>
         </form>
       </Card>
 

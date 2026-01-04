@@ -415,10 +415,15 @@ function Database() {
     is_base_word: false
   })
 
+  // Load filter options only once on mount
+  useEffect(() => {
+    loadFilterOptions()
+  }, [])
+
+  // Load entries and stats when filters/pagination change
   useEffect(() => {
     loadDatabaseStats()
     loadEntries()
-    loadFilterOptions()
   }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterScripture, filterBook])
 
   // Live search effect - debounced
@@ -427,15 +432,13 @@ function Database() {
       if (searchTerm) {
         // Only reset page if not already on page 1
         if (currentPage !== 1) {
-          setCurrentPage(1) // This triggers the first useEffect to load
+          setCurrentPage(1) // This triggers the entries useEffect to load
         } else {
           loadEntries() // Already on page 1, load directly
         }
         loadSuggestions()
-      } else if (currentPage === 1) {
-        // No search term and on page 1, load entries
-        loadEntries()
       }
+      // Don't load entries here when searchTerm is empty - the other useEffect handles that
     }, 300)
 
     return () => clearTimeout(timeoutId)
@@ -473,15 +476,17 @@ function Database() {
 
   const loadFilterOptions = async () => {
     try {
-      const [typeRes, grammarRes, scriptureRes, bibleRes] = await Promise.all([
-        axios.get('/api/database/distinct', { params: { field: 'type' } }),
-        axios.get('/api/database/distinct', { params: { field: 'grammar' } }),
-        axios.get('/api/database/distinct', { params: { field: 'scripture' } }),
-        axios.get('/api/database/bible-coverage')
-      ])
+      // Stagger requests to avoid 429 rate limiting
+      const typeRes = await axios.get('/api/database/distinct', { params: { field: 'type' } })
       setTypeOptions(typeRes.data.values || [])
+      
+      const grammarRes = await axios.get('/api/database/distinct', { params: { field: 'grammar' } })
       setGrammarOptions(grammarRes.data.values || [])
+      
+      const scriptureRes = await axios.get('/api/database/distinct', { params: { field: 'scripture' } })
       setScriptureOptions(scriptureRes.data.values || [])
+      
+      const bibleRes = await axios.get('/api/database/bible-coverage')
       setBibleBooks(bibleRes.data.books || [])
     } catch (err) {
       console.error('Failed to load filter options:', err)

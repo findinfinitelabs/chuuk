@@ -1749,12 +1749,13 @@ def api_lookup_get():
         word = request.args.get('word', '')
         lang = request.args.get('lang', 'chk')
         limit = int(request.args.get('limit', 50))  # Increased default limit
+        exact_match = request.args.get('exact', 'false').lower() == 'true'
         
         if not word:
             return jsonify({'results': []})
         
         # Now uses denormalized data - only 1 query, includes related words!
-        results = dict_db.search_word(word, limit=limit, include_related=True)
+        results = dict_db.search_word(word, limit=limit, include_related=True, exact_match=exact_match)
         
         # Sort results alphabetically by chuukese_word
         results.sort(key=lambda x: (x.get('chuukese_word', '') or '').lower())

@@ -861,7 +861,7 @@ class DictionaryDB:
         
         return examples
     
-    def search_word(self, word: str, limit: int = 10, include_related: bool = True) -> List[Dict]:
+    def search_word(self, word: str, limit: int = 10, include_related: bool = True, exact_match: bool = False) -> List[Dict]:
         """
         Search for a word in the dictionary (uses denormalized related_words for efficiency)
         
@@ -869,6 +869,7 @@ class DictionaryDB:
             word: Word to search for (Chuukese or English)
             limit: Maximum number of results
             include_related: Whether to include related words (now using denormalized data - no extra queries!)
+            exact_match: If True, only match the exact word/phrase (case-insensitive)
             
         Returns:
             List of matching dictionary entries with related words embedded
@@ -879,41 +880,70 @@ class DictionaryDB:
         # Build Cosmos DB compatible query using regex (no $text support)
         word_lower = word.lower().strip()
         
-        # Query for dictionary_collection (words)
-        query = {
-            '$and': [
-                {
-                    '$or': [
-                        # Exact match (uses index)
-                        {'chuukese_word': word_lower},
-                        # Starts with (more efficient than contains)
-                        {'chuukese_word': {'$regex': f'^{re.escape(word_lower)}', '$options': 'i'}},
-                        {'english_translation': {'$regex': f'^{re.escape(word)}', '$options': 'i'}},
-                        # Contains match (fallback)
-                        {'chuukese_word': {'$regex': re.escape(word_lower), '$options': 'i'}},
-                        {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
-                        {'definition': {'$regex': re.escape(word), '$options': 'i'}}
-                    ]
-                },
-                {
-                    '$or': [
-                        {'search_direction': {'$exists': False}},
-                        {'search_direction': {'$ne': 'en_to_chk'}}
-                    ]
-                }
-            ]
-        }
-        
-        # Query for phrases_collection (sentences/phrases)
-        phrase_query = {
-            '$or': [
-                {'chuukese_word': {'$regex': re.escape(word), '$options': 'i'}},
-                {'chuukese_sentence': {'$regex': re.escape(word), '$options': 'i'}},
-                {'chuukese_phrase': {'$regex': re.escape(word), '$options': 'i'}},
-                {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
-                {'definition': {'$regex': re.escape(word), '$options': 'i'}}
-            ]
-        }
+        if exact_match:
+            # Exact match query - only match the exact word (case-insensitive)
+            query = {
+                '$and': [
+                    {
+                        '$or': [
+                            {'chuukese_word': {'$regex': f'^{re.escape(word_lower)}$', '$options': 'i'}},
+                            {'english_translation': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}}
+                        ]
+                    },
+                    {
+                        '$or': [
+                            {'search_direction': {'$exists': False}},
+                            {'search_direction': {'$ne': 'en_to_chk'}}
+                        ]
+                    }
+                ]
+            }
+            
+            # Exact match query for phrases
+            phrase_query = {
+                '$or': [
+                    {'chuukese_word': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}},
+                    {'chuukese_sentence': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}},
+                    {'chuukese_phrase': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}},
+                    {'english_translation': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}}
+                ]
+            }
+        else:
+            # Query for dictionary_collection (words) - partial/fuzzy match
+            query = {
+                '$and': [
+                    {
+                        '$or': [
+                            # Exact match (uses index)
+                            {'chuukese_word': word_lower},
+                            # Starts with (more efficient than contains)
+                            {'chuukese_word': {'$regex': f'^{re.escape(word_lower)}', '$options': 'i'}},
+                            {'english_translation': {'$regex': f'^{re.escape(word)}', '$options': 'i'}},
+                            # Contains match (fallback)
+                            {'chuukese_word': {'$regex': re.escape(word_lower), '$options': 'i'}},
+                            {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
+                            {'definition': {'$regex': re.escape(word), '$options': 'i'}}
+                        ]
+                    },
+                    {
+                        '$or': [
+                            {'search_direction': {'$exists': False}},
+                            {'search_direction': {'$ne': 'en_to_chk'}}
+                        ]
+                    }
+                ]
+            }
+            
+            # Query for phrases_collection (sentences/phrases)
+            phrase_query = {
+                '$or': [
+                    {'chuukese_word': {'$regex': re.escape(word), '$options': 'i'}},
+                    {'chuukese_sentence': {'$regex': re.escape(word), '$options': 'i'}},
+                    {'chuukese_phrase': {'$regex': re.escape(word), '$options': 'i'}},
+                    {'english_translation': {'$regex': re.escape(word), '$options': 'i'}},
+                    {'definition': {'$regex': re.escape(word), '$options': 'i'}}
+                ]
+            }
         
         # Query both collections
         word_results = list(self.dictionary_collection.find(query).limit(limit))
