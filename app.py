@@ -11,6 +11,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, timedelta
 from functools import wraps
+from typing import Optional, List
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response, session
 # from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -175,6 +176,29 @@ training_status = {
     'message': '',
     'last_training': None
 }
+
+# Cache for expensive Cosmos DB queries to avoid rate limiting
+# Cache expires after 5 minutes
+distinct_values_cache = {}
+CACHE_EXPIRY_SECONDS = 300  # 5 minutes
+
+def get_cached_distinct_values(field: str, db_field: str) -> Optional[List]:
+    """Get cached distinct values or return None if expired/missing"""
+    cache_key = f'distinct_{field}'
+    if cache_key in distinct_values_cache:
+        cached_data = distinct_values_cache[cache_key]
+        # Check if cache is still valid
+        if (datetime.now(timezone.utc) - cached_data['timestamp']).total_seconds() < CACHE_EXPIRY_SECONDS:
+            return cached_data['values']
+    return None
+
+def set_cached_distinct_values(field: str, values: List):
+    """Cache distinct values with timestamp"""
+    cache_key = f'distinct_{field}'
+    distinct_values_cache[cache_key] = {
+        'values': values,
+        'timestamp': datetime.now(timezone.utc)
+    }
 if HELSINKI_AVAILABLE:
     try:
         helsinki_translator = HelsinkiChuukeseTranslator()
@@ -2071,7 +2095,7 @@ def fetch_scripture_from_jworg(scripture_ref):
 
 @app.route('/api/database/entries', methods=['GET'])
 def api_database_entries():
-    """API: Get paginated database entries"""
+    """API: Get paginated database entries (with rate limit handling)"""
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
@@ -2081,94 +2105,120 @@ def api_database_entries():
         filter_type = request.args.get('filter_type', '')
         filter_type = request.args.get('type', filter_type)  # Support both parameter names
         filter_grammar = request.args.get('filter_grammar', '')
+        filter_grammar_modifier = request.args.get('filter_grammar_modifier', '')
         filter_scripture = request.args.get('filter_scripture', '')
         source_type = request.args.get('source_type', '')  # Add source_type filter
+        exact_match = request.args.get('exact', 'false').lower() == 'true'  # Exact match toggle
         
-        # Build query with search and filters
-        conditions = []
-        
-        if search:
-            conditions.append({
-                '$or': [
-                    {'chuukese_word': {'$regex': search, '$options': 'i'}},
-                    {'english_translation': {'$regex': search, '$options': 'i'}},
-                    {'definition': {'$regex': search, '$options': 'i'}},
-                    {'examples': {'$regex': search, '$options': 'i'}}
-                ]
-            })
-        
-        # Add filter conditions
-        if filter_type:
-            conditions.append({'type': filter_type})
-        if filter_grammar:
-            conditions.append({'grammar': filter_grammar})
-        if filter_scripture:
-            # For scripture, use regex to allow partial match
-            conditions.append({'scripture': {'$regex': filter_scripture, '$options': 'i'}})
-        if source_type:
-            conditions.append({'source_type': source_type})
-        
-        query = {'$and': conditions} if conditions else {}
-        
-        # Map frontend column names to database field names
-        field_map = {
-            'chuukese': 'chuukese_word',
-            'english': 'english_translation',
-            'type': 'type',
-            'grammar': 'grammar',
-            'scripture': 'scripture',
-            'search_direction': 'search_direction',
-            'definition': 'definition'
-        }
-        
-        # Determine which collection(s) to query based on type filter
-        # Sentences and phrases are in phrases_collection, words in dictionary_collection
-        all_entries = []
-        
-        if filter_type in ['sentence', 'phrase', 'question']:
-            # Query phrases_collection for sentences/phrases
-            # Adjust search fields for phrases_collection
-            phrase_query = query.copy()
-            if search and '$and' in phrase_query:
-                # Update search fields for phrases_collection
-                phrase_query['$and'] = [
-                    cond if '$or' not in cond else {
-                        '$or': [
-                            {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
-                            {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
-                            {'english_translation': {'$regex': search, '$options': 'i'}},
-                            {'definition': {'$regex': search, '$options': 'i'}}
-                        ]
-                    }
-                    for cond in phrase_query['$and']
-                ]
-            all_entries = list(dict_db.phrases_collection.find(phrase_query))
-        elif filter_type == 'word':
-            # Query dictionary_collection for words
-            all_entries = list(dict_db.dictionary_collection.find(query))
-        else:
-            # No filter - query both collections
-            # First get from phrases_collection
-            phrase_query = query.copy()
-            if search and ('$and' in phrase_query or len(phrase_query) == 0):
-                conditions_copy = conditions.copy() if conditions else []
-                # Add phrase-specific search if there's a search term
-                if search:
-                    phrase_search = {
-                        '$or': [
-                            {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
-                            {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
-                            {'english_translation': {'$regex': search, '$options': 'i'}},
-                            {'definition': {'$regex': search, '$options': 'i'}}
-                        ]
-                    }
-                    phrase_conditions = [c for c in conditions_copy if '$or' not in c]
-                    phrase_conditions.append(phrase_search)
-                    phrase_query = {'$and': phrase_conditions} if phrase_conditions else {}
+        try:
+            # Build query with search and filters
+            conditions = []
             
-            phrases = list(dict_db.phrases_collection.find(phrase_query))
-            words = list(dict_db.dictionary_collection.find(query))
-            all_entries = phrases + words
+            if search:
+                if exact_match:
+                    # Exact match - use case-insensitive equality
+                    conditions.append({
+                        '$or': [
+                            {'chuukese_word': {'$regex': f'^{search}$', '$options': 'i'}},
+                            {'english_translation': {'$regex': f'^{search}$', '$options': 'i'}}
+                        ]
+                    })
+                else:
+                    # Partial match - use contains regex
+                    conditions.append({
+                        '$or': [
+                            {'chuukese_word': {'$regex': search, '$options': 'i'}},
+                            {'english_translation': {'$regex': search, '$options': 'i'}},
+                            {'definition': {'$regex': search, '$options': 'i'}},
+                            {'examples': {'$regex': search, '$options': 'i'}}
+                        ]
+                    })
+            
+            # Add filter conditions
+            if filter_type:
+                conditions.append({'type': filter_type})
+            if filter_grammar:
+                conditions.append({'grammar': filter_grammar})
+            if filter_grammar_modifier:
+                conditions.append({'grammar_modifier': filter_grammar_modifier})
+            if filter_scripture:
+                # For scripture, use regex to allow partial match
+                conditions.append({'scripture': {'$regex': filter_scripture, '$options': 'i'}})
+            if source_type:
+                conditions.append({'source_type': source_type})
+            
+            query = {'$and': conditions} if conditions else {}
+            
+            # Map frontend column names to database field names
+            field_map = {
+                'chuukese': 'chuukese_word',
+                'english': 'english_translation',
+                'type': 'type',
+                'grammar': 'grammar',
+                'scripture': 'scripture',
+                'search_direction': 'search_direction',
+                'definition': 'definition'
+            }
+            
+            # Determine which collection(s) to query based on type filter
+            # Sentences and phrases are in phrases_collection, words in dictionary_collection
+            all_entries = []
+            
+            if filter_type in ['sentence', 'phrase', 'question']:
+                # Query phrases_collection for sentences/phrases
+                # Adjust search fields for phrases_collection
+                phrase_query = query.copy()
+                if search and '$and' in phrase_query:
+                    # Update search fields for phrases_collection
+                    phrase_query['$and'] = [
+                        cond if '$or' not in cond else {
+                            '$or': [
+                                {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
+                                {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
+                                {'english_translation': {'$regex': search, '$options': 'i'}},
+                                {'definition': {'$regex': search, '$options': 'i'}}
+                            ]
+                        }
+                        for cond in phrase_query['$and']
+                    ]
+                all_entries = list(dict_db.phrases_collection.find(phrase_query))
+            elif filter_type == 'word':
+                # Query dictionary_collection for words
+                all_entries = list(dict_db.dictionary_collection.find(query))
+            else:
+                # No filter - query both collections
+                # First get from phrases_collection
+                phrase_query = query.copy()
+                if search and ('$and' in phrase_query or len(phrase_query) == 0):
+                    conditions_copy = conditions.copy() if conditions else []
+                    # Add phrase-specific search if there's a search term
+                    if search:
+                        phrase_search = {
+                            '$or': [
+                                {'chuukese_sentence': {'$regex': search, '$options': 'i'}},
+                                {'chuukese_phrase': {'$regex': search, '$options': 'i'}},
+                                {'english_translation': {'$regex': search, '$options': 'i'}},
+                                {'definition': {'$regex': search, '$options': 'i'}}
+                            ]
+                        }
+                        phrase_conditions = [c for c in conditions_copy if '$or' not in c]
+                        phrase_conditions.append(phrase_search)
+                        phrase_query = {'$and': phrase_conditions} if phrase_conditions else {}
+                
+                phrases = list(dict_db.phrases_collection.find(phrase_query))
+                words = list(dict_db.dictionary_collection.find(query))
+                all_entries = phrases + words
+            
+        except Exception as db_error:
+            print(f"Database query error (likely rate limit): {db_error}")
+            # Return empty results with error message instead of crashing
+            return jsonify({
+                'entries': [],
+                'total': 0,
+                'page': page,
+                'limit': limit,
+                'error': 'Rate limit exceeded - please try again in a moment'
+            }), 200  # Return 200 to avoid UI errors
         
         total = len(all_entries)
         
@@ -2206,6 +2256,7 @@ def api_database_entries():
                 'english_translation': entry.get('english_translation') or entry.get('english') or '',
                 'type': entry.get('type', ''),
                 'grammar': entry.get('grammar', ''),
+                'grammar_modifier': entry.get('grammar_modifier', ''),
                 'scripture': entry.get('scripture', ''),
                 'search_direction': entry.get('search_direction', ''),
                 'definition': entry.get('definition', ''),
@@ -2230,7 +2281,7 @@ def api_database_entries():
 
 @app.route('/api/database/distinct', methods=['GET'])
 def api_database_distinct():
-    """API: Get distinct values for filter dropdowns"""
+    """API: Get distinct values for filter dropdowns (with caching to reduce Cosmos DB load)"""
     try:
         field = request.args.get('field', '')
         
@@ -2238,6 +2289,7 @@ def api_database_distinct():
         field_map = {
             'type': 'type',
             'grammar': 'grammar',
+            'grammar_modifier': 'grammar_modifier',
             'scripture': 'scripture'
         }
         
@@ -2246,13 +2298,28 @@ def api_database_distinct():
         
         db_field = field_map[field]
         
-        # Get distinct non-null, non-empty values
-        distinct_values = dict_db.dictionary_collection.distinct(db_field)
+        # Try to get from cache first to avoid expensive Cosmos DB queries
+        cached_values = get_cached_distinct_values(field, db_field)
+        if cached_values is not None:
+            return jsonify({'field': field, 'values': cached_values, 'cached': True})
         
-        # Filter out None and empty strings, sort alphabetically
-        values = sorted([v for v in distinct_values if v and str(v).strip()])
-        
-        return jsonify({'field': field, 'values': values})
+        # Cache miss - query database
+        try:
+            # Get distinct non-null, non-empty values
+            distinct_values = dict_db.dictionary_collection.distinct(db_field)
+            
+            # Filter out None and empty strings, sort alphabetically
+            values = sorted([v for v in distinct_values if v and str(v).strip()])
+            
+            # Cache the results
+            set_cached_distinct_values(field, values)
+            
+            return jsonify({'field': field, 'values': values, 'cached': False})
+        except Exception as db_error:
+            # If database query fails (e.g., rate limit), return empty list
+            # This prevents the UI from breaking
+            print(f"Database query failed for distinct {field}: {db_error}")
+            return jsonify({'field': field, 'values': [], 'error': 'Rate limit - using cached data'})
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2332,106 +2399,127 @@ BIBLE_BOOKS = {
 
 @app.route('/api/database/bible-coverage', methods=['GET'])
 def api_bible_coverage():
-    """API: Get Bible book coverage - which verses are loaded vs missing"""
+    """API: Get Bible book coverage - which verses are loaded vs missing (cached to reduce RU consumption)"""
     try:
         book = request.args.get('book', '')
         
         if not book:
             # Return list of books with their loaded verse counts
-            # Use single aggregation query to avoid Cosmos DB RU throttling
-            books_coverage = []
+            # Try cache first
+            cache_key = 'bible_coverage_summary'
+            if cache_key in distinct_values_cache:
+                cached_data = distinct_values_cache[cache_key]
+                if (datetime.now(timezone.utc) - cached_data['timestamp']).total_seconds() < CACHE_EXPIRY_SECONDS:
+                    return jsonify({'books': cached_data['values'], 'cached': True})
             
-            # Get all scripture entries at once
-            scripture_entries = list(dict_db.dictionary_collection.find(
-                {'scripture': {'$exists': True, '$ne': ''}},
-                {'scripture': 1, '_id': 0}
-            ))
-            
-            # Count entries per book
-            book_counts = {}
-            for entry in scripture_entries:
-                scripture = entry.get('scripture', '')
-                # Extract book name from scripture (e.g., "Genesis 1:1" -> "Genesis")
-                if scripture:
-                    parts = scripture.split()
-                    if len(parts) >= 2:
-                        # Handle books with numbers like "1 Samuel"
-                        if parts[0].isdigit():
-                            book_name = f"{parts[0]} {parts[1]}"
-                        else:
-                            book_name = parts[0]
-                        book_counts[book_name] = book_counts.get(book_name, 0) + 1
-            
-            # Build coverage list
-            for book_name, info in BIBLE_BOOKS.items():
-                count = book_counts.get(book_name, 0)
-                total_verses = sum(info['verses'])
-                books_coverage.append({
-                    'book': book_name,
-                    'num': info['num'],
-                    'chapters': info['chapters'],
-                    'total_verses': total_verses,
-                    'loaded_verses': count,
-                    'coverage_percent': round((count / total_verses) * 100, 1) if total_verses > 0 else 0
-                })
-            return jsonify({'books': books_coverage})
+            try:
+                # Get all scripture entries at once
+                scripture_entries = list(dict_db.dictionary_collection.find(
+                    {'scripture': {'$exists': True, '$ne': ''}},
+                    {'scripture': 1, '_id': 0}
+                ))
+                
+                # Count entries per book
+                book_counts = {}
+                for entry in scripture_entries:
+                    scripture = entry.get('scripture', '')
+                    # Extract book name from scripture (e.g., "Genesis 1:1" -> "Genesis")
+                    if scripture:
+                        parts = scripture.split()
+                        if len(parts) >= 2:
+                            # Handle books with numbers like "1 Samuel"
+                            if parts[0].isdigit():
+                                book_name = f"{parts[0]} {parts[1]}"
+                            else:
+                                book_name = parts[0]
+                            book_counts[book_name] = book_counts.get(book_name, 0) + 1
+                
+                # Build coverage list
+                books_coverage = []
+                for book_name, info in BIBLE_BOOKS.items():
+                    count = book_counts.get(book_name, 0)
+                    total_verses = sum(info['verses'])
+                    books_coverage.append({
+                        'book': book_name,
+                        'num': info['num'],
+                        'chapters': info['chapters'],
+                        'total_verses': total_verses,
+                        'loaded_verses': count,
+                        'coverage_percent': round((count / total_verses) * 100, 1) if total_verses > 0 else 0
+                    })
+                
+                # Cache the results
+                distinct_values_cache[cache_key] = {
+                    'values': books_coverage,
+                    'timestamp': datetime.now(timezone.utc)
+                }
+                
+                return jsonify({'books': books_coverage, 'cached': False})
+            except Exception as db_error:
+                print(f"Database query failed for bible coverage: {db_error}")
+                # Return empty list on rate limit
+                return jsonify({'books': [], 'error': 'Rate limit - please try again later'})
         
-        # Get details for a specific book
+        # Get details for a specific book (not cached due to complexity)
         if book not in BIBLE_BOOKS:
             return jsonify({'error': 'Invalid book name'}), 400
         
         book_info = BIBLE_BOOKS[book]
         
-        # Get all scripture entries for this book
-        entries = list(dict_db.dictionary_collection.find({
-            'scripture': {'$regex': f'^{book}', '$options': 'i'}
-        }, {'scripture': 1, '_id': 0}))
-        
-        # Parse loaded verses
-        loaded_verses = set()
-        for entry in entries:
-            scripture = entry.get('scripture', '')
-            # Parse "Book Chapter:Verse" format
-            match = re.match(rf'^{re.escape(book)}\s+(\d+):(\d+)', scripture, re.IGNORECASE)
-            if match:
-                chapter = int(match.group(1))
-                verse = int(match.group(2))
-                loaded_verses.add((chapter, verse))
-        
-        # Build chapter-by-chapter coverage
-        chapters_coverage = []
-        for chapter_idx, verse_count in enumerate(book_info['verses']):
-            chapter_num = chapter_idx + 1
-            loaded_in_chapter = []
-            missing_in_chapter = []
+        try:
+            # Get all scripture entries for this book
+            entries = list(dict_db.dictionary_collection.find({
+                'scripture': {'$regex': f'^{book}', '$options': 'i'}
+            }, {'scripture': 1, '_id': 0}))
             
-            for verse in range(1, verse_count + 1):
-                if (chapter_num, verse) in loaded_verses:
-                    loaded_in_chapter.append(verse)
-                else:
-                    missing_in_chapter.append(verse)
+            # Parse loaded verses
+            loaded_verses = set()
+            for entry in entries:
+                scripture = entry.get('scripture', '')
+                # Parse "Book Chapter:Verse" format
+                match = re.match(rf'^{re.escape(book)}\s+(\d+):(\d+)', scripture, re.IGNORECASE)
+                if match:
+                    chapter = int(match.group(1))
+                    verse = int(match.group(2))
+                    loaded_verses.add((chapter, verse))
             
-            chapters_coverage.append({
-                'chapter': chapter_num,
-                'total_verses': verse_count,
-                'loaded': loaded_in_chapter,
-                'missing': missing_in_chapter,
-                'loaded_count': len(loaded_in_chapter),
-                'missing_count': len(missing_in_chapter)
+            # Build chapter-by-chapter coverage
+            chapters_coverage = []
+            for chapter_idx, verse_count in enumerate(book_info['verses']):
+                chapter_num = chapter_idx + 1
+                loaded_in_chapter = []
+                missing_in_chapter = []
+                
+                for verse in range(1, verse_count + 1):
+                    if (chapter_num, verse) in loaded_verses:
+                        loaded_in_chapter.append(verse)
+                    else:
+                        missing_in_chapter.append(verse)
+                
+                chapters_coverage.append({
+                    'chapter': chapter_num,
+                    'total_verses': verse_count,
+                    'loaded': loaded_in_chapter,
+                    'missing': missing_in_chapter,
+                    'loaded_count': len(loaded_in_chapter),
+                    'missing_count': len(missing_in_chapter)
+                })
+            
+            total_verses = sum(book_info['verses'])
+            total_loaded = len(loaded_verses)
+            
+            return jsonify({
+                'book': book,
+                'num': book_info['num'],
+                'chapters': chapters_coverage,
+                'total_verses': total_verses,
+                'total_loaded': total_loaded,
+                'total_missing': total_verses - total_loaded,
+                'coverage_percent': round((total_loaded / total_verses) * 100, 1) if total_verses > 0 else 0
             })
-        
-        total_verses = sum(book_info['verses'])
-        total_loaded = len(loaded_verses)
-        
-        return jsonify({
-            'book': book,
-            'num': book_info['num'],
-            'chapters': chapters_coverage,
-            'total_verses': total_verses,
-            'total_loaded': total_loaded,
-            'total_missing': total_verses - total_loaded,
-            'coverage_percent': round((total_loaded / total_verses) * 100, 1) if total_verses > 0 else 0
-        })
+        except Exception as db_error:
+            print(f"Database query failed for book detail: {db_error}")
+            return jsonify({'error': 'Rate limit - please try again later'}), 500
     except Exception as e:
         import traceback
         traceback.print_exc()

@@ -325,6 +325,7 @@ interface DictionaryEntry {
   definition?: string
   examples?: string[]
   grammar?: string // noun, verb, adjective, etc.
+  grammar_modifier?: string // transitive, possessive, directional, etc.
   type?: string // word, phrase, sentence, paragraph
   inflection_type?: string
   notes?: string
@@ -373,9 +374,11 @@ function Database() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [filterType, setFilterType] = useState<string>('')
   const [filterGrammar, setFilterGrammar] = useState<string>('')
+  const [filterGrammarModifier, setFilterGrammarModifier] = useState<string>('')
   const [filterScripture, setFilterScripture] = useState<string>('')
   const [typeOptions, setTypeOptions] = useState<string[]>([])
   const [grammarOptions, setGrammarOptions] = useState<string[]>([])
+  const [grammarModifierOptions, setGrammarModifierOptions] = useState<string[]>([])
   const [scriptureOptions, setScriptureOptions] = useState<string[]>([])
   const [filterBook, setFilterBook] = useState<string>('')
   const [bibleBooks, setBibleBooks] = useState<BibleBookCoverage[]>([])
@@ -388,11 +391,12 @@ function Database() {
   const [exporting, setExporting] = useState(false)
   const [changesModalOpened, { open: openChangesModal, close: closeChangesModal }] = useDisclosure(false)
   const [importChanges, setImportChanges] = useState<any[]>([])
+  const [exactMatch, setExactMatch] = useState(false)
   const entriesPerPage = 20
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Column order state
-  const defaultColumnOrder = ['chuukese', 'english', 'type', 'grammar', 'scripture', 'definition', 'examples']
+  const defaultColumnOrder = ['chuukese', 'english', 'type', 'grammar', 'grammar_modifier', 'scripture', 'definition', 'examples']
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     const saved = localStorage.getItem('databaseColumnOrder')
     return saved ? JSON.parse(saved) : defaultColumnOrder
@@ -406,6 +410,7 @@ function Database() {
     definition: '',
     type: '',
     grammar: '',
+    grammar_modifier: '',
     examples: [] as string[],
     notes: '',
     scripture: '',
@@ -424,7 +429,7 @@ function Database() {
   useEffect(() => {
     loadDatabaseStats()
     loadEntries()
-  }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterScripture, filterBook])
+  }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterGrammarModifier, filterScripture, filterBook, exactMatch])
 
   // Live search effect - debounced
   useEffect(() => {
@@ -483,6 +488,9 @@ function Database() {
       const grammarRes = await axios.get('/api/database/distinct', { params: { field: 'grammar' } })
       setGrammarOptions(grammarRes.data.values || [])
       
+      const grammarModifierRes = await axios.get('/api/database/distinct', { params: { field: 'grammar_modifier' } })
+      setGrammarModifierOptions(grammarModifierRes.data.values || [])
+      
       const scriptureRes = await axios.get('/api/database/distinct', { params: { field: 'scripture' } })
       setScriptureOptions(scriptureRes.data.values || [])
       
@@ -540,6 +548,7 @@ function Database() {
       'english': 'English Translation',
       'type': 'Type',
       'grammar': 'Grammar',
+      'grammar_modifier': 'Modifier',
       'scripture': 'Scripture',
       'definition': 'Definition',
       'examples': 'Examples'
@@ -606,6 +615,18 @@ function Database() {
                   {entry.grammar}
                 </Badge>
               )
+            ) : (
+              <Text color="dimmed">—</Text>
+            )}
+          </Table.Td>
+        )
+      case 'grammar_modifier':
+        return (
+          <Table.Td key={`${column}-${index}`}>
+            {entry.grammar_modifier ? (
+              <Badge color="grape" variant="light" size="sm">
+                {entry.grammar_modifier}
+              </Badge>
             ) : (
               <Text color="dimmed">—</Text>
             )}
@@ -688,7 +709,7 @@ function Database() {
     setError('')
     
     try {
-      const params: Record<string, string | number | undefined> = {
+      const params: Record<string, string | number | boolean | undefined> = {
         page: currentPage,
         limit: entriesPerPage,
         search: searchTerm || undefined,
@@ -696,7 +717,9 @@ function Database() {
         sort_order: sortBy ? sortOrder : undefined,
         filter_type: filterType || undefined,
         filter_grammar: filterGrammar || undefined,
-        filter_scripture: filterScripture || filterBook || undefined
+        filter_grammar_modifier: filterGrammarModifier || undefined,
+        filter_scripture: filterScripture || filterBook || undefined,
+        exact: exactMatch || undefined
       }
       
       const response = await axios.get('/api/database/entries', { params })
@@ -731,6 +754,7 @@ function Database() {
       if (searchTerm) params.append('search', searchTerm)
       if (filterType) params.append('filter_type', filterType)
       if (filterGrammar) params.append('filter_grammar', filterGrammar)
+      if (filterGrammarModifier) params.append('filter_grammar_modifier', filterGrammarModifier)
       if (filterScripture || filterBook) params.append('filter_scripture', filterScripture || filterBook)
       
       const response = await axios.get(`/api/database/export?${params.toString()}`, {
@@ -820,6 +844,7 @@ function Database() {
         definition: entry.definition || '',
         type: entry.type || '',
         grammar: entry.grammar || '',
+        grammar_modifier: entry.grammar_modifier || '',
         examples: entry.examples || [],
         notes: '',
         scripture: entry.scripture || '',
@@ -837,6 +862,7 @@ function Database() {
         definition: '',
         type: '',
         grammar: '',
+        grammar_modifier: '',
         examples: [],
         notes: '',
         scripture: '',
@@ -1238,6 +1264,16 @@ function Database() {
             </Button>
           </Group>
           
+          <Checkbox
+            label="Exact match only"
+            checked={exactMatch}
+            onChange={(e) => {
+              setExactMatch(e.currentTarget.checked)
+              setCurrentPage(1)
+            }}
+            description="Only find entries that exactly match your search"
+          />
+          
           {/* Accent buttons */}
           <Group gap="xs">
             <Text size="xs" color="dimmed" className="accent-label">
@@ -1271,6 +1307,7 @@ function Database() {
               searchable
               size="xs"
               style={{ width: 150 }}
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
             />
             <Select
               placeholder="Grammar"
@@ -1284,6 +1321,21 @@ function Database() {
               searchable
               size="xs"
               style={{ width: 150 }}
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+            />
+            <Select
+              placeholder="Modifier"
+              value={filterGrammarModifier}
+              onChange={(value) => {
+                setFilterGrammarModifier(value || '')
+                setCurrentPage(1)
+              }}
+              data={grammarModifierOptions}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 150 }}
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
             />
             <Select
               placeholder="Scripture"
@@ -1297,6 +1349,7 @@ function Database() {
               searchable
               size="xs"
               style={{ width: 180 }}
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
             />
             <Select
               placeholder="Bible Book"
@@ -1311,6 +1364,7 @@ function Database() {
               searchable
               size="xs"
               style={{ width: 220 }}
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
             />
             <Button
               size="xs"
@@ -1628,6 +1682,7 @@ function Database() {
             searchable
             clearable
             description="Entry type: word, phrase, sentence, paragraph, question, or scripture"
+            comboboxProps={{ withinPortal: true, zIndex: 1000 }}
           />
           
           <Select
@@ -1654,6 +1709,15 @@ function Database() {
             searchable
             clearable
             description="Part of speech (noun, verb, adjective, etc.)"
+            comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+          />
+          
+          <TextInput
+            label="Grammar Modifier"
+            placeholder="e.g., transitive, possessive, directional"
+            value={formData.grammar_modifier}
+            onChange={(e) => setFormData({...formData, grammar_modifier: e.target.value})}
+            description="Optional modifier (transitive, possessive, directional, etc.)"
           />
           
           <Textarea

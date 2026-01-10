@@ -16,6 +16,7 @@ interface DictionaryEntry {
   word_type?: string
   type?: string
   grammar?: string
+  grammar_modifier?: string
   inflection_type?: string
   search_direction?: string
   primary_language?: string
@@ -28,9 +29,9 @@ function Lookup() {
   const { email: userEmail } = useUser()
   const [searchParams] = useSearchParams()
   
-  // Cached state - persists across sessions
-  const [cachedWord, setCachedWord] = useUserCache('lookup_word', '', userEmail)
-  const [cachedResults, setCachedResults] = useUserCache<DictionaryEntry[]>('lookup_results', [], userEmail)
+  // Cached state - persists across sessions (v2 - cache invalidated for grammar_modifier update)
+  const [cachedWord, setCachedWord] = useUserCache('lookup_word_v2', '', userEmail)
+  const [cachedResults, setCachedResults] = useUserCache<DictionaryEntry[]>('lookup_results_v2', [], userEmail)
   
   const [word, setWord] = useState(cachedWord)
   const [loading, setLoading] = useState(false)
@@ -38,6 +39,7 @@ function Lookup() {
   const [error, setError] = useState('')
   const [filterType, setFilterType] = useState<string>('')
   const [filterGrammar, setFilterGrammar] = useState<string>('')
+  const [filterGrammarModifier, setFilterGrammarModifier] = useState<string>('')
   const [filterScripture, setFilterScripture] = useState<string>('')
   const [exactMatch, setExactMatch] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -154,6 +156,11 @@ function Lookup() {
       const filter = filterGrammar.toLowerCase().trim()
       if (entryGrammar !== filter) return false
     }
+    if (filterGrammarModifier) {
+      const entryModifier = (entry.grammar_modifier || '').toLowerCase().trim()
+      const filter = filterGrammarModifier.toLowerCase().trim()
+      if (entryModifier !== filter) return false
+    }
     if (filterScripture) {
       if (filterScripture === 'has_scripture' && !entry.scripture) return false
       if (filterScripture === 'no_scripture' && entry.scripture) return false
@@ -178,6 +185,7 @@ function Lookup() {
   // Get unique filter options from results (normalized)
   const typeOptions = [...new Set(results.map(r => (r.type || '').trim()).filter(Boolean))].sort()
   const grammarOptions = [...new Set(results.map(r => (r.grammar || '').trim()).filter(Boolean))].sort()
+  const grammarModifierOptions = [...new Set(results.map(r => (r.grammar_modifier || '').trim()).filter(Boolean))].sort()
 
   const renderResultCard = (entry: DictionaryEntry, index: number, darkMode = false) => (
     <Card key={entry._id || index} withBorder p="sm" style={{ width: '100%' }} bg={darkMode ? 'dark.5' : undefined}>
@@ -187,9 +195,14 @@ function Lookup() {
           <Badge color="blue" size="sm" style={{ width: 70, flexShrink: 0, textAlign: 'center' }}>Chuukese</Badge>
           <Text fw={600} size="sm" c={darkMode ? 'white' : undefined} style={{ textAlign: 'left' }}>{highlightText(entry.chuukese_word, word)}</Text>
         </Group>
-        {entry.grammar && (
-          <Badge color="orange" size="xs">{entry.grammar}</Badge>
-        )}
+        <Group gap="xs">
+          {entry.grammar && (
+            <Badge color="orange" size="xs">{entry.grammar}</Badge>
+          )}
+          {entry.grammar_modifier && (
+            <Badge color="grape" size="xs">{entry.grammar_modifier}</Badge>
+          )}
+        </Group>
       </Group>
       
       {/* English translation */}
@@ -322,6 +335,16 @@ function Lookup() {
               style={{ width: 120 }}
             />
             <Select
+              placeholder="Modifier"
+              value={filterGrammarModifier}
+              onChange={(value) => setFilterGrammarModifier(value || '')}
+              data={grammarModifierOptions.map(m => ({ value: m!, label: m! }))}
+              clearable
+              searchable
+              size="xs"
+              style={{ width: 140 }}
+            />
+            <Select
               placeholder="Scripture"
               value={filterScripture}
               onChange={(value) => setFilterScripture(value || '')}
@@ -333,7 +356,7 @@ function Lookup() {
               size="xs"
               style={{ width: 140 }}
             />
-            {(filterType || filterGrammar || filterScripture) && (
+            {(filterType || filterGrammar || filterGrammarModifier || filterScripture) && (
               <Button
                 size="xs"
                 variant="subtle"
@@ -341,6 +364,7 @@ function Lookup() {
                 onClick={() => {
                   setFilterType('')
                   setFilterGrammar('')
+                  setFilterGrammarModifier('')
                   setFilterScripture('')
                 }}
               >
