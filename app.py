@@ -310,9 +310,9 @@ def role_required(*allowed_roles):
 
 # Role permissions mapping
 ROLE_PERMISSIONS = {
-    'user': ['home', 'lookup', 'translate', 'grammar'],
-    'translator': ['home', 'lookup', 'translate', 'database', 'game', 'grammar'],
-    'admin': ['home', 'lookup', 'translate', 'database', 'game', 'publications', 'new_publication', 'grammar']
+    'user': ['home', 'lookup', 'sentences', 'translate', 'grammar'],
+    'translator': ['home', 'lookup', 'sentences', 'translate', 'database', 'game', 'grammar'],
+    'admin': ['home', 'lookup', 'sentences', 'translate', 'database', 'game', 'publications', 'new_publication', 'grammar']
 }
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -2263,7 +2263,12 @@ def api_database_entries():
                 'source_type': entry.get('source_type', ''),
                 'confidence': entry.get('confidence', ''),
                 'confidence_score': entry.get('confidence_score', ''),
-                'date_added': entry.get('date_added') or entry.get('created_date')
+                'date_added': entry.get('date_added') or entry.get('created_date'),
+                'examples': entry.get('examples', []),
+                'notes': entry.get('notes', ''),
+                'references': entry.get('references', ''),
+                'user_confirmed': entry.get('user_confirmed', False),
+                'is_base_word': entry.get('is_base_word', False)
             }
             normalized_entries.append(normalized)
         
@@ -2549,6 +2554,14 @@ def api_create_database_entry():
         raw_grammar = data.get('grammar', '')
         normalized_grammar = dict_db._normalize_grammar(raw_grammar) if raw_grammar else None
         
+        # Handle examples - ensure it's an array
+        examples = data.get('examples', [])
+        if isinstance(examples, str):
+            # If it's a string, split by newlines
+            examples = [ex.strip() for ex in examples.split('\n') if ex.strip()]
+        elif not isinstance(examples, list):
+            examples = []
+        
         update_data = {
             'chuukese_word': chuukese_word,
             'english_translation': english_translation,
@@ -2557,12 +2570,12 @@ def api_create_database_entry():
             'type': 'scripture' if scripture_ref else data.get('type', ''),
             'grammar': normalized_grammar,
             'direction': data.get('direction', ''),
-            'examples': data.get('examples', []),
+            'examples': examples,
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
             'references': data.get('references', ''),
-            'user_confirmed': data.get('user_confirmed', False),
-            'is_base_word': data.get('is_base_word', False),
+            'user_confirmed': bool(data.get('user_confirmed', False)),
+            'is_base_word': bool(data.get('is_base_word', False)),
             'source': 'User Input',
             'updated_date': datetime.now()
         }
@@ -2626,6 +2639,14 @@ def api_update_database_entry(entry_id):
         raw_grammar = data.get('grammar', '')
         normalized_grammar = dict_db._normalize_grammar(raw_grammar) if raw_grammar else None
         
+        # Handle examples - ensure it's an array
+        examples = data.get('examples', [])
+        if isinstance(examples, str):
+            # If it's a string, split by newlines
+            examples = [ex.strip() for ex in examples.split('\n') if ex.strip()]
+        elif not isinstance(examples, list):
+            examples = []
+        
         update_data = {
             'chuukese_word': chuukese_word,
             'english_translation': english_translation,
@@ -2634,12 +2655,12 @@ def api_update_database_entry(entry_id):
             'type': 'scripture' if scripture_ref else data.get('type', ''),
             'grammar': normalized_grammar,
             'direction': data.get('direction', ''),
-            'examples': data.get('examples', []),
+            'examples': examples,
             'notes': data.get('notes', ''),
             'scripture': scripture_ref,
             'references': data.get('references', ''),
-            'user_confirmed': data.get('user_confirmed', False),
-            'is_base_word': data.get('is_base_word', False),
+            'user_confirmed': bool(data.get('user_confirmed', False)),
+            'is_base_word': bool(data.get('is_base_word', False)),
             'updated_date': datetime.now()
         }
         
@@ -3397,6 +3418,341 @@ def api_get_brochure_stats():
 # =============================================================================
 # React app routes - handle all non-API routes
 # =============================================================================
+@app.route('/api/sentences/analyze', methods=['POST'])
+@login_required
+def analyze_sentence():
+    """Analyze a Chuukese sentence word by word"""
+    try:
+        data = request.get_json()
+        sentence = data.get('sentence', '').strip()
+        
+        if not sentence:
+            return jsonify({'error': 'Sentence is required'}), 400
+        
+        # Split sentence into words (handle punctuation)
+        words = re.findall(r'\b[\w\u00C0-\u024F]+\b', sentence)
+        
+        if not words:
+            return jsonify({'error': 'No valid words found in sentence'}), 400
+        
+        # Look up each word in dictionary
+        word_analyses = []
+        found_words = []
+        grammar_sequence = []
+        
+        for word in words:
+            # Try exact match first
+            result = dict_db.collection.find_one(
+                {'chuukese_word': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}}
+            )
+            
+            # If not found, try without case sensitivity
+            if not result:
+                result = dict_db.collection.find_one(
+                    {'chuukese_word': {'$regex': f'^{re.escape(word)}', '$options': 'i'}}
+                )
+            
+            if result:
+                # Prepare full entry for modal display
+                full_entry = {
+                    'notes': result.get('notes', ''),
+                    'examples': result.get('examples', ''),
+                    'pronunciation': result.get('pronunciation', ''),
+                    'source': result.get('source', ''),
+                    'etymology': result.get('etymology', ''),
+                    'usage': result.get('usage', ''),
+                    'synonyms': result.get('synonyms', ''),
+                    'antonyms': result.get('antonyms', ''),
+                    'related_words': result.get('related_words', '')
+                }
+                
+                word_analyses.append({
+                    'original': word,
+                    'english': result.get('english_translation', 'unknown'),
+                    'grammar': result.get('grammar', 'unknown'),
+                    'grammar_modifier': result.get('grammar_modifier'),
+                    'definition': result.get('definition', ''),
+                    'found': True,
+                    'full_entry': full_entry
+                })
+                found_words.append(result.get('english_translation', word))
+                grammar_sequence.append(result.get('grammar', 'unknown'))
+            else:
+                word_analyses.append({
+                    'original': word,
+                    'english': word,
+                    'grammar': 'unknown',
+                    'found': False
+                })
+                found_words.append(word)
+                grammar_sequence.append('unknown')
+        
+        # Analyze sentence structure
+        structure_info = analyze_sentence_structure(grammar_sequence, word_analyses)
+        
+        # Rearrange translation based on Chuukese grammar
+        rearranged = rearrange_translation(word_analyses, grammar_sequence)
+        
+        # Find phrases in the sentence
+        phrases = find_phrases_in_sentence(sentence, words)
+        
+        return jsonify({
+            'original_sentence': sentence,
+            'word_by_word': word_analyses,
+            'phrases': phrases,
+            'rearranged_translation': rearranged,
+            'structure_info': structure_info
+        })
+        
+    except Exception as e:
+        print(f"Error analyzing sentence: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dictionary/add', methods=['POST'])
+@login_required
+def add_dictionary_word():
+    """Add a new word to dictionary from sentence analysis"""
+    try:
+        data = request.get_json()
+        
+        chuukese_word = data.get('chuukese_word', '').strip()
+        english_translation = data.get('english_translation', '').strip()
+        definition = data.get('definition', '').strip()
+        grammar = data.get('grammar', '').strip()
+        
+        if not chuukese_word or not english_translation or not grammar:
+            return jsonify({'error': 'Chuukese word, English translation, and grammar type are required'}), 400
+        
+        # Check if word already exists
+        existing = dict_db.collection.find_one(
+            {'chuukese_word': {'$regex': f'^{re.escape(chuukese_word)}$', '$options': 'i'}}
+        )
+        
+        if existing:
+            return jsonify({'error': 'Word already exists in dictionary'}), 400
+        
+        # Prepare the new entry
+        confidence_score = data.get('confidence', 100)
+        
+        # Create examples array with the sentence
+        chuukese_example = data.get('chuukese_example', '')
+        examples = [chuukese_example] if chuukese_example else []
+        
+        new_entry = {
+            'chuukese_word': chuukese_word,
+            'english_translation': english_translation,
+            'definition': definition,
+            'grammar': grammar,
+            'confidence_score': confidence_score,
+            'confidence_level': 'verified' if confidence_score >= 90 else 'high',
+            'verified': data.get('verified', True),
+            'examples': examples,
+            'type': data.get('type', 'sentence'),
+            'source': 'User Input - Sentence Analysis',
+            'created_date': datetime.now(),
+            'updated_date': datetime.now(),
+            'added_by': session.get('username', 'unknown')
+        }
+        
+        # Insert into database
+        result = dict_db.collection.insert_one(new_entry)
+        
+        if result.inserted_id:
+            return jsonify({
+                'success': True,
+                'message': 'Word added successfully to dictionary',
+                'entry_id': str(result.inserted_id)
+            }), 201
+        else:
+            return jsonify({'error': 'Failed to add word to dictionary'}), 500
+            
+    except Exception as e:
+        print(f"Error adding word to dictionary: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def analyze_sentence_structure(grammar_sequence: List[str], word_analyses: List[dict]) -> str:
+    """Analyze the grammatical structure of the sentence"""
+    # Count grammar types
+    grammar_counts = {}
+    for grammar in grammar_sequence:
+        grammar_counts[grammar] = grammar_counts.get(grammar, 0) + 1
+    
+    # Build structure description
+    parts = []
+    has_verb = 'verb' in grammar_sequence
+    has_noun = 'noun' in grammar_sequence
+    has_subject_marker = any(w.get('grammar') == 'pronoun' for w in word_analyses)
+    
+    if has_verb and has_noun:
+        verb_pos = grammar_sequence.index('verb')
+        noun_positions = [i for i, g in enumerate(grammar_sequence) if g == 'noun']
+        
+        if noun_positions and verb_pos < noun_positions[0]:
+            parts.append("Verb-Object-Subject (VOS) order typical of Chuukese")
+        else:
+            parts.append("Non-standard word order detected")
+    elif has_verb:
+        parts.append("Contains verb")
+    
+    # Add grammar composition
+    grammar_list = [f"{count} {grammar}{'s' if count > 1 else ''}" 
+                   for grammar, count in grammar_counts.items() if grammar != 'unknown']
+    if grammar_list:
+        parts.append(f"Composition: {', '.join(grammar_list)}")
+    
+    return '. '.join(parts) if parts else "Unable to determine sentence structure"
+
+
+def rearrange_translation(word_analyses: List[dict], grammar_sequence: List[str]) -> str:
+    """Rearrange word-by-word translation to grammatical English"""
+    words = [w['english'] for w in word_analyses]
+    
+    # If no grammatical information, return as-is
+    if 'verb' not in grammar_sequence:
+        return ' '.join(words).capitalize()
+    
+    # Try to identify VOS pattern and convert to SVO
+    try:
+        verb_idx = grammar_sequence.index('verb')
+        
+        # Look for object (noun after verb)
+        object_idx = None
+        subject_idx = None
+        
+        for i in range(verb_idx + 1, len(grammar_sequence)):
+            if grammar_sequence[i] == 'noun' and object_idx is None:
+                object_idx = i
+            elif grammar_sequence[i] in ['noun', 'pronoun'] and object_idx is not None:
+                subject_idx = i
+                break
+        
+        # Rearrange if we found VOS pattern
+        if verb_idx is not None and object_idx is not None and subject_idx is not None:
+            # Subject - Verb - Object
+            rearranged = [
+                words[subject_idx],  # Subject
+                words[verb_idx],      # Verb
+                words[object_idx]     # Object
+            ]
+            
+            # Add other words
+            for i, word in enumerate(words):
+                if i not in [verb_idx, object_idx, subject_idx]:
+                    rearranged.append(word)
+            
+            result = ' '.join(rearranged)
+            return result.capitalize()
+    except:
+        pass
+    
+    # Default: return words in original order
+    return ' '.join(words).capitalize()
+
+
+def find_phrases_in_sentence(sentence: str, words: List[str]) -> List[dict]:
+    """Logically break down the sentence into meaningful phrases based on grammar"""
+    phrases_found = []
+    
+    try:
+        # Re-lookup words with their grammar to build phrases
+        word_data = []
+        for word in words:
+            result = dict_db.collection.find_one(
+                {'chuukese_word': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}}
+            )
+            if result:
+                word_data.append({
+                    'word': word,
+                    'english': result.get('english_translation', word),
+                    'grammar': result.get('grammar', 'unknown'),
+                    'grammar_modifier': result.get('grammar_modifier')
+                })
+            else:
+                word_data.append({
+                    'word': word,
+                    'english': word,
+                    'grammar': 'unknown',
+                    'grammar_modifier': None
+                })
+        
+        # Pattern 1: Verb + Object (Noun) - VOS pattern
+        for i in range(len(word_data) - 1):
+            if word_data[i]['grammar'] == 'verb':
+                # Look for noun after verb
+                for j in range(i + 1, min(i + 4, len(word_data))):
+                    if word_data[j]['grammar'] == 'noun':
+                        phrase_words = word_data[i:j+1]
+                        phrase = ' '.join([w['word'] for w in phrase_words])
+                        english = ' '.join([w['english'] for w in phrase_words])
+                        phrases_found.append({
+                            'phrase': phrase,
+                            'english': english,
+                            'type': 'Verb + Object',
+                            'explanation': f'Action phrase: "{word_data[i]["english"]}" acting on "{word_data[j]["english"]}"'
+                        })
+                        break
+        
+        # Pattern 2: Adjective + Noun
+        for i in range(len(word_data) - 1):
+            if word_data[i]['grammar'] == 'adjective' and word_data[i+1]['grammar'] == 'noun':
+                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
+                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
+                phrases_found.append({
+                    'phrase': phrase,
+                    'english': english,
+                    'type': 'Descriptive Phrase',
+                    'explanation': f'Describes a noun: "{word_data[i]["english"]}" modifying "{word_data[i+1]["english"]}"'
+                })
+        
+        # Pattern 3: Preposition + Noun (Locational phrase)
+        for i in range(len(word_data) - 1):
+            if word_data[i]['grammar'] == 'preposition' and word_data[i+1]['grammar'] == 'noun':
+                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
+                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
+                phrases_found.append({
+                    'phrase': phrase,
+                    'english': english,
+                    'type': 'Locational Phrase',
+                    'explanation': f'Location or direction: "{word_data[i]["english"]}" with "{word_data[i+1]["english"]}"'
+                })
+        
+        # Pattern 4: Pronoun + Verb (Subject-Verb)
+        for i in range(len(word_data) - 1):
+            if word_data[i]['grammar'] == 'pronoun' and word_data[i+1]['grammar'] == 'verb':
+                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
+                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
+                phrases_found.append({
+                    'phrase': phrase,
+                    'english': english,
+                    'type': 'Subject-Verb',
+                    'explanation': f'Who does what: "{word_data[i]["english"]}" performs "{word_data[i+1]["english"]}"'
+                })
+        
+        # Pattern 5: Number + Classifier + Noun
+        for i in range(len(word_data) - 2):
+            if (word_data[i]['grammar'] in ['numeral', 'number'] and 
+                word_data[i+1]['grammar'] == 'classifier' and 
+                word_data[i+2]['grammar'] == 'noun'):
+                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']} {word_data[i+2]['word']}"
+                english = f"{word_data[i]['english']} {word_data[i+1]['english']} {word_data[i+2]['english']}"
+                phrases_found.append({
+                    'phrase': phrase,
+                    'english': english,
+                    'type': 'Counting Phrase',
+                    'explanation': f'Counting with classifier: "{word_data[i]["english"]}" of "{word_data[i+2]["english"]}"'
+                })
+        
+    except Exception as e:
+        print(f"Error finding phrases: {str(e)}")
+    
+    return phrases_found
+
+
+# Catch-all route for React (must be last)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):

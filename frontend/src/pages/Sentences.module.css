@@ -1,0 +1,100 @@
+/* 
+ * Sentences Page Styles
+ * Purpose: Word-by-word sentence analysis with clickable word cards
+ */
+
+/* Word card base styles */
+.word-card {
+  cursor: default;
+  transition: all 0.2s ease;
+  border: 1px solid #dee2e6;
+}
+
+/* Word card when clickable (both found and not found words are clickable) */
+.word-card--clickable {
+  cursor: pointer;
+}
+
+/* Word card hover effect for found words */
+.word-card--clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: #228be6;
+}
+
+/* Word card active/focus states for accessibility */
+.word-card--clickable:active {
+  transform: translateY(0);
+}
+
+.word-card--clickable:focus-within {
+  outline: 2px solid #228be6;
+  outline-offset: 2px;
+}
+
+/* Modal content sections */
+.modal-section {
+  margin-bottom: 1rem;
+}
+
+.modal-section-label {
+  font-size: 0.875rem;
+  color: #6c757d;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+/* Notes and examples display */
+.notes-display {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: #fff9db;
+  border: 1px solid #ffe066;
+  white-space: pre-wrap;
+}
+
+.examples-display {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: #e7f5ff;
+  border: 1px solid #74c0fc;
+  white-space: pre-wrap;
+}
+
+.usage-display {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .word-card--clickable:hover {
+    /* Disable hover effects on touch devices */
+    transform: none;
+    box-shadow: none;
+    border-color: #dee2e6;
+  }
+  
+  .word-card--clickable:active {
+    /* Use active state instead for touch feedback */
+    transform: scale(0.98);
+    background-color: #f1f3f5;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .word-card,
+  .word-card--clickable {
+    transition: none;
+  }
+  
+  .word-card--clickable:hover {
+    transform: none;
+  }
+}

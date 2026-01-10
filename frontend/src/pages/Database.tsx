@@ -846,7 +846,7 @@ function Database() {
         grammar: entry.grammar || '',
         grammar_modifier: entry.grammar_modifier || '',
         examples: entry.examples || [],
-        notes: '',
+        notes: entry.notes || '',
         scripture: entry.scripture || '',
         references: entry.references || '',
         confidence_score: entry.confidence_score,
