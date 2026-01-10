@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -14,6 +14,7 @@ import Database from './pages/Database'
 import Translate from './pages/Translate'
 import TranslationGame from './pages/TranslationGame'
 import Grammar from './pages/Grammar'
+import Sentences from './pages/Sentences'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import { chuukTheme } from './theme'
@@ -212,6 +213,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('sentences') && (
+              <NavLink 
+                label="Sentence Analysis" 
+                leftSection={<IconFileText size="1.2rem" />} 
+                component={Link}
+                to="/sentences"
+                active={location.pathname === '/sentences'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             
             <Divider my="sm" />
             
@@ -315,6 +327,7 @@ function App() {
             <Routes>
               <Route path="/" element={hasPermission('home') ? <Home /> : <AccessDenied />} />
               <Route path="/lookup" element={hasPermission('lookup') ? <Lookup /> : <AccessDenied />} />
+              <Route path="/sentences" element={hasPermission('sentences') ? <Sentences /> : <AccessDenied />} />
               <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
               <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
               <Route path="/publications" element={hasPermission('publications') ? <Publications /> : <AccessDenied />} />

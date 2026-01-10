@@ -1,6 +1,7 @@
-import { Card, Title, Text, Button, Group, Grid, ThemeIcon, Stack, Badge, Container } from '@mantine/core'
+import { Card, Title, Text, Button, Group, Grid, ThemeIcon, Stack, Badge, Container, Divider } from '@mantine/core'
 import { IconEye, IconWorld, IconSearch, IconLanguage } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
+import GrammarLearning from '../components/GrammarLearning'
 
 function Home() {
 
@@ -78,6 +79,11 @@ function Home() {
             </Card>
           </Grid.Col>
         </Grid>
+
+        {/* Grammar Learning Section */}
+        <Divider my="xl" />
+        <GrammarLearning />
+
       </Stack>
     </Container>
   )
