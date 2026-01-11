@@ -111,7 +111,7 @@ function Sentences() {
       'demonstrative': 'yellow',
       'interrogative': 'red'
     }
-    return colors[grammar.toLowerCase()] || 'gray'
+    return grammar ? colors[grammar.toLowerCase()] || 'gray' : 'gray'
   }
 
   return (

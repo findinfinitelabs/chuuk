@@ -23,3 +23,28 @@
 .table-overflow {
   overflow-x: auto;
 }
+
+/* Bible Coverage styles */
+.bible-section-badge {
+  border-width: 2px;
+}
+
+.bible-book-card {
+  cursor: pointer;
+  background-color: #ffffff;
+  border: 1px dotted rgba(0, 0, 0, 0.15);
+  border-left: 3px solid;
+}
+
+.bible-book-title {
+  font-weight: 600;
+}
+
+.bible-section-header {
+  font-weight: 600;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+.bible-book-detail-badge {
+  border-width: 2px;
+}

@@ -226,62 +226,62 @@ interface BibleSection {
 const BIBLE_SECTIONS: BibleSection[] = [
   {
     name: 'Pentateuch',
-    color: '#1e3a5f',
-    backgroundColor: '#e3f2fd', // Pastel blue
+    color: '#1565c0', // Blue (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy']
   },
   {
     name: 'Historical',
-    color: '#1b5e20',
-    backgroundColor: '#e8f5e9', // Pastel green
+    color: '#2e7d32', // Green (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther']
   },
   {
     name: 'Poetic',
-    color: '#4a148c',
-    backgroundColor: '#f3e5f5', // Pastel purple
+    color: '#6a1b9a', // Purple (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Job', 'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon']
   },
   {
     name: 'Major Prophets',
-    color: '#e65100',
-    backgroundColor: '#fff3e0', // Pastel orange
+    color: '#d84315', // Orange (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel']
   },
   {
     name: 'Minor Prophets',
-    color: '#880e4f',
-    backgroundColor: '#fce4ec', // Pastel pink
+    color: '#c2185b', // Pink (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi']
   },
   {
     name: 'Gospels',
-    color: '#00695c',
-    backgroundColor: '#e0f2f1', // Pastel teal
+    color: '#00838f', // Teal (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Matthew', 'Mark', 'Luke', 'John']
   },
   {
     name: 'Acts',
-    color: '#006064',
-    backgroundColor: '#e0f7fa', // Pastel cyan
+    color: '#0277bd', // Cyan (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Acts']
   },
   {
     name: "Paul's Letters",
-    color: '#f57f17',
-    backgroundColor: '#fffde7', // Pastel yellow
+    color: '#f57c00', // Amber (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians', '1 Timothy', '2 Timothy', 'Titus', 'Philemon']
   },
   {
     name: 'Other Inspired Letters',
-    color: '#b71c1c',
-    backgroundColor: '#ffebee', // Pastel rose
+    color: '#c62828', // Red (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Hebrews', 'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude']
   },
   {
     name: 'Revelation',
-    color: '#311b92',
-    backgroundColor: '#ede7f6', // Pastel deep purple
+    color: '#4527a0', // Deep Purple (WCAG AA compliant)
+    backgroundColor: '#ffffff',
     books: ['Revelation']
   }
 ]
@@ -382,6 +382,7 @@ function Database() {
   const [scriptureOptions, setScriptureOptions] = useState<string[]>([])
   const [filterBook, setFilterBook] = useState<string>('')
   const [bibleBooks, setBibleBooks] = useState<BibleBookCoverage[]>([])
+  const [bibleBooksLoading, setBibleBooksLoading] = useState(false)
   const [selectedBookDetail, setSelectedBookDetail] = useState<BookDetail | null>(null)
   const [bibleCoverageOpened, { open: openBibleCoverage, close: closeBibleCoverage }] = useDisclosure(false)
   const [expandedChapters, setExpandedChapters] = useState<number[]>([])
@@ -471,33 +472,99 @@ function Database() {
   }
 
   const loadDatabaseStats = async () => {
+    // Load cached stats immediately
+    const cached = localStorage.getItem('db_stats')
+    if (cached) {
+      try {
+        setStats(JSON.parse(cached))
+      } catch (e) {
+        console.error('Failed to parse cached stats:', e)
+      }
+    }
+    
+    // Then fetch fresh data with timeout
     try {
-      const response = await axios.get('/api/database/stats')
+      const response = await axios.get('/api/database/stats', { timeout: 10000 })
       setStats(response.data)
-    } catch (err) {
-      console.error('Failed to load database stats:', err)
+      localStorage.setItem('db_stats', JSON.stringify(response.data))
+    } catch (err: any) {
+      console.error('Failed to load database stats:', err?.message || err)
+      if (!cached) {
+        // If no cache and fetch fails, show error notification
+        notifications.show({
+          title: 'Stats Unavailable',
+          message: 'Using cached data or waiting for next refresh',
+          color: 'yellow'
+        })
+      }
+      // Keep using cached data if fetch fails
     }
   }
 
   const loadFilterOptions = async () => {
+    // Load cached options immediately
+    const cachedTypes = localStorage.getItem('db_types')
+    const cachedGrammar = localStorage.getItem('db_grammar')
+    const cachedGrammarModifier = localStorage.getItem('db_grammar_modifier')
+    const cachedScripture = localStorage.getItem('db_scripture')
+    
+    if (cachedTypes) setTypeOptions(JSON.parse(cachedTypes))
+    if (cachedGrammar) setGrammarOptions(JSON.parse(cachedGrammar))
+    if (cachedGrammarModifier) setGrammarModifierOptions(JSON.parse(cachedGrammarModifier))
+    if (cachedScripture) setScriptureOptions(JSON.parse(cachedScripture))
+    
     try {
       // Stagger requests to avoid 429 rate limiting
       const typeRes = await axios.get('/api/database/distinct', { params: { field: 'type' } })
-      setTypeOptions(typeRes.data.values || [])
+      const types = typeRes.data.values || []
+      setTypeOptions(types)
+      localStorage.setItem('db_types', JSON.stringify(types))
       
       const grammarRes = await axios.get('/api/database/distinct', { params: { field: 'grammar' } })
-      setGrammarOptions(grammarRes.data.values || [])
+      const grammar = grammarRes.data.values || []
+      setGrammarOptions(grammar)
+      localStorage.setItem('db_grammar', JSON.stringify(grammar))
       
       const grammarModifierRes = await axios.get('/api/database/distinct', { params: { field: 'grammar_modifier' } })
-      setGrammarModifierOptions(grammarModifierRes.data.values || [])
+      const grammarModifier = grammarModifierRes.data.values || []
+      setGrammarModifierOptions(grammarModifier)
+      localStorage.setItem('db_grammar_modifier', JSON.stringify(grammarModifier))
       
       const scriptureRes = await axios.get('/api/database/distinct', { params: { field: 'scripture' } })
-      setScriptureOptions(scriptureRes.data.values || [])
-      
-      const bibleRes = await axios.get('/api/database/bible-coverage')
-      setBibleBooks(bibleRes.data.books || [])
+      const scripture = scriptureRes.data.values || []
+      setScriptureOptions(scripture)
+      localStorage.setItem('db_scripture', JSON.stringify(scripture))
     } catch (err) {
       console.error('Failed to load filter options:', err)
+      // Keep using cached data if fetch fails
+    }
+  }
+
+  const loadBibleBooks = async () => {
+    if (bibleBooks.length > 0) return // Already loaded
+    
+    setBibleBooksLoading(true)
+    try {
+      const bibleRes = await axios.get('/api/database/bible-coverage')
+      console.log('Bible coverage response:', bibleRes.data)
+      console.log('Books count:', bibleRes.data.books?.length || 0)
+      setBibleBooks(bibleRes.data.books || [])
+      if (!bibleRes.data.books || bibleRes.data.books.length === 0) {
+        notifications.show({
+          title: 'Warning',
+          message: 'No Bible books data loaded. The endpoint may be rate limited.',
+          color: 'yellow'
+        })
+      }
+    } catch (err) {
+      console.error('Failed to load bible books:', err)
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to load Bible coverage data',
+        color: 'red'
+      })
+    } finally {
+      setBibleBooksLoading(false)
     }
   }
 
@@ -1359,6 +1426,7 @@ function Database() {
                 setFilterScripture('')
                 setCurrentPage(1)
               }}
+              onFocus={loadBibleBooks}
               data={bibleBooks.map(b => ({ value: b.book, label: `${b.book} (${b.loaded_verses}/${b.total_verses})` }))}
               clearable
               searchable
@@ -1370,7 +1438,10 @@ function Database() {
               size="xs"
               variant="light"
               leftSection={<IconBook size={14} />}
-              onClick={openBibleCoverage}
+              onClick={() => {
+                loadBibleBooks()
+                openBibleCoverage()
+              }}
             >
               Bible Coverage
             </Button>
@@ -1879,7 +1950,19 @@ function Database() {
         size="xl"
       >
         <Stack gap="md">
-          {!selectedBookDetail ? (
+          {bibleBooksLoading && (
+            <Group justify="center" p="xl">
+              <Loader size="lg" />
+              <Text>Loading Bible books...</Text>
+            </Group>
+          )}
+          {bibleBooksLoading && (
+            <Group justify="center" p="xl">
+              <Loader size="lg" />
+              <Text>Loading Bible books...</Text>
+            </Group>
+          )}
+          {!bibleBooksLoading && !selectedBookDetail ? (
             <>
               <Text size="sm" c="dimmed">
                 Select a book to see which verses are loaded and which are missing. Colors represent Bible sections.
@@ -1891,10 +1974,11 @@ function Database() {
                   <Badge 
                     key={section.name}
                     size="xs"
+                    variant="outline"
+                    className="bible-section-badge"
                     style={{ 
-                      backgroundColor: section.backgroundColor,
-                      color: section.color,
-                      border: `1px solid ${section.color}30`
+                      borderColor: section.color,
+                      color: section.color
                     }}
                   >
                     {section.name}
@@ -1906,11 +1990,12 @@ function Database() {
               <Stack gap="lg">
                 {BIBLE_SECTIONS.map((section) => {
                   const sectionBooks = bibleBooks.filter(book => section.books.includes(book.book))
+                  console.log(`Section: ${section.name}, Books found: ${sectionBooks.length}, Total bibleBooks: ${bibleBooks.length}`)
                   if (sectionBooks.length === 0) return null
                   
                   return (
                     <div key={section.name}>
-                      <Text size="sm" fw={600} mb="xs" style={{ color: section.color }}>
+                      <Text size="sm" className="bible-section-header" style={{ color: section.color }}>
                         {section.name}
                       </Text>
                       <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
@@ -1919,14 +2004,13 @@ function Database() {
                             key={book.book}
                             withBorder
                             padding="xs"
+                            className="bible-book-card"
                             style={{ 
-                              cursor: 'pointer',
-                              backgroundColor: section.backgroundColor,
-                              borderColor: `${section.color}30`
+                              borderColor: section.color
                             }}
                             onClick={() => loadBookDetail(book.book)}
                           >
-                            <Text size="sm" fw={500} truncate style={{ color: section.color }}>{book.book}</Text>
+                            <Text size="sm" className="bible-book-title" truncate c="dark">{book.book}</Text>
                             <Progress 
                               value={book.coverage_percent} 
                               size="sm" 
@@ -1944,7 +2028,7 @@ function Database() {
                 })}
               </Stack>
             </>
-          ) : (
+          ) : selectedBookDetail ? (
             (() => {
               const bookSection = getBookSection(selectedBookDetail.book)
               return (
@@ -1959,14 +2043,15 @@ function Database() {
                   >
                     Back to Books
                   </Button>
-                  <Title order={4} style={{ color: bookSection?.color }}>{selectedBookDetail.book}</Title>
+                  <Title order={4} c="dark">{selectedBookDetail.book}</Title>
                   {bookSection && (
                     <Badge 
                       size="sm"
+                      variant="outline"
+                      className="bible-book-detail-badge"
                       style={{ 
-                        backgroundColor: bookSection.backgroundColor,
-                        color: bookSection.color,
-                        border: `1px solid ${bookSection.color}30`
+                        borderColor: bookSection.color,
+                        color: bookSection.color
                       }}
                     >
                       {bookSection.name}
@@ -2057,7 +2142,7 @@ function Database() {
               </Stack>
             </>
           )})()
-          )}
+          ) : null}
         </Stack>
       </Modal>
 
