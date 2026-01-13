@@ -1,3 +1,7 @@
+# Important: Include frontend source files
+!frontend/
+!frontend/**
+
 .git
 .gitignore
 node_modules
