@@ -1,7 +1,7 @@
 # Multi-stage build for Chuuk Dictionary App
 FROM node:18-slim AS frontend-builder
 
-# Build React frontend
+# Build React frontend  
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci

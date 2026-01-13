@@ -25,8 +25,8 @@ jobs:
     - name: Set up environment variables
       run: |
         echo "Setting up deployment environment variables..."
-        echo "GOOGLE_CLOUD_API_KEY=${{ secrets.GOOGLE_CLOUD_API_KEY }}" >> $GITHUB_ENV
-        echo "FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }}" >> $GITHUB_ENV
+        echo "GOOGLE_CLOUD_API_KEY=${{ secrets.GOOGLE_CLOUD_API_KEY }}" >> "$GITHUB_ENV"
+        echo "FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }}" >> "$GITHUB_ENV"
     
     - name: Deploy to Azure Container Apps
       run: |
