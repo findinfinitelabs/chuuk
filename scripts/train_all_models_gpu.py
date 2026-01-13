@@ -9,6 +9,7 @@ import os
 import sys
 import torch
 import json
+import argparse
 from datetime import datetime
 from pathlib import Path
 
@@ -23,9 +24,10 @@ from src.translation.llm_trainer import ChuukeseLLMTrainer
 class ComprehensiveModelTrainer:
     """Coordinates training of all AI models with GPU support"""
     
-    def __init__(self, use_gpu=True):
+    def __init__(self, use_gpu=True, json_export=None):
         self.use_gpu = use_gpu and torch.cuda.is_available()
-        self.db = DictionaryDB()
+        self.json_export = json_export
+        self.db = DictionaryDB() if not json_export else None
         self.log_file = Path("logs/training_overnight.log")
         self.log_file.parent.mkdir(exist_ok=True)
         
@@ -72,9 +74,76 @@ class ComprehensiveModelTrainer:
             f.write(log_message + '\n')
     
     def gather_training_data(self):
-        """Gather all training data from database"""
+        """Gather all training data from database or JSON export"""
         self.log("\n📊 PHASE 1: GATHERING TRAINING DATA")
         self.log("-" * 80)
+        
+        # If JSON export provided, load from file
+        if self.json_export:
+            return self._load_from_json()
+        
+        # Otherwise load from database
+        return self._load_from_database()
+    
+    def _load_from_json(self):
+        """Load training data from JSON export"""
+        self.log(f"📁 Loading from JSON export: {self.json_export}")
+        
+        with open(self.json_export, 'r', encoding='utf-8') as f:
+            entries = json.load(f)
+        
+        self.log(f"✅ Loaded {len(entries)} entries")
+        
+        training_data = {
+            'words': [],
+            'phrases': [],
+            'sentences': [],
+            'translation_game': []
+        }
+        
+        stats = {'words': 0, 'phrases': 0, 'sentences': 0, 'skipped': 0}
+        
+        for entry in entries:
+            chk = entry.get('chuukese_word', '').strip()
+            eng = entry.get('english_translation', '').strip()
+            entry_type = entry.get('type', 'word')
+            
+            if not chk or not eng or len(chk) < 2 or len(eng) < 2:
+                stats['skipped'] += 1
+                continue
+            
+            example = {
+                'chuukese': chk,
+                'english': eng,
+                'type': entry_type,
+                'grammar': entry.get('grammar', ''),
+                'definition': entry.get('definition', '')
+            }
+            
+            if entry_type == 'sentence':
+                training_data['sentences'].append(example)
+                stats['sentences'] += 1
+            elif ' ' in chk:
+                training_data['phrases'].append(example)
+                stats['phrases'] += 1
+            else:
+                training_data['words'].append(example)
+                stats['words'] += 1
+            
+            training_data['translation_game'].append(example)
+        
+        self.log(f"\n📈 TRAINING DATA STATISTICS:")
+        self.log(f"   Words:              {stats['words']:,}")
+        self.log(f"   Phrases:            {stats['phrases']:,}")
+        self.log(f"   Sentences:          {stats['sentences']:,}")
+        self.log(f"   Skipped:            {stats['skipped']:,}")
+        self.log(f"   TOTAL:              {len(training_data['translation_game']):,} training pairs")
+        
+        return training_data
+    
+    def _load_from_database(self):
+        """Load training data from database"""
+        self.log("🗄️  Loading from database...")
         
         # Get all entries from all collections
         training_data = {
@@ -328,8 +397,93 @@ def main():
     print("📝 Logs will be saved to: logs/training_overnight.log")
     print("⏰ This will take several hours. You can monitor progress in the log file.")
     print()
-    
-    trainer = ComprehensiveModelTrainer(use_gpu=True)
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    # Helper to find the latest JSON export in data/db
+    def find_latest_export():
+        data_db = project_root / "data" / "db"
+        if not data_db.exists():
+            return None
+        exports = sorted(data_db.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        return exports[0] if exports else None
+
+    def resolve_path(candidate: str) -> Path:
+        """Resolve absolute path; if relative, treat as project-root relative."""
+        path_obj = Path(candidate)
+        if path_obj.is_absolute():
+            return path_obj
+        return (project_root / path_obj).resolve()
+
+    # Parse optional CLI flags
+    parser = argparse.ArgumentParser(description="Comprehensive model trainer for Chuukese ↔ English")
+    parser.add_argument("--json-export", type=str, help="Path to JSON export file for training")
+    parser.add_argument("--source", choices=["prompt", "json", "db"], default="prompt",
+                        help="Select data source: prompt to choose at runtime, json to use export, db to use live database")
+    parser.add_argument("--no-gpu", action="store_true", help="Disable GPU and run on CPU")
+    args = parser.parse_args()
+
+    use_gpu = not args.no_gpu
+    json_path = None
+
+    # Interactive prompt or explicit source selection
+    if args.source == "prompt":
+        latest = find_latest_export()
+        print("Select training data source:")
+        print("  1) Database (live)")
+        if latest:
+            print(f"  2) JSON export (latest found: {latest}")
+        else:
+            print("  2) JSON export (no exports found in data/db)")
+
+        choice = input("Enter 1 or 2: ").strip()
+        if choice == "2":
+            if args.json_export:
+                candidate = resolve_path(args.json_export)
+                if candidate.exists():
+                    json_path = str(candidate)
+                else:
+                    print(f"❌ Provided path not found: {candidate}")
+            elif latest:
+                confirm = input(f"Use latest export {latest}? [Y/n]: ").strip().lower()
+                if confirm in ("", "y", "yes"): 
+                    json_path = str(latest)
+                else:
+                    custom = input("Enter path to JSON export: ").strip()
+                    candidate = resolve_path(custom)
+                    if candidate.exists():
+                        json_path = str(candidate)
+                    else:
+                        print(f"❌ Path not found: {candidate}. Falling back to database.")
+                        json_path = None
+            else:
+                custom = input("Enter path to JSON export: ").strip()
+                candidate = resolve_path(custom)
+                if candidate.exists():
+                    json_path = str(candidate)
+                else:
+                    print(f"❌ Path not found: {candidate}. Falling back to database.")
+                    json_path = None
+        # choice "1" or other → use database
+    elif args.source == "json":
+        if args.json_export:
+            candidate = resolve_path(args.json_export)
+            if candidate.exists():
+                json_path = str(candidate)
+            else:
+                print(f"❌ Provided path not found: {candidate}. Attempting latest export...")
+        if not json_path:
+            latest = find_latest_export()
+            if latest:
+                json_path = str(latest)
+                print(f"📁 Using latest export: {latest}")
+            else:
+                print("❌ No JSON exports found in data/db. Using database instead.")
+                json_path = None
+    else:  # args.source == "db"
+        json_path = None
+
+    trainer = ComprehensiveModelTrainer(use_gpu=use_gpu, json_export=json_path)
     success = trainer.run_complete_training()
     
     if success:

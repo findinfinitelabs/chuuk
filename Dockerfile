@@ -28,6 +28,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
+# Copy trained Helsinki models (fine-tuned for Chuukese)
+COPY models/ ./models/
+
 # Copy application code
 COPY . .
 
@@ -35,10 +38,10 @@ COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Create necessary directories
-RUN mkdir -p uploads logs models output data config
+RUN mkdir -p uploads logs output data config
 
-# Expose port
+# Expose Flask app port
 EXPOSE 8000
 
-# Run with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--timeout", "600", "--workers", "2", "app:app"]
+# Run Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "300", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

@@ -111,8 +111,30 @@ fi
 
 # Create or update Container App
 echo -e "${BLUE}📱 Deploying Container App...${NC}"
+
+# Get Ollama service URL if it exists
+OLLAMA_URL=""
+if az containerapp show --name chuuk-ollama --resource-group $RESOURCE_GROUP &> /dev/null; then
+    OLLAMA_FQDN=$(az containerapp show \
+        --name chuuk-ollama \
+        --resource-group $RESOURCE_GROUP \
+        --query "properties.configuration.ingress.fqdn" \
+        -o tsv)
+    OLLAMA_URL="https://$OLLAMA_FQDN"
+    echo -e "${GREEN}✅ Found Ollama service at: $OLLAMA_URL${NC}"
+else
+    echo -e "${YELLOW}⚠️  Ollama service not found. Ollama translation will be disabled.${NC}"
+fi
+
 if ! az containerapp show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP &> /dev/null; then
     # Create new app
+    ENV_VARS="DB_TYPE=cosmos COSMOS_DB_URI=$COSMOS_DB_URI COSMOS_DB_KEY=$COSMOS_DB_KEY FLASK_ENV=production FLASK_DEBUG=0 FLASK_SECRET_KEY=$FLASK_SECRET_KEY GOOGLE_CLOUD_API_KEY=$GOOGLE_CLOUD_API_KEY"
+    
+    # Add Ollama URL if available
+    if [ ! -z "$OLLAMA_URL" ]; then
+        ENV_VARS="$ENV_VARS OLLAMA_BASE_URL=$OLLAMA_URL"
+    fi
+    
     az containerapp create \
         --name $CONTAINER_APP_NAME \
         --resource-group $RESOURCE_GROUP \
@@ -123,33 +145,26 @@ if ! az containerapp show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_
         --registry-password $ACR_PASSWORD \
         --target-port 8000 \
         --ingress external \
-        --cpu 1.0 \
-        --memory 2.0Gi \
+        --cpu 2.0 \
+        --memory 4.0Gi \
         --min-replicas 0 \
         --max-replicas 2 \
-        --env-vars \
-            "DB_TYPE=cosmos" \
-            "COSMOS_DB_URI=$COSMOS_DB_URI" \
-            "COSMOS_DB_KEY=$COSMOS_DB_KEY" \
-            "FLASK_ENV=production" \
-            "FLASK_DEBUG=0" \
-            "FLASK_SECRET_KEY=$FLASK_SECRET_KEY" \
-            "GOOGLE_CLOUD_API_KEY=$GOOGLE_CLOUD_API_KEY"
+        --env-vars $ENV_VARS
     echo -e "${GREEN}✅ Container App created${NC}"
 else
     # Update existing app
+    SET_ENV_VARS="DB_TYPE=cosmos COSMOS_DB_URI=$COSMOS_DB_URI COSMOS_DB_KEY=$COSMOS_DB_KEY FLASK_ENV=production FLASK_DEBUG=0 FLASK_SECRET_KEY=$FLASK_SECRET_KEY GOOGLE_CLOUD_API_KEY=$GOOGLE_CLOUD_API_KEY"
+    
+    # Add Ollama URL if available
+    if [ ! -z "$OLLAMA_URL" ]; then
+        SET_ENV_VARS="$SET_ENV_VARS OLLAMA_BASE_URL=$OLLAMA_URL"
+    fi
+    
     az containerapp update \
         --name $CONTAINER_APP_NAME \
         --resource-group $RESOURCE_GROUP \
         --image "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
-        --set-env-vars \
-            "DB_TYPE=cosmos" \
-            "COSMOS_DB_URI=$COSMOS_DB_URI" \
-            "COSMOS_DB_KEY=$COSMOS_DB_KEY" \
-            "FLASK_ENV=production" \
-            "FLASK_DEBUG=0" \
-            "FLASK_SECRET_KEY=$FLASK_SECRET_KEY" \
-            "GOOGLE_CLOUD_API_KEY=$GOOGLE_CLOUD_API_KEY"
+        --set-env-vars $SET_ENV_VARS
     echo -e "${GREEN}✅ Container App updated${NC}"
 fi
 

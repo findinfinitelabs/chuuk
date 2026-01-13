@@ -15,8 +15,9 @@ import re
 class ChuukeseLLMTrainer:
     """Trains and manages a local LLM for Chuukese translation"""
     
-    def __init__(self, ollama_host: str = "http://localhost:11434"):
-        self.ollama_host = ollama_host
+    def __init__(self, ollama_host: str = None):
+        # Use environment variable or default to localhost
+        self.ollama_host = ollama_host or os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
         self.db = DictionaryDB()
         self.model_name = "llama3.2:3b"
         self.custom_model_name = "chuukese-translator"
