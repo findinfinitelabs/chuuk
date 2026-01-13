@@ -69,10 +69,14 @@ fi
 
 # Build and push image
 echo -e "${BLUE}🔨 Building Docker image...${NC}"
+echo "Checking frontend directory before build..."
+ls -la frontend/ | head -10 || echo "Warning: frontend directory check failed"
+echo "Current directory: $(pwd)"
 az acr build \
     --registry $CONTAINER_REGISTRY \
     --image $IMAGE_NAME:$IMAGE_TAG \
     --file Dockerfile \
+    --platform linux/amd64 \
     .
 
 echo -e "${GREEN}✅ Image built and pushed${NC}"
