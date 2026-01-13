@@ -222,3 +222,6 @@ models/*/*.pt
 models/*/*.pth
 models/*/*.bin
 models/*/*.spm
+
+# Trained models in scripts directory
+scripts/models/
