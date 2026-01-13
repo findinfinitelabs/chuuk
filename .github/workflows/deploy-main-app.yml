@@ -1,0 +1,55 @@
+name: Deploy Main Dictionary App
+
+# Manual trigger only for testing - change to 'push' later for auto-deploy
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deployment'
+        required: false
+        default: 'Manual deployment'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Set up environment variables
+      run: |
+        echo "Setting up deployment environment variables..."
+        echo "GOOGLE_CLOUD_API_KEY=${{ secrets.GOOGLE_CLOUD_API_KEY }}" >> $GITHUB_ENV
+        echo "FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }}" >> $GITHUB_ENV
+    
+    - name: Deploy to Azure Container Apps
+      run: |
+        echo "🚀 Starting deployment..."
+        echo "Deployment reason: ${{ github.event.inputs.reason }}"
+        
+        # Make script executable
+        chmod +x deploy-container-app.sh
+        
+        # Run deployment script
+        bash deploy-container-app.sh
+      env:
+        GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
+        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+    
+    - name: Deployment Summary
+      if: success()
+      run: |
+        echo "✅ Deployment completed successfully!"
+        echo "🌐 App URL: https://chuuk-dictionary.happydune-4566cd6b.eastus2.azurecontainerapps.io"
+    
+    - name: Deployment Failed
+      if: failure()
+      run: |
+        echo "❌ Deployment failed. Check logs above for details."
+        exit 1
