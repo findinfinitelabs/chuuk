@@ -4,23 +4,30 @@
 
 .git
 .gitignore
-node_modules
-frontend/node_modules
 __pycache__
 *.pyc
 .env
 venv
 .vscode
-logs/*
-output/*
-uploads/*
+
+# Only exclude node_modules in specific locations
+**/node_modules
+
+# Logs and outputs
+logs
+output
+uploads
 *.log
 .DS_Store
+
+# Documentation
 README.md
-docs/
-backup/
-tests/
+docs
+backup
+tests
 *.md
+
+# Scripts not needed in container
 deploy-azure.sh
 run.sh
 dev-start.sh
@@ -28,5 +35,5 @@ dev-start.ps1
 
 # Exclude large training checkpoint files (but keep finetuned models)
 models/**/checkpoint-*
-training_data/
-data/brochures/
+training_data
+data/brochures
