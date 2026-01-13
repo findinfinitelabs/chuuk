@@ -39,11 +39,19 @@ if ! az account show &> /dev/null; then
     az login
 fi
 
-# Register Container Apps provider
-echo -e "${BLUE}📦 Registering Azure Container Apps provider...${NC}"
-az provider register --namespace Microsoft.App --wait
-az provider register --namespace Microsoft.OperationalInsights --wait
-echo -e "${GREEN}✅ Providers registered${NC}"
+# Register Container Apps provider (skip if already registered or no permission)
+echo -e "${BLUE}📦 Checking Azure Container Apps provider...${NC}"
+if az provider register --namespace Microsoft.App --wait 2>/dev/null; then
+    echo -e "${GREEN}✅ Microsoft.App provider registered${NC}"
+else
+    echo -e "${YELLOW}⚠️  Microsoft.App provider registration skipped (may already be registered)${NC}"
+fi
+
+if az provider register --namespace Microsoft.OperationalInsights --wait 2>/dev/null; then
+    echo -e "${GREEN}✅ Microsoft.OperationalInsights provider registered${NC}"
+else
+    echo -e "${YELLOW}⚠️  Microsoft.OperationalInsights provider registration skipped (may already be registered)${NC}"
+fi
 
 # Create Azure Container Registry
 echo -e "${BLUE}🐳 Creating Container Registry...${NC}"
