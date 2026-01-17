@@ -1,0 +1,55 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam ArrowColor Black
+skinparam ActorBorderColor Black
+skinparam ParticipantBorderColor Black
+skinparam ParticipantBackgroundColor White
+skinparam SequenceBoxBorderColor Black
+skinparam SequenceBoxBackgroundColor White
+
+actor User
+participant "deploy-chuuk.sh" as Script
+participant "Azure CLI" as AZ
+participant "Key Vault" as KV
+participant "ACR" as ACR
+participant "Container Apps Env" as CAE
+participant "Cosmos DB" as COSMOS
+participant "Container App: Ollama" as OLLAMA
+participant "Container App: Main" as MAIN
+
+User -> Script: run script
+Script -> AZ: az account show
+AZ --> Script: login ok
+Script -> AZ: az group create (RG)
+Script -> AZ: az keyvault show (KV)
+AZ --> Script: vault info
+Script -> KV: get secret flask-secret-key
+Script -> KV: get secret google-cloud-api-key
+Script -> AZ: az provider register Microsoft.App/OperationalInsights
+Script -> AZ: az acr show/create (ACR)
+Script -> ACR: build/push main image
+Script -> ACR: build/push ollama image
+Script -> AZ: az containerapp env show/create (CAE)
+Script -> AZ: az cosmosdb keys list (COSMOS)
+Script -> AZ: az containerapp create/update (OLLAMA)
+AZ -> OLLAMA: deploy image, internal ingress
+Script -> AZ: az containerapp show (OLLAMA FQDN)
+Script -> AZ: az containerapp create/update (MAIN) with env vars
+note over Script,AZ
+  COSMOS_DB_URI/KEY
+  DB_TYPE=cosmos
+  FLASK_ENV=production
+  FLASK_DEBUG=0
+  FLASK_SECRET_KEY
+  GOOGLE_CLOUD_API_KEY
+  OLLAMA_BASE_URL (from OLLAMA FQDN)
+end note
+AZ -> MAIN: deploy image, external ingress
+note over OLLAMA,MAIN
+  OLLAMA: internal ingress, 2 vCPU / 4Gi, min=1 max=1
+  MAIN: external ingress, 2 vCPU / 4Gi, min=0 max=2
+end note
+MAIN -> OLLAMA: calls via OLLAMA_BASE_URL
+User <-- Script: outputs URLs and log commands
+@enduml
