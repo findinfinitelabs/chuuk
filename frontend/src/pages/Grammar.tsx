@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Title, Text, Stack, Loader, Alert, Badge, Grid, Accordion, Table, Group, Divider, NavLink, Paper, Button, Box, Switch, SimpleGrid } from '@mantine/core'
+import { Card, Title, Text, Stack, Loader, Alert, Badge, Grid, Accordion, Table, Group, Divider, NavLink, Paper, Button, Box, Switch, SimpleGrid, Modal } from '@mantine/core'
 import { IconAlertCircle, IconBook, IconChevronRight, IconNumbers, IconUsers, IconClock, IconMapPin, IconHandFinger, IconUser, IconPalette, IconRun, IconEye, IconPuzzle, IconRefresh, IconCheck, IconX } from '@tabler/icons-react'
 import axios from 'axios'
 import grammarData from '../data/grammarData.json'
+import styles from './Grammar.module.css'
 
 interface GrammarType {
   grammar: string
@@ -42,15 +43,31 @@ const grammarCategories = [
 ]
 
 // Data from JSON
-const { numbers: numberSystems, nouns, locations, existentialVerb, article, sentences, pronouns } = grammarData as {
+const { numbers: numberSystems, nouns, locations, existentialVerb, article, sentences, pronouns, pronounTenses, articles, verbCategories } = grammarData as {
   numbers: Record<string, { label: string; words: { chuukese: string; english: string }[] }>
   nouns: Noun[]
   locations: Location[]
   existentialVerb: { chuukese: string; english: string }
   article: { chuukese: string; english: string }
   sentences: { id: string; name: string; pattern: string; english: string; example: { chuukese: string; english: string } }[]
-  pronouns: { chuukese: string; english: string }[]
+  pronouns: { 
+    english: string
+    chuukese: string
+    pastPresent: string
+    future: string
+    indefinite: string
+    simpleNegative: string
+    emphaticNegative: string
+  }[]
+  pronounTenses: { id: string; label: string }[]
+  articles: { category: string; chuukese: string; meaning: string; notes: string; isPlural: boolean }[]
+  verbCategories: { id: string; label: string; verbs: { chuukese: string; english: string; simpleEnglish: string }[] }[]
 }
+
+// Flatten verbCategories into a simple verbs array for the sentence builder
+const verbs = verbCategories.flatMap(cat => cat.verbs.map(v => ({ chuukese: v.chuukese, english: v.english })))
+
+type PronounTense = 'pastPresent' | 'future' | 'indefinite' | 'simpleNegative' | 'emphaticNegative'
 
 function Grammar() {
   const [loading, setLoading] = useState(true)
@@ -64,8 +81,17 @@ function Grammar() {
   const [highlightedNoun, setHighlightedNoun] = useState<number | null>(null)
   const [selectedLocation, setSelectedLocation] = useState<number>(0)
   const [highlightedLocation, setHighlightedLocation] = useState<number | null>(null)
-  const [selectedPronoun] = useState<number>(0)
-  // const [highlightedPronoun, setHighlightedPronoun] = useState<number | null>(null)
+  const [selectedPronoun, setSelectedPronoun] = useState<number>(0)
+  const [highlightedPronoun, setHighlightedPronoun] = useState<number | null>(null)
+  const [selectedTense, setSelectedTense] = useState<PronounTense>('pastPresent')
+  const [highlightedTense, setHighlightedTense] = useState<PronounTense | null>(null)
+  const [pronounModalOpen, setPronounModalOpen] = useState(false)
+  const [articleModalOpen, setArticleModalOpen] = useState(false)
+  const [selectedArticle, setSelectedArticle] = useState<number>(0)
+  const [highlightedArticle, setHighlightedArticle] = useState<number | null>(null)
+  const [selectedVerb, setSelectedVerb] = useState<number>(5) // Default to 'wor' (have)
+  const [highlightedVerb, setHighlightedVerb] = useState<number | null>(null)
+  const [verbModalOpen, setVerbModalOpen] = useState(false)
   
   // Build Mode state
   type BuildSlot = 'subject' | 'verb' | 'number' | 'noun' | 'prep' | 'article' | 'location'
@@ -167,6 +193,46 @@ function Grammar() {
     }, 5000)
   }, [])
 
+  const handlePronounSelect = useCallback((idx: number) => {
+    setSelectedPronoun(idx)
+    setHighlightedPronoun(idx)
+    
+    // Clear highlight after 5 seconds
+    setTimeout(() => {
+      setHighlightedPronoun(null)
+    }, 5000)
+  }, [])
+
+  const handleTenseSelect = useCallback((tense: PronounTense) => {
+    setSelectedTense(tense)
+    setHighlightedTense(tense)
+    
+    // Clear highlight after 5 seconds
+    setTimeout(() => {
+      setHighlightedTense(null)
+    }, 5000)
+  }, [])
+
+  const handleArticleSelect = useCallback((idx: number) => {
+    setSelectedArticle(idx)
+    setHighlightedArticle(idx)
+    
+    // Clear highlight after 5 seconds
+    setTimeout(() => {
+      setHighlightedArticle(null)
+    }, 5000)
+  }, [])
+
+  const handleVerbSelect = useCallback((idx: number) => {
+    setSelectedVerb(idx)
+    setHighlightedVerb(idx)
+    
+    // Clear highlight after 5 seconds
+    setTimeout(() => {
+      setHighlightedVerb(null)
+    }, 5000)
+  }, [])
+
   const getEnglishNumber = (num: number): string => {
     const numbers = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
     return numbers[num - 1] || 'one'
@@ -179,6 +245,56 @@ function Grammar() {
     if (word.endsWith('y')) return word.slice(0, -1) + 'ies'
     if (word.endsWith('s') || word.endsWith('x') || word.endsWith('ch') || word.endsWith('sh')) return word + 'es'
     return word + 's'
+  }
+
+  // Pluralize location word based on article
+  const getLocationEnglish = (location: Location, articleIdx: number): string => {
+    const word = location.english
+    const isPlural = articles[articleIdx].isPlural
+    if (!isPlural) return word
+    // Simple pluralization
+    if (word.endsWith('y')) return word.slice(0, -1) + 'ies'
+    if (word.endsWith('s') || word.endsWith('x') || word.endsWith('ch') || word.endsWith('sh')) return word + 'es'
+    if (word.endsWith('f')) return word.slice(0, -1) + 'ves'
+    if (word.endsWith('fe')) return word.slice(0, -2) + 'ves'
+    return word + 's'
+  }
+
+  // Get simple verb form from full definition (e.g., "to read; to study" -> "read")
+  const getSimpleVerb = (verbEnglish: string): string => {
+    // Get first definition and remove "to "
+    const firstDef = verbEnglish.split(';')[0].trim()
+    return firstDef.replace(/^to /, '')
+  }
+
+  // Get English verb phrase based on pronoun, tense, and verb
+  const getEnglishVerbPhrase = (pronounEnglish: string, tense: PronounTense, verbIdx?: number): string => {
+    const isThirdPersonSingular = pronounEnglish === 'he/she/it'
+    const verb = verbIdx !== undefined ? getSimpleVerb(verbs[verbIdx].english) : 'have'
+    
+    // Handle third person singular for regular verbs in past/present
+    const getThirdPersonVerb = (v: string): string => {
+      if (v === 'have') return 'has'
+      if (v === 'be') return 'is'
+      if (v.endsWith('y')) return v.slice(0, -1) + 'ies'
+      if (v.endsWith('s') || v.endsWith('x') || v.endsWith('ch') || v.endsWith('sh') || v.endsWith('o')) return v + 'es'
+      return v + 's'
+    }
+    
+    switch (tense) {
+      case 'pastPresent':
+        return isThirdPersonSingular ? getThirdPersonVerb(verb) : verb
+      case 'future':
+        return `will ${verb}`
+      case 'indefinite':
+        return `shall ${verb}`
+      case 'simpleNegative':
+        return isThirdPersonSingular ? `doesn't ${verb}` : `don't ${verb}`
+      case 'emphaticNegative':
+        return `must not ${verb}`
+      default:
+        return verb
+    }
   }
 
   // Build mode functions
@@ -405,10 +521,10 @@ function Grammar() {
               {activeSentence === 'possession' ? (
                 <>
                   <Text size="xl" fw={700} style={{ color: '#3B1898', fontSize: '1.5rem' }}>
-                    {currentPronoun.chuukese} {existentialVerb.chuukese} {currentNumberWord} {currentNoun.chuukese}
+                    {currentPronoun[selectedTense]} {existentialVerb.chuukese} {currentNumberWord} {currentNoun.chuukese}
                   </Text>
                   <Text size="sm" c="dimmed" mt="xs">
-                    ({currentPronoun.english} {selectedNumber === 1 ? 'have' : 'have'} {selectedNumber ? getEnglishNumber(selectedNumber) : 'one'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english})
+                    ({currentPronoun.english} {getEnglishVerbPhrase(currentPronoun.english, selectedTense)} {selectedNumber ? getEnglishNumber(selectedNumber) : 'one'} {selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english})
                   </Text>
                 </>
               ) : (
@@ -514,8 +630,8 @@ function Grammar() {
                 <Group gap="xl" justify="flex-start" wrap="wrap">
                   {buildOrder.map((slot, idx) => {
                     const wordMap: Record<BuildSlot, { chuukese: string; english: string }> = activeSentence === 'possession' ? {
-                      subject: { chuukese: currentPronoun.chuukese, english: currentPronoun.english },
-                      verb: { chuukese: existentialVerb.chuukese, english: 'have' },
+                      subject: { chuukese: currentPronoun[selectedTense], english: currentPronoun.english },
+                      verb: { chuukese: existentialVerb.chuukese, english: getEnglishVerbPhrase(currentPronoun.english, selectedTense) },
                       number: { chuukese: currentNumberWord || '—', english: selectedNumber ? getEnglishNumber(selectedNumber) : '—' },
                       noun: { chuukese: currentNoun.chuukese, english: currentNoun.english },
                       prep: { chuukese: '', english: '' },
@@ -576,21 +692,41 @@ function Grammar() {
               <Group gap="xl" justify="center" wrap="wrap">
                 {activeSentence === 'possession' ? (
                   <>
-                    <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{currentPronoun.chuukese}</Text>
+                    <Box 
+                      ta="center" 
+                      className={styles.clickableSubject}
+                      onClick={() => setPronounModalOpen(true)}
+                    >
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        className={highlightedPronoun !== null || highlightedTense !== null ? styles.clickableSubjectTextHighlighted : styles.clickableSubjectText}
+                      >
+                        {currentPronoun[selectedTense]}
+                      </Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Subject</Text>
                       <Text size="sm" c="dimmed">{currentPronoun.english}</Text>
                     </Box>
-                    <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{existentialVerb.chuukese}</Text>
+                    <Box 
+                      ta="center"
+                      className={styles.clickableVerb}
+                      onClick={() => setVerbModalOpen(true)}
+                    >
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        className={highlightedVerb !== null ? styles.clickableSubjectTextHighlighted : styles.clickableVerbText}
+                      >
+                        {verbs[selectedVerb].chuukese}
+                      </Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Verb</Text>
-                      <Text size="sm" c="dimmed">have</Text>
+                      <Text size="sm" c="dimmed">{getEnglishVerbPhrase(currentPronoun.english, selectedTense, selectedVerb)}</Text>
                     </Box>
                     <Box ta="center">
                       <Text 
                         size="xl" 
                         fw={700} 
-                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNumberHighlighted ? '#27B249' : 'inherit' }}
+                        className={isNumberHighlighted ? styles.sentenceWordHighlighted : styles.sentenceWord}
                       >
                         {currentNumberWord || '—'}
                       </Text>
@@ -601,7 +737,7 @@ function Grammar() {
                       <Text 
                         size="xl" 
                         fw={700} 
-                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNounHighlighted ? '#27B249' : 'inherit' }}
+                        className={isNounHighlighted ? styles.sentenceWordHighlighted : styles.sentenceWord}
                       >
                         {currentNoun.chuukese}
                       </Text>
@@ -612,12 +748,12 @@ function Grammar() {
                 ) : (
                   <>
                     <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>A</Text>
+                      <Text size="xl" fw={700} className={styles.sentenceWord}>A</Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Subject</Text>
                       <Text size="sm" c="dimmed">There</Text>
                     </Box>
                     <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{existentialVerb.chuukese}</Text>
+                      <Text size="xl" fw={700} className={styles.sentenceWord}>{existentialVerb.chuukese}</Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Verb</Text>
                       <Text size="sm" c="dimmed">{selectedNumber === 1 ? 'is' : 'are'}</Text>
                     </Box>
@@ -625,7 +761,7 @@ function Grammar() {
                       <Text 
                         size="xl" 
                         fw={700} 
-                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNumberHighlighted ? '#27B249' : 'inherit' }}
+                        className={isNumberHighlighted ? styles.sentenceWordHighlighted : styles.sentenceWord}
                       >
                         {currentNumberWord || '—'}
                       </Text>
@@ -636,7 +772,7 @@ function Grammar() {
                       <Text 
                         size="xl" 
                         fw={700} 
-                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isNounHighlighted ? '#27B249' : 'inherit' }}
+                        className={isNounHighlighted ? styles.sentenceWordHighlighted : styles.sentenceWord}
                       >
                         {currentNoun.chuukese}
                       </Text>
@@ -644,33 +780,43 @@ function Grammar() {
                       <Text size="sm" c="dimmed">{selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}</Text>
                     </Box>
                     <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{currentLocation.preposition}</Text>
+                      <Text size="xl" fw={700} className={styles.sentenceWord}>{currentLocation.preposition}</Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Prep</Text>
                       <Text size="sm" c="dimmed">{currentLocation.englishPreposition.split(' ')[0]}</Text>
                     </Box>
-                    <Box ta="center">
-                      <Text size="xl" fw={700} style={{ fontSize: '1.6rem', lineHeight: 1.4 }}>{article.chuukese}</Text>
+                    <Box 
+                      ta="center" 
+                      className={styles.clickableArticle}
+                      onClick={() => setArticleModalOpen(true)}
+                    >
+                      <Text 
+                        size="xl" 
+                        fw={700} 
+                        className={highlightedArticle !== null ? styles.clickableSubjectTextHighlighted : styles.clickableArticleText}
+                      >
+                        {articles[selectedArticle].chuukese}
+                      </Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Article</Text>
-                      <Text size="sm" c="dimmed">{article.english}</Text>
+                      <Text size="sm" c="dimmed">{articles[selectedArticle].meaning}</Text>
                     </Box>
                     <Box ta="center">
                       <Text 
                         size="xl" 
                         fw={700} 
-                        style={{ fontSize: '1.6rem', lineHeight: 1.4, color: isLocationHighlighted ? '#27B249' : 'inherit' }}
+                        className={isLocationHighlighted ? styles.sentenceWordHighlighted : styles.sentenceWord}
                       >
                         {currentLocation.chuukese}
                       </Text>
                       <Text size="xs" c="dimmed" tt="uppercase">Location</Text>
-                      <Text size="sm" c="dimmed">{currentLocation.english}</Text>
+                      <Text size="sm" c="dimmed">{getLocationEnglish(currentLocation, selectedArticle)}</Text>
                     </Box>
                   </>
                 )}
               </Group>
               <Text ta="center" size="sm" c="dimmed" mt="xs">
                 {activeSentence === 'possession' 
-                  ? `"${currentPronoun.english} have ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}."`
-                  : `"There ${selectedNumber === 1 ? 'is' : 'are'} ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english + 's'} ${currentLocation.englishPreposition} ${currentLocation.english}."`
+                  ? `"${currentPronoun.english} ${getEnglishVerbPhrase(currentPronoun.english, selectedTense)} ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english}."`
+                  : `"There ${selectedNumber === 1 ? 'is' : 'are'} ${selectedNumber ? getEnglishNumber(selectedNumber) : '—'} ${selectedNumber ? getEnglishPlural(selectedNumber, currentNoun) : currentNoun.english + 's'} ${currentLocation.englishPreposition.split(' ')[0]} the ${getLocationEnglish(currentLocation, selectedArticle)}."`
                 }
               </Text>
             </Box>
@@ -777,19 +923,31 @@ function Grammar() {
 
               {/* Locations Card */}
               <Grid.Col span={{ base: 6, md: 3 }}>
-                <Card shadow="xs" p="xs" radius="sm" withBorder h="100%">
+                <Card 
+                  shadow="xs" 
+                  p="xs" 
+                  radius="sm" 
+                  withBorder 
+                  h="100%"
+                  style={{ 
+                    opacity: activeSentence === 'possession' ? 0.4 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
                   <Text size="xs" fw={600} c="dimmed" mb="xs">Locations:</Text>
                   <SimpleGrid cols={2} spacing={4}>
                     {locations.map((location, idx) => {
                       const isSelected = selectedLocation === idx
                       const isHighlighted = highlightedLocation === idx
+                      const isDisabled = activeSentence === 'possession'
                       return (
                         <Button
                           key={`location-${idx}`}
                           variant="subtle"
                           color="cyan"
                           size="xs"
-                          onClick={() => handleLocationSelect(idx)}
+                          disabled={isDisabled}
+                          onClick={() => !isDisabled && handleLocationSelect(idx)}
                           styles={{
                             root: {
                               transition: 'all 0.3s ease',
@@ -799,8 +957,9 @@ function Grammar() {
                               padding: '10px 12px',
                               minHeight: 'auto',
                               height: 'auto',
-                              backgroundColor: isHighlighted ? '#27B249' : isSelected ? 'rgba(21, 170, 191, 0.15)' : 'rgba(0, 0, 0, 0.04)',
-                              color: isHighlighted ? 'white' : isSelected ? '#15aabf' : 'inherit',
+                              backgroundColor: isDisabled ? 'rgba(0, 0, 0, 0.04)' : isHighlighted ? '#27B249' : isSelected ? 'rgba(21, 170, 191, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isDisabled ? '#adb5bd' : isHighlighted ? 'white' : isSelected ? '#15aabf' : 'inherit',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
                               '&:focus': { outline: 'none', boxShadow: 'none' },
                               '&:focus-visible': { outline: 'none', boxShadow: 'none' },
                             }
@@ -813,9 +972,313 @@ function Grammar() {
                   </SimpleGrid>
                 </Card>
               </Grid.Col>
+
+              {/* Pronouns Card - only for possession sentence */}
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Card 
+                  shadow="xs" 
+                  p="xs" 
+                  radius="sm" 
+                  withBorder 
+                  h="100%"
+                  style={{ 
+                    opacity: activeSentence === 'existential' ? 0.4 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Pronouns:</Text>
+                  <SimpleGrid cols={2} spacing={4}>
+                    {pronouns.map((pronoun, idx) => {
+                      const isSelected = selectedPronoun === idx
+                      const isHighlighted = highlightedPronoun === idx
+                      const isDisabled = activeSentence === 'existential'
+                      return (
+                        <Button
+                          key={`pronoun-${idx}`}
+                          variant="subtle"
+                          color="violet"
+                          size="xs"
+                          disabled={isDisabled}
+                          onClick={() => !isDisabled && handlePronounSelect(idx)}
+                          styles={{
+                            root: {
+                              transition: 'all 0.3s ease',
+                              borderRadius: '1px',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '10px 12px',
+                              minHeight: 'auto',
+                              height: 'auto',
+                              backgroundColor: isDisabled ? 'rgba(0, 0, 0, 0.04)' : isHighlighted ? '#27B249' : isSelected ? 'rgba(121, 80, 242, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isDisabled ? '#adb5bd' : isHighlighted ? 'white' : isSelected ? '#7950f2' : 'inherit',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              '&:focus': { outline: 'none', boxShadow: 'none' },
+                              '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                            }
+                          }}
+                        >
+                          {pronoun.english}
+                        </Button>
+                      )
+                    })}
+                  </SimpleGrid>
+                </Card>
+              </Grid.Col>
+
+              {/* Tense Card - only for possession sentence */}
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card 
+                  shadow="xs" 
+                  p="xs" 
+                  radius="sm" 
+                  withBorder 
+                  h="100%"
+                  style={{ 
+                    opacity: activeSentence === 'existential' ? 0.4 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Tense:</Text>
+                  <SimpleGrid cols={5} spacing={4}>
+                    {pronounTenses.map((tense) => {
+                      const isSelected = selectedTense === tense.id
+                      const isHighlighted = highlightedTense === tense.id
+                      const isDisabled = activeSentence === 'existential'
+                      return (
+                        <Button
+                          key={`tense-${tense.id}`}
+                          variant="subtle"
+                          color="grape"
+                          size="xs"
+                          disabled={isDisabled}
+                          onClick={() => !isDisabled && handleTenseSelect(tense.id as PronounTense)}
+                          styles={{
+                            root: {
+                              transition: 'all 0.3s ease',
+                              borderRadius: '1px',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '8px 6px',
+                              minHeight: 'auto',
+                              height: 'auto',
+                              backgroundColor: isDisabled ? 'rgba(0, 0, 0, 0.04)' : isHighlighted ? '#27B249' : isSelected ? 'rgba(190, 75, 219, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isDisabled ? '#adb5bd' : isHighlighted ? 'white' : isSelected ? '#be4bdb' : 'inherit',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              '&:focus': { outline: 'none', boxShadow: 'none' },
+                              '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                            }
+                          }}
+                        >
+                          <Text size="xs" fw={600}>{tense.label}</Text>
+                        </Button>
+                      )
+                    })}
+                  </SimpleGrid>
+                </Card>
+              </Grid.Col>
+
+              {/* Verbs Card - only for possession sentence */}
+              <Grid.Col span={12}>
+                <Card 
+                  shadow="xs" 
+                  p="xs" 
+                  radius="sm" 
+                  withBorder 
+                  style={{ 
+                    opacity: activeSentence === 'existential' ? 0.4 : 1,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                >
+                  <Text size="xs" fw={600} c="dimmed" mb="xs">Verbs:</Text>
+                  <SimpleGrid cols={{ base: 4, sm: 6, md: 8, lg: 10 }} spacing={4}>
+                    {verbs.map((verb, idx) => {
+                      const isSelected = selectedVerb === idx
+                      const isHighlighted = highlightedVerb === idx
+                      const isDisabled = activeSentence === 'existential'
+                      return (
+                        <Button
+                          key={`verb-${idx}`}
+                          variant="subtle"
+                          color="teal"
+                          size="xs"
+                          disabled={isDisabled}
+                          onClick={() => !isDisabled && handleVerbSelect(idx)}
+                          styles={{
+                            root: {
+                              transition: 'all 0.3s ease',
+                              borderRadius: '1px',
+                              border: 'none',
+                              outline: 'none',
+                              padding: '8px 6px',
+                              minHeight: 'auto',
+                              height: 'auto',
+                              backgroundColor: isDisabled ? 'rgba(0, 0, 0, 0.04)' : isHighlighted ? '#27B249' : isSelected ? 'rgba(18, 184, 134, 0.15)' : 'rgba(0, 0, 0, 0.04)',
+                              color: isDisabled ? '#adb5bd' : isHighlighted ? 'white' : isSelected ? '#12b886' : 'inherit',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              '&:focus': { outline: 'none', boxShadow: 'none' },
+                              '&:focus-visible': { outline: 'none', boxShadow: 'none' },
+                            }
+                          }}
+                        >
+                          <Text size="xs" fw={500}>{verb.chuukese}</Text>
+                        </Button>
+                      )
+                    })}
+                  </SimpleGrid>
+                </Card>
+              </Grid.Col>
             </Grid>
           </>
         )}
+
+        {/* Pronoun Conjugation Modal */}
+        <Modal 
+          opened={pronounModalOpen} 
+          onClose={() => setPronounModalOpen(false)} 
+          title="Chuukese Pronoun Conjugation Table"
+          size="xl"
+          centered
+        >
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>English</Table.Th>
+                <Table.Th>Pronoun</Table.Th>
+                <Table.Th>Past/Present</Table.Th>
+                <Table.Th>Future</Table.Th>
+                <Table.Th>Indefinite</Table.Th>
+                <Table.Th>Simple Neg.</Table.Th>
+                <Table.Th>Emphatic Neg.</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {pronouns.map((pronoun, idx) => (
+                <Table.Tr 
+                  key={`pronoun-row-${idx}`}
+                  className={selectedPronoun === idx ? styles.pronounTableRowSelected : styles.pronounTableRow}
+                  onClick={() => {
+                    handlePronounSelect(idx)
+                  }}
+                >
+                  <Table.Td fw={500}>{pronoun.english}</Table.Td>
+                  <Table.Td>{pronoun.chuukese}</Table.Td>
+                  <Table.Td 
+                    className={selectedPronoun === idx && selectedTense === 'pastPresent' ? styles.pronounTableCellSelected : styles.pronounTableCell}
+                    onClick={(e) => { e.stopPropagation(); handlePronounSelect(idx); handleTenseSelect('pastPresent'); }}
+                  >
+                    {pronoun.pastPresent}
+                  </Table.Td>
+                  <Table.Td 
+                    className={selectedPronoun === idx && selectedTense === 'future' ? styles.pronounTableCellSelected : styles.pronounTableCell}
+                    onClick={(e) => { e.stopPropagation(); handlePronounSelect(idx); handleTenseSelect('future'); }}
+                  >
+                    {pronoun.future}
+                  </Table.Td>
+                  <Table.Td 
+                    className={selectedPronoun === idx && selectedTense === 'indefinite' ? styles.pronounTableCellSelected : styles.pronounTableCell}
+                    onClick={(e) => { e.stopPropagation(); handlePronounSelect(idx); handleTenseSelect('indefinite'); }}
+                  >
+                    {pronoun.indefinite}
+                  </Table.Td>
+                  <Table.Td 
+                    className={selectedPronoun === idx && selectedTense === 'simpleNegative' ? styles.pronounTableCellSelected : styles.pronounTableCell}
+                    onClick={(e) => { e.stopPropagation(); handlePronounSelect(idx); handleTenseSelect('simpleNegative'); }}
+                  >
+                    {pronoun.simpleNegative}
+                  </Table.Td>
+                  <Table.Td 
+                    className={selectedPronoun === idx && selectedTense === 'emphaticNegative' ? styles.pronounTableCellSelected : styles.pronounTableCell}
+                    onClick={(e) => { e.stopPropagation(); handlePronounSelect(idx); handleTenseSelect('emphaticNegative'); }}
+                  >
+                    {pronoun.emphaticNegative}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <Text size="sm" c="dimmed" mt="md" ta="center">
+            Click any cell to select that pronoun and tense combination
+          </Text>
+        </Modal>
+
+        {/* Article Reference Modal */}
+        <Modal 
+          opened={articleModalOpen} 
+          onClose={() => setArticleModalOpen(false)} 
+          title="Chuukese Articles Reference"
+          size="xl"
+          centered
+        >
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Category</Table.Th>
+                <Table.Th>Article</Table.Th>
+                <Table.Th>Meaning</Table.Th>
+                <Table.Th>Notes / Usage</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {articles.map((art, idx) => (
+                <Table.Tr 
+                  key={`article-row-${idx}`} 
+                  className={selectedArticle === idx ? styles.articleTableRowSelected : styles.articleTableRow}
+                  onClick={() => handleArticleSelect(idx)}
+                >
+                  <Table.Td>{art.category}</Table.Td>
+                  <Table.Td 
+                    className={selectedArticle === idx ? styles.articleTableCellSelected : styles.articleTableCell}
+                    onClick={(e) => { e.stopPropagation(); handleArticleSelect(idx); }}
+                  >
+                    {art.chuukese}
+                  </Table.Td>
+                  <Table.Td>{art.meaning}</Table.Td>
+                  <Table.Td><Text size="sm" c="dimmed">{art.notes}</Text></Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <Text size="sm" c="dimmed" mt="md" ta="center">
+            Click any row to select that article for the sentence
+          </Text>
+        </Modal>
+
+        {/* Verb Reference Modal */}
+        <Modal 
+          opened={verbModalOpen} 
+          onClose={() => setVerbModalOpen(false)} 
+          title="Chuukese Verbs Reference"
+          size="xl"
+          centered
+        >
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Chuukese</Table.Th>
+                <Table.Th>English</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {verbs.map((verb, idx) => (
+                <Table.Tr 
+                  key={`verb-row-${idx}`} 
+                  className={selectedVerb === idx ? styles.verbTableRowSelected : styles.verbTableRow}
+                  onClick={() => handleVerbSelect(idx)}
+                >
+                  <Table.Td 
+                    className={selectedVerb === idx ? styles.verbTableCellSelected : styles.verbTableCell}
+                  >
+                    {verb.chuukese}
+                  </Table.Td>
+                  <Table.Td>{verb.english}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <Text size="sm" c="dimmed" mt="md" ta="center">
+            Click any row to select that verb for the sentence
+          </Text>
+        </Modal>
       </Stack>
     )
   }
@@ -934,7 +1397,7 @@ function Grammar() {
                         }
                       }}
                     >
-                      {sentence.example.chuukese}
+                      {sentence.example.english}
                     </Button>
                   ))}
                 </Stack>
