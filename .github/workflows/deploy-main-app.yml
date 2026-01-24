@@ -34,10 +34,10 @@ jobs:
         echo "Deployment reason: ${{ github.event.inputs.reason }}"
         
         # Make script executable
-        chmod +x deploy-container-app.sh
+        chmod +x deploy-chuuk.sh
         
         # Run deployment script
-        bash deploy-container-app.sh
+        bash deploy-chuuk.sh
       env:
         GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
         FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
