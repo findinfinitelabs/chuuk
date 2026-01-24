@@ -1,0 +1,126 @@
+/* Grammar Page Styles */
+
+/* Clickable subject in sentence display */
+.clickableSubject {
+  cursor: pointer;
+}
+
+.clickableSubjectText {
+  font-size: 1.6rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+}
+
+.clickableSubjectTextHighlighted {
+  font-size: 1.6rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+  color: #27B249;
+}
+
+/* Pronoun modal table */
+.pronounTableRow {
+  cursor: pointer;
+}
+
+.pronounTableRowSelected {
+  cursor: pointer;
+  background-color: rgba(121, 80, 242, 0.1);
+}
+
+.pronounTableCell {
+  cursor: pointer;
+}
+
+.pronounTableCellSelected {
+  cursor: pointer;
+  background-color: #27B249;
+  color: white;
+}
+
+/* Sentence word displays */
+.sentenceWord {
+  font-size: 1.6rem;
+  line-height: 1.4;
+}
+
+.sentenceWordHighlighted {
+  font-size: 1.6rem;
+  line-height: 1.4;
+  color: #27B249;
+}
+
+/* Clickable article in sentence display */
+.clickableArticle {
+  cursor: pointer;
+}
+
+.clickableArticleText {
+  font-size: 1.6rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+}
+
+/* Article modal table */
+.articleTableRow {
+  cursor: pointer;
+}
+
+.articleTableRowSelected {
+  cursor: pointer;
+  background-color: rgba(121, 80, 242, 0.1);
+}
+
+.articleTableCell {
+  cursor: pointer;
+}
+
+.articleTableCellSelected {
+  cursor: pointer;
+  background-color: #27B249;
+  color: white;
+}
+
+.articleTableChuukese {
+  font-weight: 600;
+  color: #7950f2;
+}
+
+/* Clickable verb in sentence display */
+.clickableVerb {
+  cursor: pointer;
+}
+
+.clickableVerbText {
+  font-size: 1.6rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+}
+
+/* Verb modal table */
+.verbTableRow {
+  cursor: pointer;
+}
+
+.verbTableRowSelected {
+  cursor: pointer;
+  background-color: rgba(121, 80, 242, 0.1);
+}
+
+.verbTableCell {
+  cursor: pointer;
+}
+
+.verbTableCellSelected {
+  cursor: pointer;
+  background-color: #27B249;
+  color: white;
+}
