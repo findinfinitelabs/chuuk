@@ -1,20 +1,191 @@
 ---
 name: css-styling-standards
-description: CSS styling standards and best practices for responsive, accessible, and maintainable web interfaces with special considerations for multilingual content and Chuukese text display. Use when creating or modifying stylesheets and CSS components.
+description: CSS styling standards and best practices for responsive, accessible, and maintainable web interfaces with special considerations for multilingual content and Chuukese text display. Includes Mantine UI v8 integration for React components. Use when creating or modifying stylesheets and CSS components.
 ---
 
 # CSS Styling Standards
 
 ## Core Principles
+
 - **Mobile-first design**: Start with mobile styles, enhance for larger screens
 - **Accessibility compliance**: Meet WCAG 2.1 AA standards
 - **Multilingual support**: Proper display of accented characters and different writing systems
-- **Consistent naming**: Use BEM methodology for class naming
+- **Consistent naming**: Use BEM methodology for class naming (unless using Mantine)
 - **Performance optimization**: Minimize CSS size and loading time
+- **Mantine Integration**: Use Mantine UI v8 component system for React frontend
 
-## CSS Architecture
+## Mantine UI v8 Integration
+
+### 1. Theme Configuration
+
+```typescript
+// frontend/src/theme.ts
+import { createTheme, MantineColorsTuple } from '@mantine/core';
+
+// Custom color palette for Chuukese dictionary
+const primaryBlue: MantineColorsTuple = [
+  '#e5f4ff',
+  '#cde4ff',
+  '#9bc5ff',
+  '#64a4ff',
+  '#3988fe',
+  '#1d77fe',
+  '#096fff',
+  '#005ee4',
+  '#0053cd',
+  '#0047b5',
+];
+
+export const theme = createTheme({
+  primaryColor: 'blue',
+  colors: {
+    blue: primaryBlue,
+  },
+  fontFamily: "'Noto Sans', 'Arial Unicode MS', sans-serif",
+  
+  // Chuukese-optimized typography
+  headings: {
+    fontFamily: "'Noto Sans', 'Arial Unicode MS', sans-serif",
+    fontWeight: '600',
+  },
+  
+  // Default to dark color scheme
+  defaultColorScheme: 'dark',
+  
+  // Component overrides for Chuukese text
+  components: {
+    Text: {
+      defaultProps: {
+        style: { 
+          fontFeatureSettings: "'kern' 1, 'liga' 1" 
+        }
+      }
+    },
+    TextInput: {
+      defaultProps: {
+        styles: {
+          input: {
+            fontFamily: "'Noto Sans', 'Arial Unicode MS', sans-serif",
+          }
+        }
+      }
+    },
+    Textarea: {
+      defaultProps: {
+        styles: {
+          input: {
+            fontFamily: "'Noto Sans', 'Arial Unicode MS', sans-serif",
+            lineHeight: 1.6,
+          }
+        }
+      }
+    }
+  }
+});
+```
+
+### 2. Mantine Provider Setup
+
+```tsx
+// frontend/src/main.tsx
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+
+import { MantineProvider } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
+import { ModalsProvider } from '@mantine/modals';
+import { theme } from './theme';
+
+function App() {
+  return (
+    <MantineProvider theme={theme} defaultColorScheme="dark">
+      <Notifications position="top-right" />
+      <ModalsProvider>
+        {/* App content */}
+      </ModalsProvider>
+    </MantineProvider>
+  );
+}
+```
+
+### 3. Chuukese Text with Mantine
+
+```tsx
+import { Text, Title, Badge, Card } from '@mantine/core';
+
+// Chuukese word display component
+function ChuukeseWord({ word, definition }: { word: string; definition: string }) {
+  return (
+    <Card shadow="sm" padding="lg" radius="md" withBorder>
+      <Title order={3} style={{ fontFeatureSettings: "'kern' 1" }}>
+        {word}
+      </Title>
+      <Text c="dimmed" size="sm" mt="xs">
+        {definition}
+      </Text>
+    </Card>
+  );
+}
+
+// Translation input with Mantine
+function TranslationInput({ direction }: { direction: 'chk_to_en' | 'en_to_chk' }) {
+  return (
+    <Textarea
+      label={direction === 'chk_to_en' ? 'Chuukese Text' : 'English Text'}
+      placeholder={direction === 'chk_to_en' 
+        ? 'Enter Chuukese text to translate...' 
+        : 'Enter English text to translate...'}
+      minRows={4}
+      autosize
+      styles={{
+        input: {
+          fontFamily: "'Noto Sans', 'Arial Unicode MS', sans-serif",
+          fontSize: '1.1rem',
+        }
+      }}
+    />
+  );
+}
+```
+
+### 4. Common Mantine Patterns
+
+```tsx
+// Loading state
+import { Loader, Center, Stack, Text } from '@mantine/core';
+
+<Center h={200}>
+  <Stack align="center">
+    <Loader size="lg" />
+    <Text c="dimmed">Translating...</Text>
+  </Stack>
+</Center>
+
+// Notifications
+import { notifications } from '@mantine/notifications';
+
+notifications.show({
+  title: 'Translation Complete',
+  message: 'Your text has been translated successfully',
+  color: 'green',
+});
+
+// Modals
+import { modals } from '@mantine/modals';
+
+modals.openConfirmModal({
+  title: 'Delete Entry',
+  children: <Text>Are you sure you want to delete this entry?</Text>,
+  labels: { confirm: 'Delete', cancel: 'Cancel' },
+  confirmProps: { color: 'red' },
+  onConfirm: () => handleDelete(),
+});
+```
+
+## CSS Architecture (Non-Mantine Styles)
 
 ### 1. File Organization
+
 ```css
 /* Main stylesheet structure */
 @import 'normalize.css';           /* CSS reset */
@@ -27,16 +198,17 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 2. CSS Custom Properties (Variables)
+
 ```css
 :root {
-  /* Colors */
-  --primary-color: #2563eb;
+  /* Colors - should align with Mantine theme */
+  --primary-color: #228be6;
   --secondary-color: #64748b;
   --accent-color: #f59e0b;
-  --text-color: #1f2937;
-  --text-light: #6b7280;
-  --background-color: #ffffff;
-  --surface-color: #f9fafb;
+  --text-color: #c1c2c5;
+  --text-light: #909296;
+  --background-color: #1a1b1e;
+  --surface-color: #25262b;
   
   /* Typography */
   --font-family-primary: 'Noto Sans', 'Arial Unicode MS', sans-serif;
@@ -46,24 +218,40 @@ description: CSS styling standards and best practices for responsive, accessible
   --line-height-base: 1.6;
   --line-height-tight: 1.4;
   
-  /* Spacing */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
+  /* Spacing - matches Mantine spacing scale */
+  --spacing-xs: 0.625rem;   /* 10px - Mantine xs */
+  --spacing-sm: 0.75rem;    /* 12px - Mantine sm */
+  --spacing-md: 1rem;       /* 16px - Mantine md */
+  --spacing-lg: 1.25rem;    /* 20px - Mantine lg */
+  --spacing-xl: 2rem;       /* 32px - Mantine xl */
   
-  /* Breakpoints */
-  --breakpoint-sm: 640px;
-  --breakpoint-md: 768px;
-  --breakpoint-lg: 1024px;
-  --breakpoint-xl: 1280px;
+  /* Mantine-aligned breakpoints */
+  --breakpoint-xs: 576px;
+  --breakpoint-sm: 768px;
+  --breakpoint-md: 992px;
+  --breakpoint-lg: 1200px;
+  --breakpoint-xl: 1400px;
+}
+
+/* Dark mode (Mantine default) */
+[data-mantine-color-scheme="dark"] {
+  --text-color: #c1c2c5;
+  --background-color: #1a1b1e;
+  --surface-color: #25262b;
+}
+
+/* Light mode */
+[data-mantine-color-scheme="light"] {
+  --text-color: #1f2937;
+  --background-color: #ffffff;
+  --surface-color: #f9fafb;
 }
 ```
 
 ## Component Standards
 
 ### 1. Chuukese Text Display
+
 ```css
 /* 
  * Chuukese Text Component
@@ -95,6 +283,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 2. Translation Interface Components
+
 ```css
 /* 
  * Translation Input Component
@@ -131,6 +320,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 3. Dictionary Entry Component
+
 ```css
 /* 
  * Dictionary Entry Card
@@ -185,6 +375,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ## Layout Standards
 
 ### 1. Grid System
+
 ```css
 /* 
  * Custom Grid System
@@ -217,6 +408,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 2. Container and Spacing
+
 ```css
 /* 
  * Container Component
@@ -247,6 +439,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ## Responsive Design
 
 ### 1. Mobile-First Media Queries
+
 ```css
 /* Base styles for mobile */
 .navigation {
@@ -274,6 +467,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 2. Responsive Typography
+
 ```css
 /* 
  * Fluid Typography
@@ -308,6 +502,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ## Accessibility Standards
 
 ### 1. Focus Management
+
 ```css
 /* 
  * Focus Styles
@@ -331,6 +526,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ```
 
 ### 2. Color and Contrast
+
 ```css
 /* 
  * Color Accessibility
@@ -365,6 +561,7 @@ description: CSS styling standards and best practices for responsive, accessible
 ## Utility Classes
 
 ### 1. Common Utilities
+
 ```css
 /* Display utilities */
 .d-none { display: none; }
@@ -394,31 +591,37 @@ description: CSS styling standards and best practices for responsive, accessible
 ## Best Practices
 
 ### 1. Performance Optimization
+
 - Use CSS custom properties for consistent theming
 - Minimize the use of expensive properties (box-shadow, gradients)
 - Optimize for critical rendering path
 - Use efficient selectors (avoid deep nesting)
 
 ### 2. Maintainability
+
 - Follow BEM naming convention
 - Group related styles together
 - Comment complex or non-obvious styles
 - Use meaningful variable names
 
 ### 3. Cross-Browser Compatibility
+
 - Test in major browsers (Chrome, Firefox, Safari, Edge)
 - Use autoprefixer for vendor prefixes
 - Provide fallbacks for modern CSS features
 - Test with different font settings
 
 ### 4. Multilingual Considerations
+
 - Support for RTL languages if needed
 - Font stack that supports Unicode characters
 - Proper spacing for accented characters
 - Consider text expansion/contraction in different languages
 
 ## Validation Criteria
+
 CSS should:
+
 - ✅ Pass W3C CSS validation
 - ✅ Meet WCAG 2.1 AA accessibility standards
 - ✅ Display correctly across major browsers
