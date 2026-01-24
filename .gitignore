@@ -211,10 +211,25 @@ __marimo__/
 
 # Application specific
 uploads/
-*.json
-!requirements.txt
 
-# Model files - keeping config files only
+# Sensitive config (keep example)
+config/users.json
+
+# Large data exports (runtime uses DB)
+config/data/db/*.json
+
+# Training data and outputs
+training_data/
+output/
+test_results/
+
+# Script outputs
+scripts/*.json
+
+# Claude config
+.claude/
+
+# Model files - exclude large binary and vocab files
 models/*/checkpoint-*/
 models/*/finetuned/
 models/*/*.safetensors
@@ -222,6 +237,7 @@ models/*/*.pt
 models/*/*.pth
 models/*/*.bin
 models/*/*.spm
+models/*/vocab.json
 
 # Trained models in scripts directory
 scripts/models/

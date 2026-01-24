@@ -1,0 +1,1084 @@
+{
+  "description": "Complete mapping from original 207 grammar types to (core_grammar, grammar_modifier) pairs",
+  "version": "1.0",
+  "date_created": "2026-01-10",
+  "note": "Use this mapping to migrate the database. Original grammar → {core, modifier}",
+  "mapping": {
+    "verb": {
+      "core": "verb",
+      "modifier": null
+    },
+    "number": {
+      "core": "number",
+      "modifier": null
+    },
+    "noun": {
+      "core": "noun",
+      "modifier": null
+    },
+    "adjective": {
+      "core": "adjective",
+      "modifier": null
+    },
+    "noun + possessive": {
+      "core": "noun",
+      "modifier": "possessive"
+    },
+    "transitive verb": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "noun (possessive)": {
+      "core": "noun",
+      "modifier": "possessive"
+    },
+    "transitive verb + suffix": {
+      "core": "verb",
+      "modifier": "transitive + suffix"
+    },
+    "possessive": {
+      "core": "possessive",
+      "modifier": null
+    },
+    "verb + directional": {
+      "core": "verb",
+      "modifier": "directional"
+    },
+    "verb + suffix": {
+      "core": "verb",
+      "modifier": "suffix"
+    },
+    "verb (with pronoun suffix)": {
+      "core": "verb",
+      "modifier": "pronoun suffix"
+    },
+    "verb (pronoun suffix)": {
+      "core": "verb",
+      "modifier": "pronoun suffix"
+    },
+    "relational noun": {
+      "core": "noun",
+      "modifier": "relational"
+    },
+    "verb + pronoun suffix": {
+      "core": "verb",
+      "modifier": "pronoun suffix"
+    },
+    "noun + suffix": {
+      "core": "noun",
+      "modifier": "suffix"
+    },
+    "verb (reduplicated)": {
+      "core": "verb",
+      "modifier": "reduplicated"
+    },
+    "transitive verb + pronoun suffix": {
+      "core": "verb",
+      "modifier": "transitive + pronoun suffix"
+    },
+    "classifier": {
+      "core": "classifier",
+      "modifier": null
+    },
+    "adverb": {
+      "core": "adverb",
+      "modifier": null
+    },
+    "pronoun": {
+      "core": "pronoun",
+      "modifier": null
+    },
+    "verb/adjective": {
+      "core": "verb",
+      "modifier": "or adjective"
+    },
+    "verb (pronoun form)": {
+      "core": "verb",
+      "modifier": "pronoun form"
+    },
+    "noun (relational)": {
+      "core": "noun",
+      "modifier": "relational"
+    },
+    "verb + pronoun": {
+      "core": "verb",
+      "modifier": "pronoun"
+    },
+    "locational noun": {
+      "core": "noun",
+      "modifier": "locational"
+    },
+    "transitive verb + pronoun": {
+      "core": "verb",
+      "modifier": "transitive + pronoun"
+    },
+    "particle": {
+      "core": "particle",
+      "modifier": null
+    },
+    "numeral": {
+      "core": "numeral",
+      "modifier": null
+    },
+    "adjective/verb": {
+      "core": "adjective",
+      "modifier": "or verb"
+    },
+    "intransitive verb": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "possessed form": {
+      "core": "possessive",
+      "modifier": "possessed form"
+    },
+    "verb (reduplication)": {
+      "core": "verb",
+      "modifier": "reduplication"
+    },
+    "noun phrase": {
+      "core": "noun",
+      "modifier": "phrase"
+    },
+    "locational noun + possessive": {
+      "core": "noun",
+      "modifier": "locational + possessive"
+    },
+    "verb (directional)": {
+      "core": "verb",
+      "modifier": "directional"
+    },
+    "demonstrative": {
+      "core": "demonstrative",
+      "modifier": null
+    },
+    "preposition": {
+      "core": "preposition",
+      "modifier": null
+    },
+    "possessive suffix": {
+      "core": "suffix",
+      "modifier": "possessive"
+    },
+    "transitive verb + directional": {
+      "core": "verb",
+      "modifier": "transitive + directional"
+    },
+    "verb/noun": {
+      "core": "verb",
+      "modifier": "or noun"
+    },
+    "adj./verb": {
+      "core": "adjective",
+      "modifier": "or verb"
+    },
+    "verb (conjugated)": {
+      "core": "verb",
+      "modifier": "conjugated"
+    },
+    "adjective/noun": {
+      "core": "adjective",
+      "modifier": "or noun"
+    },
+    "noun/adjective": {
+      "core": "noun",
+      "modifier": "or adjective"
+    },
+    "verb phrase": {
+      "core": "verb",
+      "modifier": "phrase"
+    },
+    "verb (vt.)": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "interrogative": {
+      "core": "interrogative",
+      "modifier": null
+    },
+    "noun/adj": {
+      "core": "noun",
+      "modifier": "or adjective"
+    },
+    "adjective + suffix": {
+      "core": "adjective",
+      "modifier": "suffix"
+    },
+    "ordinal": {
+      "core": "number",
+      "modifier": "ordinal"
+    },
+    "preposition + suffix": {
+      "core": "preposition",
+      "modifier": "suffix"
+    },
+    "conjunction": {
+      "core": "conjunction",
+      "modifier": null
+    },
+    "auxiliary": {
+      "core": "auxiliary",
+      "modifier": null
+    },
+    "verb (stative)": {
+      "core": "verb",
+      "modifier": "stative"
+    },
+    "vt./vi": {
+      "core": "verb",
+      "modifier": "transitive or intransitive"
+    },
+    "verb (transitive)": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "preposition + possessive": {
+      "core": "preposition",
+      "modifier": "possessive"
+    },
+    "adj./stative": {
+      "core": "adjective",
+      "modifier": "stative"
+    },
+    "temporal noun + possessive": {
+      "core": "noun",
+      "modifier": "temporal + possessive"
+    },
+    "noun + pronoun": {
+      "core": "noun",
+      "modifier": "pronoun"
+    },
+    "temporal phrase": {
+      "core": "noun",
+      "modifier": "temporal phrase"
+    },
+    "preposition + pronoun suffix": {
+      "core": "preposition",
+      "modifier": "pronoun suffix"
+    },
+    "locative": {
+      "core": "noun",
+      "modifier": "locative"
+    },
+    "possessive noun": {
+      "core": "possessive",
+      "modifier": "noun"
+    },
+    "verb/transitive verb": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "adj./verb (directional)": {
+      "core": "adjective",
+      "modifier": "verb + directional"
+    },
+    "verb phrase with suffix": {
+      "core": "verb",
+      "modifier": "phrase + suffix"
+    },
+    "verb phrase + pronoun suffix": {
+      "core": "verb",
+      "modifier": "phrase + pronoun suffix"
+    },
+    "verb (suffix)": {
+      "core": "verb",
+      "modifier": "suffix"
+    },
+    "prep (possessive suffix)": {
+      "core": "preposition",
+      "modifier": "possessive suffix"
+    },
+    "verb/adverb": {
+      "core": "verb",
+      "modifier": "or adverb"
+    },
+    "adj./noun": {
+      "core": "adjective",
+      "modifier": "or noun"
+    },
+    "adj. (reduplication)": {
+      "core": "adjective",
+      "modifier": "reduplication"
+    },
+    "adjective (reduplicated)": {
+      "core": "adjective",
+      "modifier": "reduplicated"
+    },
+    "adjective phrase": {
+      "core": "adjective",
+      "modifier": "phrase"
+    },
+    "noun (locational suffix)": {
+      "core": "noun",
+      "modifier": "locational suffix"
+    },
+    "adjective / noun": {
+      "core": "adjective",
+      "modifier": "or noun"
+    },
+    "interjection": {
+      "core": "interjection",
+      "modifier": null
+    },
+    "noun (reduplicated)": {
+      "core": "noun",
+      "modifier": "reduplicated"
+    },
+    "verb participle": {
+      "core": "verb",
+      "modifier": "participle"
+    },
+    "interrogative classifier": {
+      "core": "interrogative",
+      "modifier": "classifier"
+    },
+    "noun / verb": {
+      "core": "noun",
+      "modifier": "or verb"
+    },
+    "noun (reduplication)": {
+      "core": "noun",
+      "modifier": "reduplication"
+    },
+    "article": {
+      "core": "article",
+      "modifier": null
+    },
+    "pronoun + modal": {
+      "core": "pronoun",
+      "modifier": "modal"
+    },
+    "noun (day)": {
+      "core": "noun",
+      "modifier": "day"
+    },
+    "noun (possessive form)": {
+      "core": "noun",
+      "modifier": "possessive form"
+    },
+    "classifier numeral": {
+      "core": "classifier",
+      "modifier": "numeral"
+    },
+    "reciprocal verb": {
+      "core": "verb",
+      "modifier": "reciprocal"
+    },
+    "quantifier": {
+      "core": "quantifier",
+      "modifier": null
+    },
+    "temporal noun": {
+      "core": "noun",
+      "modifier": "temporal"
+    },
+    "idiom": {
+      "core": "idiom",
+      "modifier": null
+    },
+    "interrogative phrase": {
+      "core": "interrogative",
+      "modifier": "phrase"
+    },
+    "verb/transitive": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "verb (imperative)": {
+      "core": "verb",
+      "modifier": "imperative"
+    },
+    "preposition/adverb": {
+      "core": "preposition",
+      "modifier": "or adverb"
+    },
+    "noun/adverb": {
+      "core": "noun",
+      "modifier": "or adverb"
+    },
+    "verb (vi.)": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "verb (completed)": {
+      "core": "verb",
+      "modifier": "completed"
+    },
+    "verb / adj": {
+      "core": "verb",
+      "modifier": "or adjective"
+    },
+    "noun (time)": {
+      "core": "noun",
+      "modifier": "time"
+    },
+    "relational ordinal": {
+      "core": "number",
+      "modifier": "relational ordinal"
+    },
+    "verb (progressive)": {
+      "core": "verb",
+      "modifier": "progressive"
+    },
+    "adjective (stative)": {
+      "core": "adjective",
+      "modifier": "stative"
+    },
+    "verb / participle": {
+      "core": "verb",
+      "modifier": "participle"
+    },
+    "adj./verb (stative)": {
+      "core": "adjective",
+      "modifier": "verb + stative"
+    },
+    "verb (stative/result)": {
+      "core": "verb",
+      "modifier": "stative or result"
+    },
+    "noun (figurative)": {
+      "core": "noun",
+      "modifier": "figurative"
+    },
+    "adjective + directional": {
+      "core": "adjective",
+      "modifier": "directional"
+    },
+    "verb (resultative)": {
+      "core": "verb",
+      "modifier": "resultative"
+    },
+    "adj./adv": {
+      "core": "adjective",
+      "modifier": "or adverb"
+    },
+    "vt. (causative)": {
+      "core": "verb",
+      "modifier": "transitive + causative"
+    },
+    "noun (abstract)": {
+      "core": "noun",
+      "modifier": "abstract"
+    },
+    "vt. / vi": {
+      "core": "verb",
+      "modifier": "transitive or intransitive"
+    },
+    "preposition + possessive suffix": {
+      "core": "preposition",
+      "modifier": "possessive suffix"
+    },
+    "verb/intransitive verb": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "prepositional phrase": {
+      "core": "preposition",
+      "modifier": "phrase"
+    },
+    "prefix": {
+      "core": "prefix",
+      "modifier": null
+    },
+    "interrogative pronoun": {
+      "core": "interrogative",
+      "modifier": "pronoun"
+    },
+    "copular particle": {
+      "core": "particle",
+      "modifier": "copular"
+    },
+    "verb/adjective/noun": {
+      "core": "verb",
+      "modifier": "or adjective or noun"
+    },
+    "adverbial phrase": {
+      "core": "adverb",
+      "modifier": "phrase"
+    },
+    "adjective/adverb": {
+      "core": "adjective",
+      "modifier": "or adverb"
+    },
+    "verb/phrase": {
+      "core": "verb",
+      "modifier": "phrase"
+    },
+    "verb/intransitive": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "verb (suffix pronoun series #2)": {
+      "core": "verb",
+      "modifier": "suffix pronoun series 2"
+    },
+    "prep (possessive suffix form)": {
+      "core": "preposition",
+      "modifier": "possessive suffix form"
+    },
+    "pronoun + neg": {
+      "core": "pronoun",
+      "modifier": "negative"
+    },
+    "pronoun + neg modal": {
+      "core": "pronoun",
+      "modifier": "negative modal"
+    },
+    "pronoun + neg aspect": {
+      "core": "pronoun",
+      "modifier": "negative aspect"
+    },
+    "preposition (pronoun suffix)": {
+      "core": "preposition",
+      "modifier": "pronoun suffix"
+    },
+    "adjective/quantifier": {
+      "core": "adjective",
+      "modifier": "or quantifier"
+    },
+    "adjective (intensified)": {
+      "core": "adjective",
+      "modifier": "intensified"
+    },
+    "verb/imperative": {
+      "core": "verb",
+      "modifier": "imperative"
+    },
+    "ordinal noun": {
+      "core": "number",
+      "modifier": "ordinal noun"
+    },
+    "stand-alone pronoun": {
+      "core": "pronoun",
+      "modifier": "stand-alone"
+    },
+    "noun (poss.)": {
+      "core": "noun",
+      "modifier": "possessive"
+    },
+    "idiom / verb": {
+      "core": "idiom",
+      "modifier": "or verb"
+    },
+    "verb (completed state)": {
+      "core": "verb",
+      "modifier": "completed state"
+    },
+    "adjective / state": {
+      "core": "adjective",
+      "modifier": "state"
+    },
+    "adjective (completed)": {
+      "core": "adjective",
+      "modifier": "completed"
+    },
+    "noun (stative)": {
+      "core": "noun",
+      "modifier": "stative"
+    },
+    "noun (result)": {
+      "core": "noun",
+      "modifier": "result"
+    },
+    "verb adj": {
+      "core": "verb",
+      "modifier": "adjective"
+    },
+    "adj/verb": {
+      "core": "adjective",
+      "modifier": "or verb"
+    },
+    "question word": {
+      "core": "interrogative",
+      "modifier": "question word"
+    },
+    "adverb / locational": {
+      "core": "adverb",
+      "modifier": "locational"
+    },
+    "noun / modifier": {
+      "core": "noun",
+      "modifier": "modifier"
+    },
+    "adverb/verb": {
+      "core": "adverb",
+      "modifier": "or verb"
+    },
+    "noun/phrase": {
+      "core": "noun",
+      "modifier": "phrase"
+    },
+    "ordinal (person classifier)": {
+      "core": "number",
+      "modifier": "ordinal + person classifier"
+    },
+    "adverb/location": {
+      "core": "adverb",
+      "modifier": "location"
+    },
+    "noun (proper)": {
+      "core": "noun",
+      "modifier": "proper"
+    },
+    "noun adjective": {
+      "core": "noun",
+      "modifier": "adjective"
+    },
+    "verb / adjective": {
+      "core": "verb",
+      "modifier": "or adjective"
+    },
+    "suffix": {
+      "core": "suffix",
+      "modifier": null
+    },
+    "noun classifier": {
+      "core": "classifier",
+      "modifier": "noun"
+    },
+    "causative verb": {
+      "core": "verb",
+      "modifier": "causative"
+    },
+    "verb (english loan)": {
+      "core": "verb",
+      "modifier": "english loan"
+    },
+    "verb/descriptor": {
+      "core": "verb",
+      "modifier": "descriptor"
+    },
+    "adjective / stative verb": {
+      "core": "adjective",
+      "modifier": "stative verb"
+    },
+    "adjective/descriptor": {
+      "core": "adjective",
+      "modifier": "descriptor"
+    },
+    "adjective / participle": {
+      "core": "adjective",
+      "modifier": "participle"
+    },
+    "adjective/past participle": {
+      "core": "adjective",
+      "modifier": "past participle"
+    },
+    "unknown (context missing)": {
+      "core": null,
+      "modifier": "context missing"
+    },
+    "noun / verbal noun": {
+      "core": "noun",
+      "modifier": "verbal noun"
+    },
+    "verb (stative/resultative)": {
+      "core": "verb",
+      "modifier": "stative or resultative"
+    },
+    "vt. (takes object)": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "noun (plural form)": {
+      "core": "noun",
+      "modifier": "plural form"
+    },
+    "adj./verb (directional form)": {
+      "core": "adjective",
+      "modifier": "verb + directional form"
+    },
+    "noun (instrumental/agentive)": {
+      "core": "noun",
+      "modifier": "instrumental or agentive"
+    },
+    "verb (past/result)": {
+      "core": "verb",
+      "modifier": "past or result"
+    },
+    "vt. (transitive verb)": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "vi. (intransitive verb)": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "verb (reduplication/extended)": {
+      "core": "verb",
+      "modifier": "reduplication or extended"
+    },
+    "noun (causative)": {
+      "core": "noun",
+      "modifier": "causative"
+    },
+    "verb (causative + directional)": {
+      "core": "verb",
+      "modifier": "causative + directional"
+    },
+    "noun/adj. (figurative)": {
+      "core": "noun",
+      "modifier": "adjective + figurative"
+    },
+    "adj./verb (reduplication)": {
+      "core": "adjective",
+      "modifier": "verb + reduplication"
+    },
+    "noun (possessive base)": {
+      "core": "noun",
+      "modifier": "possessive base"
+    },
+    "aux. verb": {
+      "core": "verb",
+      "modifier": "auxiliary"
+    },
+    "verb root": {
+      "core": "verb",
+      "modifier": "root"
+    },
+    "verb/prep": {
+      "core": "verb",
+      "modifier": "or preposition"
+    },
+    "transitive verb + directional base": {
+      "core": "verb",
+      "modifier": "transitive + directional base"
+    },
+    "noun/adj + directional": {
+      "core": "noun",
+      "modifier": "adjective + directional"
+    },
+    "adv./verb": {
+      "core": "adverb",
+      "modifier": "or verb"
+    },
+    "reciprocal verb/adj": {
+      "core": "verb",
+      "modifier": "reciprocal or adjective"
+    },
+    "adj./noun (possessive)": {
+      "core": "adjective",
+      "modifier": "noun + possessive"
+    },
+    "noun (locative)": {
+      "core": "noun",
+      "modifier": "locative"
+    },
+    "particle/auxiliary": {
+      "core": "particle",
+      "modifier": "auxiliary"
+    },
+    "adj. (resultative)": {
+      "core": "adjective",
+      "modifier": "resultative"
+    },
+    "vt. (resultative)": {
+      "core": "verb",
+      "modifier": "transitive + resultative"
+    },
+    "modal verb": {
+      "core": "verb",
+      "modifier": "modal"
+    },
+    "prep./adv": {
+      "core": "preposition",
+      "modifier": "or adverb"
+    },
+    "ordinal number": {
+      "core": "number",
+      "modifier": "ordinal"
+    },
+    "intransitive verb + directional": {
+      "core": "verb",
+      "modifier": "intransitive + directional"
+    },
+    "vt. intensifier": {
+      "core": "verb",
+      "modifier": "transitive + intensifier"
+    },
+    "grammatical particle": {
+      "core": "particle",
+      "modifier": "grammatical"
+    },
+    "stative verb": {
+      "core": "verb",
+      "modifier": "stative"
+    },
+    "verb (reduplicated intensifier)": {
+      "core": "verb",
+      "modifier": "reduplicated intensifier"
+    },
+    "prep./linker": {
+      "core": "preposition",
+      "modifier": "linker"
+    },
+    "vt. / noun": {
+      "core": "verb",
+      "modifier": "transitive or noun"
+    },
+    "noun/verb (reduplication)": {
+      "core": "noun",
+      "modifier": "verb + reduplication"
+    },
+    "vt. (reduplication)": {
+      "core": "verb",
+      "modifier": "transitive + reduplication"
+    },
+    "preposition/locative": {
+      "core": "preposition",
+      "modifier": "locative"
+    },
+    "adj": {
+      "core": "adjective",
+      "modifier": null
+    },
+    "adj.": {
+      "core": "adjective",
+      "modifier": null
+    },
+    "adv.": {
+      "core": "adverb",
+      "modifier": null
+    },
+    "adverbial": {
+      "core": "adverb",
+      "modifier": null
+    },
+    "prep": {
+      "core": "preposition",
+      "modifier": null
+    },
+    "prep.": {
+      "core": "preposition",
+      "modifier": null
+    },
+    "prepositional": {
+      "core": "preposition",
+      "modifier": null
+    },
+    "vt.": {
+      "core": "verb",
+      "modifier": "transitive"
+    },
+    "vi.": {
+      "core": "verb",
+      "modifier": "intransitive"
+    },
+    "temporal": {
+      "core": "noun",
+      "modifier": "temporal"
+    },
+    "phrase": {
+      "core": "phrase",
+      "modifier": null
+    },
+    "example phrase": {
+      "core": "phrase",
+      "modifier": "example"
+    },
+    "fractional phrase": {
+      "core": "phrase",
+      "modifier": "fractional"
+    },
+    "idiomatic phrase": {
+      "core": "phrase",
+      "modifier": "idiomatic"
+    },
+    "adverb phrase": {
+      "core": "phrase",
+      "modifier": "adverb"
+    },
+    "verbal phrase": {
+      "core": "phrase",
+      "modifier": "verbal"
+    },
+    "preposition phrase": {
+      "core": "phrase",
+      "modifier": "preposition"
+    },
+    "numeral phrase": {
+      "core": "phrase",
+      "modifier": "numeral"
+    },
+    "comparison phrase": {
+      "core": "phrase",
+      "modifier": "comparison"
+    },
+    "adj. phrase": {
+      "core": "phrase",
+      "modifier": "adjective"
+    },
+    "number phrase": {
+      "core": "phrase",
+      "modifier": "number"
+    },
+    "verb phrase / noun phrase": {
+      "core": "phrase",
+      "modifier": "verb or noun"
+    },
+    "expression": {
+      "core": "expression",
+      "modifier": null
+    },
+    "comparative expression": {
+      "core": "expression",
+      "modifier": "comparative"
+    },
+    "polite expression": {
+      "core": "expression",
+      "modifier": "polite"
+    },
+    "polite expression + pronoun": {
+      "core": "expression",
+      "modifier": "polite + pronoun"
+    },
+    "pronoun suffix expression": {
+      "core": "expression",
+      "modifier": "pronoun suffix"
+    },
+    "adv./expression": {
+      "core": "expression",
+      "modifier": "adverb"
+    },
+    "sentence": {
+      "core": "sentence",
+      "modifier": null
+    },
+    "example": {
+      "core": "sentence",
+      "modifier": "example"
+    },
+    "greeting": {
+      "core": "interjection",
+      "modifier": "greeting"
+    },
+    "exclamation": {
+      "core": "interjection",
+      "modifier": "exclamation"
+    },
+    "directionals": {
+      "core": "particle",
+      "modifier": "directional"
+    },
+    "vt. + pronoun suffix": {
+      "core": "verb",
+      "modifier": "transitive + pronoun suffix"
+    },
+    "vt. + suffix": {
+      "core": "verb",
+      "modifier": "transitive + suffix"
+    },
+    "vt. + directional": {
+      "core": "verb",
+      "modifier": "transitive + directional"
+    },
+    "vt. + suffix + directional": {
+      "core": "verb",
+      "modifier": "transitive + suffix + directional"
+    },
+    "vt. + pronoun + directional": {
+      "core": "verb",
+      "modifier": "transitive + pronoun + directional"
+    },
+    "vt. + prep.": {
+      "core": "verb",
+      "modifier": "transitive + preposition"
+    },
+    "verb (causative)": {
+      "core": "verb",
+      "modifier": "causative"
+    },
+    "verb (object pronoun)": {
+      "core": "verb",
+      "modifier": "object pronoun"
+    },
+    "verb (object suffix)": {
+      "core": "verb",
+      "modifier": "object suffix"
+    },
+    "verb + preposition": {
+      "core": "verb",
+      "modifier": "preposition"
+    },
+    "verb + pronoun ending": {
+      "core": "verb",
+      "modifier": "pronoun ending"
+    },
+    "verb + directional suffix": {
+      "core": "verb",
+      "modifier": "directional suffix"
+    },
+    "verb + possessive suffix": {
+      "core": "verb",
+      "modifier": "possessive suffix"
+    },
+    "verb phrase + pronoun": {
+      "core": "verb",
+      "modifier": "phrase + pronoun"
+    },
+    "reciprocal verb + pronoun": {
+      "core": "verb",
+      "modifier": "reciprocal + pronoun"
+    },
+    "reduplicated reciprocal verb": {
+      "core": "verb",
+      "modifier": "reduplicated + reciprocal"
+    },
+    "reduplicated reciprocal verb + pronoun": {
+      "core": "verb",
+      "modifier": "reduplicated + reciprocal + pronoun"
+    },
+    "noun possessive": {
+      "core": "noun",
+      "modifier": "possessive"
+    },
+    "noun + poss. suffix": {
+      "core": "noun",
+      "modifier": "possessive suffix"
+    },
+    "noun + directional": {
+      "core": "noun",
+      "modifier": "directional"
+    },
+    "possessed adjective": {
+      "core": "adjective",
+      "modifier": "possessed"
+    },
+    "adj. + pronoun suffix": {
+      "core": "adjective",
+      "modifier": "pronoun suffix"
+    },
+    "adj. + prep.": {
+      "core": "adjective",
+      "modifier": "preposition"
+    },
+    "adv. phrase + pronoun suffix": {
+      "core": "adverb",
+      "modifier": "phrase + pronoun suffix"
+    },
+    "adv. + pronoun suffix": {
+      "core": "adverb",
+      "modifier": "pronoun suffix"
+    },
+    "preposition + pronoun": {
+      "core": "preposition",
+      "modifier": "pronoun"
+    },
+    "prep. + pronoun suffix": {
+      "core": "preposition",
+      "modifier": "pronoun suffix"
+    },
+    "relational classifier": {
+      "core": "classifier",
+      "modifier": "relational"
+    },
+    "ordinal classifier": {
+      "core": "classifier",
+      "modifier": "ordinal"
+    },
+    "possessive structure": {
+      "core": "possessive",
+      "modifier": "structure"
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "chuukeseSentenceGuide": {
+    "overview": "A comprehensive instructional guide explaining how Chuukese grammar, sentence structure, pronouns, possession, directionals, reduplication, and morphology work, based fully on dictionary imports and traditional linguistic rules.",
+    "sections": {
+      "vowelSystem": {
+        "description": "The Chuukese vowel system uses modern diacritics. Older spellings may differ, especially with ö → é transformations.",
+        "vowels": {
+          "a": "ha",
+          "e": "egg",
+          "i": "feet",
+          "o": "over",
+          "u": "Luke",
+          "á": "hat",
+          "é": "uh, but",
+          "ó": "on",
+          "ú": "moon",
+          "ä": "legacy vowel",
+          "ö": "legacy vowel (now 'é')",
+          "ü": "legacy vowel"
+        },
+        "lookupNotes": [
+          "Words formerly spelled with 'ö' must now be looked up under 'é'.",
+          "Some Chuuk Lagoon dialects pronounce 'l' like 'n', so words may appear under either letter.",
+          "Some words begin with double-consonants or double-vowels."
+        ]
+      },
+
+      "sentenceStructure": {
+        "defaultOrder": "Verb–Object–Subject (VOS)",
+        "alternates": ["Verb–Subject–Object (VSO)", "Subject–Verb–Object (SVO)"],
+        "notes": "Chuukese strongly prefers verb-first order, affecting emphasis and flow."
+      },
+
+      "verbConstruction": {
+        "formula": "[Tense Marker] + [Verb Root] + [Pronoun Suffix] + [Directional]",
+        "tenseMarkers": {
+          "a": "past",
+          "ka / ke": "present or habitual",
+          "epwe": "future",
+          "sé / ese": "negative",
+          "me / mi": "completed action"
+        },
+        "pronounSuffixes": {
+          "-ei": "me",
+          "-uk / -ók": "you (singular)",
+          "-an / -in": "him/her/it",
+          "-kem": "us (exclusive)",
+          "-kemi": "you (plural)",
+          "-ir": "them",
+          "-kich": "us (inclusive)"
+        },
+        "notes": [
+          "Some verbs drop the final vowel when adding a suffix. (Marked as *)",
+          "Many dictionary entries list suffix patterns unique to each verb."
+        ],
+        "directionals": {
+          "-to": "toward the speaker (come)",
+          "-ló": "away from the speaker (go)",
+          "-tá": "movement upward",
+          "-tiw": "movement downward",
+          "-long": "movement inward",
+          "-wu": "movement outward",
+          "notes": "Directionals modify meaning significantly and are attached after pronoun suffixes."
+        }
+      },
+
+      "pronouns": {
+        "standAlone": {
+          "list": {
+            "I_me": "ngang",
+            "you_singular": "en",
+            "he_she_it": "i",
+            "we_us_exclusive": "ám",
+            "you_plural": "ámi",
+            "they_them": "iir",
+            "we_us_inclusive": "kich"
+          },
+          "notes": [
+            "Stand-alone pronouns also carry tense when used with auxiliaries.",
+            "Dictionary shows past/present/future forms for each pronoun."
+          ]
+        },
+
+        "standAlonePossessives": {
+          "inanimate": {
+            "my": "ái",
+            "your": "óm",
+            "his_hers_its": "an",
+            "our_excl": "ám",
+            "your_pl": "ámi",
+            "their": "ar",
+            "our_incl": "ach"
+          },
+          "animate": {
+            "my": "nei",
+            "your": "noum",
+            "his_hers_its": "néún",
+            "our_excl": "néúm",
+            "your_pl": "néúmi",
+            "their": "néúr",
+            "our_incl": "néúch"
+          },
+          "examples": [
+            { "chuukese": "ái Kot", "english": "my God (inanimate ending used as exception)" },
+            { "chuukese": "nei Paipel", "english": "my Bible (books are animate)" }
+          ],
+          "rule": "A stand-alone possessive is used when no suffix possession is present."
+        }
+      },
+
+      "possession": {
+        "suffixPossession": "Nouns that end in possessive forms (-i, -um, -an, etc.) require suffixes rather than stand-alone possessives.",
+        "example": {
+          "imw": "house",
+          "imwei": "my house"
+        }
+      },
+
+      "reduplication": {
+        "function": [
+          "repetition or continuous action",
+          "intensity or emphasis",
+          "plurality",
+          "progressive or ongoing action"
+        ],
+        "examples": ["cháchcháári", "ekkesiwil", "wakkattetá", "ukkuwei"]
+      },
+
+      "nominalizers": {
+        "suffixes": ["-n", "-en", "-áán", "-in"],
+        "description": "Convert verbs into nouns describing actions, states, or results.",
+        "example": {
+          "root": "weweiti",
+          "nominalized": "weweitián",
+          "meaning": "the understanding (of)"
+        }
+      },
+
+      "locationals": {
+        "singular": ["ikeei", "ika", "ikena", "ikenan", "ikewe"],
+        "plural": ["ikkeei", "ikka", "ikkena", "ikkenan", "ikkewe"]
+      },
+
+      "countingClassifiers": {
+        "persons_animals": "-mén",
+        "longObjects": "-foch",
+        "flatObjects": "-ché",
+        "roundObjects": "-féú",
+        "notes": "Used with numbers to classify counted items appropriately."
+      },
+
+      "sentenceTemplates": {
+        "simpleStatement": "[Tense] + [Verb] + [Object] + [Subject]",
+        "pronounSuffixPattern": "[Tense] + [Verb + Pronoun Suffix]",
+        "directional": "[Verb + Pronoun Suffix + Directional] + [Subject]",
+        "possessiveNoun": "[Noun + Possessive Suffix]",
+        "examples": [
+          {
+            "chuukese": "uweikichelong",
+            "english": "bring/take us in",
+            "structure": "uwei + kich + long"
+          }
+        ]
+      },
+
+      "keyRules": [
+        "Chuukese is strongly verb-initial.",
+        "Pronoun suffixes attach directly to verbs.",
+        "Directional suffixes modify the verb’s movement and direction.",
+        "A noun uses either a stand-alone possessive OR a suffix, not both.",
+        "Many verbs drop the final vowel before adding suffixes.",
+        "Reduplication changes the meaning (intensity, repetition, plural action).",
+        "Inclusive (kich) and exclusive (kem) distinctions are essential.",
+        "Some words begin with double consonants, which affects dictionary order.",
+        "Legacy vowel 'ö' is now written as 'é'.",
+        "L is pronounced like N in some dialects, affecting word location."
+      ]
+    }
+  }
+}
+

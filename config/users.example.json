@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "email": "user@example.com",
+      "access_code": "your-unique-access-code",
+      "name": "User Name",
+      "role": "admin"
+    }
+  ]
+}

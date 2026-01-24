@@ -1,0 +1,321 @@
+{
+  "chuukeseSentenceGuide": {
+    "overview": "A comprehensive instructional guide explaining how Chuukese grammar, sentence structure, pronouns, possession, directionals, reduplication, and morphology work, based fully on dictionary imports and traditional linguistic rules.",
+    "sections": {
+      "vowelSystem": {
+        "description": "The Chuukese vowel system uses modern diacritics. Older spellings may differ, especially with ö → é transformations.",
+        "vowels": {
+          "a": "ha",
+          "e": "egg",
+          "i": "feet",
+          "o": "over",
+          "u": "Luke",
+          "á": "hat",
+          "é": "uh, but",
+          "ó": "on",
+          "ú": "moon",
+          "ä": "legacy vowel",
+          "ö": "legacy vowel (now 'é')",
+          "ü": "legacy vowel"
+        },
+        "lookupNotes": [
+          "Words formerly spelled with 'ö' must now be looked up under 'é'.",
+          "Some Chuuk Lagoon dialects pronounce 'l' like 'n', so words may appear under either letter.",
+          "Some words begin with double-consonants or double-vowels."
+        ]
+      },
+
+      "sentenceStructure": {
+        "defaultOrder": "Verb–Object–Subject (VOS)",
+        "alternates": ["Verb–Subject–Object (VSO)", "Subject–Verb–Object (SVO)"],
+        "notes": "Chuukese strongly prefers verb-first order, affecting emphasis and flow."
+      },
+
+      "verbConstruction": {
+        "formula": "[Tense Marker] + [Verb Root] + [Pronoun Suffix] + [Directional]",
+        "tenseMarkers": {
+          "a": "past",
+          "ka / ke": "present or habitual",
+          "epwe": "future",
+          "sé / ese": "negative",
+          "me / mi": "completed action"
+        },
+        "pronounSuffixes": {
+          "-ei": "me",
+          "-uk / -ók": "you (singular)",
+          "-an / -in": "him/her/it",
+          "-kem": "us (exclusive)",
+          "-kemi": "you (plural)",
+          "-ir": "them",
+          "-kich": "us (inclusive)"
+        },
+        "notes": [
+          "Some verbs drop the final vowel when adding a suffix. (Marked as *)",
+          "Many dictionary entries list suffix patterns unique to each verb."
+        ],
+        "directionals": {
+          "-to": "toward the speaker (come)",
+          "-ló": "away from the speaker (go)",
+          "-tá": "movement upward",
+          "-tiw": "movement downward",
+          "-long": "movement inward",
+          "-wu": "movement outward",
+          "notes": "Directionals modify meaning significantly and are attached after pronoun suffixes."
+        }
+      },
+
+      "pronouns": {
+        "standAlone": {
+          "list": {
+            "I_me": "ngang",
+            "you_singular": "en",
+            "he_she_it": "i",
+            "we_us_exclusive": "ám",
+            "you_plural": "ámi",
+            "they_them": "iir",
+            "we_us_inclusive": "kich"
+          },
+          "notes": [
+            "Stand-alone pronouns also carry tense when used with auxiliaries.",
+            "Dictionary shows past/present/future forms for each pronoun."
+          ]
+        },
+
+        "standAlonePossessives": {
+          "inanimate": {
+            "my": "ái",
+            "your": "óm",
+            "his_hers_its": "an",
+            "our_excl": "ám",
+            "your_pl": "ámi",
+            "their": "ar",
+            "our_incl": "ach"
+          },
+          "animate": {
+            "my": "nei",
+            "your": "noum",
+            "his_hers_its": "néún",
+            "our_excl": "néúm",
+            "your_pl": "néúmi",
+            "their": "néúr",
+            "our_incl": "néúch"
+          },
+          "examples": [
+            { "chuukese": "ái Kot", "english": "my God (inanimate ending used as exception)" },
+            { "chuukese": "nei Paipel", "english": "my Bible (books are animate)" }
+          ],
+          "rule": "A stand-alone possessive is used when no suffix possession is present."
+        }
+      },
+
+      "possession": {
+        "suffixPossession": "Nouns that end in possessive forms (-i, -um, -an, etc.) require suffixes rather than stand-alone possessives.",
+        "example": {
+          "imw": "house",
+          "imwei": "my house"
+        }
+      },
+
+      "reduplication": {
+        "function": [
+          "repetition or continuous action",
+          "intensity or emphasis",
+          "plurality",
+          "progressive or ongoing action"
+        ],
+        "examples": ["cháchcháári", "ekkesiwil", "wakkattetá", "ukkuwei"]
+      },
+
+      "nominalizers": {
+        "suffixes": ["-n", "-en", "-áán", "-in"],
+        "description": "Convert verbs into nouns describing actions, states, or results.",
+        "example": {
+          "root": "weweiti",
+          "nominalized": "weweitián",
+          "meaning": "the understanding (of)"
+        }
+      },
+
+      "locationals": {
+        "singular": ["ikeei", "ika", "ikena", "ikenan", "ikewe"],
+        "plural": ["ikkeei", "ikka", "ikkena", "ikkenan", "ikkewe"]
+      },
+
+      "countingClassifiers": {
+        "notes": "Chuukese uses 10 different classifiers for counting different types of objects. Each number changes its form based on what is being counted.",
+        "persons_animals": {
+          "classifier": "-mén",
+          "description": "For counting people and animals",
+          "numbers": {
+            "1": "emén",
+            "2": "ruuemén",
+            "3": "eruuemén",
+            "4": "efaaamén",
+            "5": "eniiemén",
+            "6": "ewonoemén",
+            "7": "fúúmén",
+            "8": "ewanuemén",
+            "9": "etiwiemén",
+            "10": "engefukuemén"
+          }
+        },
+        "longObjects": {
+          "classifier": "-fóch",
+          "description": "For counting long objects (sticks, poles, pencils, etc.)",
+          "numbers": {
+            "1": "efóch",
+            "2": "ruuofóch",
+            "3": "eruuofóch",
+            "4": "efaaafóch",
+            "5": "eniiofóch",
+            "6": "ewonofóch",
+            "7": "fúúfóch",
+            "8": "ewanuofóch",
+            "9": "etiwiofóch",
+            "10": "engefukuofóch"
+          }
+        },
+        "flatObjects": {
+          "classifier": "-ché",
+          "description": "For counting flat objects (paper, mats, plywood, boards, etc.)",
+          "numbers": {
+            "1": "eché",
+            "2": "ruuaché",
+            "3": "eruuaché",
+            "4": "efaaaché",
+            "5": "eniiaché",
+            "6": "ewonoché",
+            "7": "fúúché",
+            "8": "ewanuché",
+            "9": "etiwiché",
+            "10": "engefukuché"
+          }
+        },
+        "roundObjects": {
+          "classifier": "-féú",
+          "description": "For counting round objects (coconuts, balls, fruit, coins, etc.)",
+          "numbers": {
+            "1": "eféú",
+            "2": "ruuoféú",
+            "3": "eruuoféú",
+            "4": "efaaaféú",
+            "5": "eniioféú",
+            "6": "ewonoféú",
+            "7": "fúúféú",
+            "8": "ewanuféú",
+            "9": "etiwiféú",
+            "10": "engefukuféú"
+          }
+        },
+        "leis_garlands": {
+          "classifier": "-pa",
+          "description": "For counting leis, necklaces, bracelets, garlands",
+          "numbers": {
+            "1": "epa",
+            "2": "ruuepa",
+            "3": "eruuepa",
+            "4": "efaaapa",
+            "5": "eniiepa",
+            "6": "ewonopa",
+            "7": "fúúpa",
+            "8": "ewanupa",
+            "9": "etiwipa",
+            "10": "engefukupa"
+          }
+        },
+        "groups": {
+          "classifier": "-pwi",
+          "description": "For counting groups (of people, animals, or things)",
+          "numbers": {
+            "1": "epwi",
+            "2": "ruuepwi",
+            "3": "eruuepwi",
+            "4": "efaaapwi",
+            "5": "eniiepwi",
+            "6": "ewonopwi",
+            "7": "fúúpwi",
+            "8": "ewanupwi",
+            "9": "etiwipwi",
+            "10": "engefukupwi"
+          }
+        },
+        "bigBags": {
+          "classifier": "-tuk",
+          "description": "For counting big bags or sacks",
+          "numbers": {
+            "1": "etuk",
+            "2": "ruuetuk",
+            "3": "eruuetuk",
+            "4": "efaaatuk",
+            "5": "eniietuk",
+            "6": "ewonotuk",
+            "7": "fúútuk",
+            "8": "ewanutuk",
+            "9": "etiwituk",
+            "10": "engefukutuk"
+          }
+        },
+        "smallBags": {
+          "classifier": "-tukúm",
+          "description": "For counting small bags or pouches",
+          "numbers": {
+            "1": "etukúm",
+            "2": "ruuetukúm",
+            "3": "eruuetukúm",
+            "4": "efaaatukúm",
+            "5": "eniietukúm",
+            "6": "ewonotukúm",
+            "7": "fúútukúm",
+            "8": "ewanutukúm",
+            "9": "etiwitukúm",
+            "10": "engefukutukúm"
+          }
+        },
+        "generalObjects": {
+          "classifier": "-t / et",
+          "description": "For general counting when no specific classifier applies",
+          "numbers": {
+            "1": "et",
+            "2": "ruut",
+            "3": "eruut",
+            "4": "efaaat",
+            "5": "eniit",
+            "6": "ewonot",
+            "7": "fús",
+            "8": "ewanut",
+            "9": "etiwit",
+            "10": "engefukut"
+          }
+        }
+      },
+
+      "sentenceTemplates": {
+        "simpleStatement": "[Tense] + [Verb] + [Object] + [Subject]",
+        "pronounSuffixPattern": "[Tense] + [Verb + Pronoun Suffix]",
+        "directional": "[Verb + Pronoun Suffix + Directional] + [Subject]",
+        "possessiveNoun": "[Noun + Possessive Suffix]",
+        "examples": [
+          {
+            "chuukese": "uweikichelong",
+            "english": "bring/take us in",
+            "structure": "uwei + kich + long"
+          }
+        ]
+      },
+
+      "keyRules": [
+        "Chuukese is strongly verb-initial.",
+        "Pronoun suffixes attach directly to verbs.",
+        "Directional suffixes modify the verb’s movement and direction.",
+        "A noun uses either a stand-alone possessive OR a suffix, not both.",
+        "Many verbs drop the final vowel before adding suffixes.",
+        "Reduplication changes the meaning (intensity, repetition, plural action).",
+        "Inclusive (kich) and exclusive (kem) distinctions are essential.",
+        "Some words begin with double consonants, which affects dictionary order.",
+        "Legacy vowel 'ö' is now written as 'é'.",
+        "L is pronounced like N in some dialects, affecting word location."
+      ]
+    }
+  }
+}
+

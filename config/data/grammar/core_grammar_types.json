@@ -1,0 +1,113 @@
+{
+  "description": "Core grammar types for Chuukese dictionary - pure grammatical categories without modifiers",
+  "version": "3.0",
+  "date_created": "2026-01-10",
+  "note": "These are the fundamental parts of speech. All modifiers (transitive, locational, reduplicated, etc.) will be stored in grammar_modifier field.",
+  "core_types": [
+    {
+      "name": "adjective",
+      "description": "A word that describes or modifies a noun",
+      "example": "cháchcháák (big)"
+    },
+    {
+      "name": "adverb",
+      "description": "A word that modifies a verb, adjective, or other adverb",
+      "example": "chúen (well, properly)"
+    },
+    {
+      "name": "article",
+      "description": "A word that defines a noun as specific or unspecific",
+      "example": "e (the)"
+    },
+    {
+      "name": "auxiliary",
+      "description": "A helping verb used with main verbs",
+      "example": "pwáán (used to)"
+    },
+    {
+      "name": "classifier",
+      "description": "A word used to count or classify nouns",
+      "example": "eché (classifier for general objects)"
+    },
+    {
+      "name": "conjunction",
+      "description": "A word that connects clauses or sentences",
+      "example": "me (and)"
+    },
+    {
+      "name": "demonstrative",
+      "description": "A word that points to specific things",
+      "example": "ei (this)"
+    },
+    {
+      "name": "idiom",
+      "description": "A phrase with a meaning different from literal interpretation",
+      "example": ""
+    },
+    {
+      "name": "interjection",
+      "description": "An exclamation or sudden remark",
+      "example": "awe (yes)"
+    },
+    {
+      "name": "interrogative",
+      "description": "A word used to ask questions",
+      "example": "ifa (who)"
+    },
+    {
+      "name": "noun",
+      "description": "A word that represents a person, place, thing, or idea",
+      "example": "chala (basket)"
+    },
+    {
+      "name": "number",
+      "description": "Numerical value (cardinal or ordinal)",
+      "example": "eú (one)"
+    },
+    {
+      "name": "numeral",
+      "description": "A word representing a number",
+      "example": "eú (one)"
+    },
+    {
+      "name": "particle",
+      "description": "A functional word that expresses grammatical relationships",
+      "example": "aa (future marker)"
+    },
+    {
+      "name": "possessive",
+      "description": "Indicates ownership or possession",
+      "example": "ach (my)"
+    },
+    {
+      "name": "preposition",
+      "description": "A word that shows relationship between nouns/pronouns and other words",
+      "example": "aan (at, on)"
+    },
+    {
+      "name": "prefix",
+      "description": "A word element attached to the beginning of a word",
+      "example": ""
+    },
+    {
+      "name": "pronoun",
+      "description": "A word that substitutes for a noun",
+      "example": "ach (I, me)"
+    },
+    {
+      "name": "quantifier",
+      "description": "A word that expresses quantity",
+      "example": "fonuun (many)"
+    },
+    {
+      "name": "suffix",
+      "description": "A word element attached to the end of a word",
+      "example": ""
+    },
+    {
+      "name": "verb",
+      "description": "A word that describes an action, state, or occurrence",
+      "example": "chá (to go)"
+    }
+  ]
+}

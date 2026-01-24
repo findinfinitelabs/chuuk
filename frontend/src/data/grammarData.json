@@ -1,0 +1,627 @@
+{
+  "verbCategories": [
+    {
+      "id": "reading",
+      "label": "Reading/Studying",
+      "verbs": [
+        { "chuukese": "nukun", "english": "to read", "simpleEnglish": "read" },
+        { "chuukese": "pécheti", "english": "to learn; to study", "simpleEnglish": "study" }
+      ],
+      "compatibleDirectionals": ["tiw", "long", "wou"],
+      "compatiblePrepositions": ["ren", "ngeni"],
+      "compatibleObjectCategories": ["reading_materials"],
+      "exampleSentences": [
+        { "chuukese": "Ua nukun ewe puk", "english": "I read the book" },
+        { "chuukese": "Ua nukuntiw ewe puk", "english": "I read through the book" }
+      ]
+    },
+    {
+      "id": "writing",
+      "label": "Writing/Drawing",
+      "verbs": [
+        { "chuukese": "néfi", "english": "to write; to draw", "simpleEnglish": "write" }
+      ],
+      "compatibleDirectionals": ["tiw", "long"],
+      "compatiblePrepositions": ["ngeni", "won"],
+      "compatibleObjectCategories": ["reading_materials", "tools"],
+      "exampleSentences": [
+        { "chuukese": "Ua néfi ewe puk", "english": "I write in the book" },
+        { "chuukese": "Ua néfi ngeni seei", "english": "I write to my friend" }
+      ]
+    },
+    {
+      "id": "speaking",
+      "label": "Speaking/Communication",
+      "verbs": [
+        { "chuukese": "sómosom", "english": "to speak; to talk", "simpleEnglish": "speak" },
+        { "chuukese": "pwéti", "english": "to ask; to inquire", "simpleEnglish": "ask" },
+        { "chuukese": "áppáni", "english": "to ask for; request", "simpleEnglish": "request" }
+      ],
+      "compatibleDirectionals": ["to", "tiw"],
+      "compatiblePrepositions": ["ngeni", "ren", "me"],
+      "compatibleObjectCategories": ["people"],
+      "exampleSentences": [
+        { "chuukese": "Ua sómosom ngeni seei", "english": "I speak to my friend" },
+        { "chuukese": "Ua pwéti ren ewe puk", "english": "I ask about the book" }
+      ]
+    },
+    {
+      "id": "eating",
+      "label": "Eating/Drinking",
+      "verbs": [
+        { "chuukese": "nom", "english": "to eat; to consume", "simpleEnglish": "eat" },
+        { "chuukese": "pááni", "english": "to drink", "simpleEnglish": "drink" }
+      ],
+      "compatibleDirectionals": ["long", "tiw"],
+      "compatiblePrepositions": ["me", "seni"],
+      "compatibleObjectCategories": ["food", "drinks"],
+      "exampleSentences": [
+        { "chuukese": "Ua nom ewe mái", "english": "I eat the breadfruit" },
+        { "chuukese": "Ua pááni ewe pii", "english": "I drink the water" }
+      ]
+    },
+    {
+      "id": "cooking",
+      "label": "Cooking/Food Prep",
+      "verbs": [
+        { "chuukese": "apwá", "english": "to cook; to prepare food", "simpleEnglish": "cook" },
+        { "chuukese": "fáni", "english": "to cut; to chop", "simpleEnglish": "cut" }
+      ],
+      "compatibleDirectionals": ["tiw", "long"],
+      "compatiblePrepositions": ["ngeni", "seni"],
+      "compatibleObjectCategories": ["food"],
+      "exampleSentences": [
+        { "chuukese": "Ua apwá ewe ik", "english": "I cook the fish" },
+        { "chuukese": "Ua fáni ewe mái", "english": "I cut the breadfruit" }
+      ]
+    },
+    {
+      "id": "giving",
+      "label": "Giving/Sharing",
+      "verbs": [
+        { "chuukese": "nónou", "english": "to give; to hand over", "simpleEnglish": "give" },
+        { "chuukese": "pwátta", "english": "to share; to divide", "simpleEnglish": "share" }
+      ],
+      "compatibleDirectionals": ["to", "tiw", "ta"],
+      "compatiblePrepositions": ["ngeni"],
+      "compatibleObjectCategories": ["reading_materials", "food", "tools", "general"],
+      "exampleSentences": [
+        { "chuukese": "Ua nónou ewe puk ngeni seei", "english": "I give the book to my friend" },
+        { "chuukese": "Ua pwátta ewe mái ngeni aramas", "english": "I share the breadfruit with the people" }
+      ]
+    },
+    {
+      "id": "seeing",
+      "label": "Seeing/Hearing",
+      "verbs": [
+        { "chuukese": "ani", "english": "to see; to look", "simpleEnglish": "see" },
+        { "chuukese": "téti", "english": "to hear; to listen", "simpleEnglish": "hear" }
+      ],
+      "compatibleDirectionals": ["to", "tiw", "ta", "long"],
+      "compatiblePrepositions": ["ngeni", "ren"],
+      "compatibleObjectCategories": ["people", "general", "reading_materials"],
+      "exampleSentences": [
+        { "chuukese": "Ua ani ewe aramas", "english": "I see the person" },
+        { "chuukese": "Ua téti ngeni ewe sómosom", "english": "I listen to the speech" }
+      ]
+    },
+    {
+      "id": "movement",
+      "label": "Movement/Travel",
+      "verbs": [
+        { "chuukese": "och", "english": "to go; to proceed", "simpleEnglish": "go" },
+        { "chuukese": "chón", "english": "to walk; to travel", "simpleEnglish": "walk" },
+        { "chuukese": "púkun", "english": "to enter; to go in", "simpleEnglish": "enter" },
+        { "chuukese": "éét", "english": "to go out; to exit", "simpleEnglish": "exit" },
+        { "chuukese": "éétiw", "english": "to go away; to depart", "simpleEnglish": "depart" }
+      ],
+      "compatibleDirectionals": ["to", "lo", "ta", "tiw", "long", "wou"],
+      "compatiblePrepositions": ["non", "won", "seni"],
+      "compatibleObjectCategories": ["locations"],
+      "exampleSentences": [
+        { "chuukese": "Ua och non ewe imw", "english": "I go into the house" },
+        { "chuukese": "Ua chóntiw", "english": "I walk away" }
+      ]
+    },
+    {
+      "id": "posture",
+      "label": "Posture/Position",
+      "verbs": [
+        { "chuukese": "tét", "english": "to stand", "simpleEnglish": "stand" },
+        { "chuukese": "chét", "english": "to sit", "simpleEnglish": "sit" },
+        { "chuukese": "sók", "english": "to stand up; to rise", "simpleEnglish": "rise" }
+      ],
+      "compatibleDirectionals": ["to", "tiw"],
+      "compatiblePrepositions": ["won", "non"],
+      "compatibleObjectCategories": ["locations"],
+      "exampleSentences": [
+        { "chuukese": "Ua tét won ewe fénúún", "english": "I stand on the floor" },
+        { "chuukese": "Ua chét non ewe nómw", "english": "I sit in the room" }
+      ]
+    },
+    {
+      "id": "possession",
+      "label": "Having/Possessing",
+      "verbs": [
+        { "chuukese": "wor", "english": "to have; to possess", "simpleEnglish": "have" },
+        { "chuukese": "ákkuta", "english": "to hold; to grab", "simpleEnglish": "hold" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": [],
+      "compatibleObjectCategories": ["reading_materials", "food", "tools", "general"],
+      "exampleSentences": [
+        { "chuukese": "Ua wor eu puk", "english": "I have one book" },
+        { "chuukese": "Ua ákkuta ewe pén", "english": "I hold the pen" }
+      ]
+    },
+    {
+      "id": "mental",
+      "label": "Thinking/Feeling",
+      "verbs": [
+        { "chuukese": "fániti", "english": "to think; to consider", "simpleEnglish": "think" },
+        { "chuukese": "fwán", "english": "to think deeply; meditate", "simpleEnglish": "meditate" },
+        { "chuukese": "pwanú", "english": "to want; to desire", "simpleEnglish": "want" },
+        { "chuukese": "páchá", "english": "to feel; to sense", "simpleEnglish": "feel" },
+        { "chuukese": "wúúmi", "english": "to believe; to trust", "simpleEnglish": "believe" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["ren", "ngeni", "pwe"],
+      "compatibleObjectCategories": ["general"],
+      "exampleSentences": [
+        { "chuukese": "Ua fániti ren ewe angang", "english": "I think about the work" },
+        { "chuukese": "Ua pwanú ewe puk", "english": "I want the book" }
+      ]
+    },
+    {
+      "id": "emotions",
+      "label": "Emotions",
+      "verbs": [
+        { "chuukese": "aáni", "english": "to be happy; to be glad", "simpleEnglish": "be happy" },
+        { "chuukese": "sénuk", "english": "to be afraid; to fear", "simpleEnglish": "fear" },
+        { "chuukese": "anúchu", "english": "to be angry; to become upset", "simpleEnglish": "be angry" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["ren", "pwe"],
+      "compatibleObjectCategories": [],
+      "exampleSentences": [
+        { "chuukese": "Ua aáni ren ewe fénú", "english": "I am happy about the news" },
+        { "chuukese": "Ua sénuk pwe a tiw", "english": "I am afraid because it fell" }
+      ]
+    },
+    {
+      "id": "teaching",
+      "label": "Teaching/Learning",
+      "verbs": [
+        { "chuukese": "wúniti", "english": "to teach; to instruct", "simpleEnglish": "teach" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["ngeni", "ren"],
+      "compatibleObjectCategories": ["people", "reading_materials"],
+      "exampleSentences": [
+        { "chuukese": "Ua wúniti ngeni ewe fféin", "english": "I teach the children" },
+        { "chuukese": "Ua wúniti ren ewe sómosom", "english": "I teach about speaking" }
+      ]
+    },
+    {
+      "id": "commerce",
+      "label": "Buying/Selling",
+      "verbs": [
+        { "chuukese": "móni", "english": "to buy; to purchase", "simpleEnglish": "buy" },
+        { "chuukese": "fótin", "english": "to sell", "simpleEnglish": "sell" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["ngeni", "seni"],
+      "compatibleObjectCategories": ["food", "tools", "reading_materials", "general"],
+      "exampleSentences": [
+        { "chuukese": "Ua móni ewe puk", "english": "I buy the book" },
+        { "chuukese": "Ua fótin ewe ik ngeni aramas", "english": "I sell the fish to the person" }
+      ]
+    },
+    {
+      "id": "helping",
+      "label": "Helping/Saving",
+      "verbs": [
+        { "chuukese": "appiru", "english": "to help; to rescue", "simpleEnglish": "help" }
+      ],
+      "compatibleDirectionals": ["to", "tiw"],
+      "compatiblePrepositions": ["ngeni"],
+      "compatibleObjectCategories": ["people"],
+      "exampleSentences": [
+        { "chuukese": "Ua appiru ngeni seei", "english": "I help my friend" }
+      ]
+    },
+    {
+      "id": "cleaning",
+      "label": "Cleaning/Washing",
+      "verbs": [
+        { "chuukese": "apúsa", "english": "to clean; to make neat", "simpleEnglish": "clean" },
+        { "chuukese": "pwét", "english": "to wash; to cleanse", "simpleEnglish": "wash" }
+      ],
+      "compatibleDirectionals": ["tiw", "wou"],
+      "compatiblePrepositions": ["seni"],
+      "compatibleObjectCategories": ["general", "locations"],
+      "exampleSentences": [
+        { "chuukese": "Ua apúsa ewe imw", "english": "I clean the house" },
+        { "chuukese": "Ua pwét ewe pén", "english": "I wash the pen" }
+      ]
+    },
+    {
+      "id": "opening",
+      "label": "Opening/Closing",
+      "verbs": [
+        { "chuukese": "áffá", "english": "to open; to uncover", "simpleEnglish": "open" },
+        { "chuukese": "pwiipwi", "english": "to close; to shut", "simpleEnglish": "close" }
+      ],
+      "compatibleDirectionals": ["wou", "long"],
+      "compatiblePrepositions": [],
+      "compatibleObjectCategories": ["reading_materials", "general"],
+      "exampleSentences": [
+        { "chuukese": "Ua áffá ewe puk", "english": "I open the book" },
+        { "chuukese": "Ua pwiipwi ewe chotá", "english": "I close the bag" }
+      ]
+    },
+    {
+      "id": "making",
+      "label": "Making/Creating",
+      "verbs": [
+        { "chuukese": "fóni", "english": "to create; make; produce", "simpleEnglish": "make" },
+        { "chuukese": "áttéi", "english": "to adjust; to set; to fix", "simpleEnglish": "fix" },
+        { "chuukese": "fóót", "english": "to straighten; to line up", "simpleEnglish": "straighten" }
+      ],
+      "compatibleDirectionals": ["tiw", "to"],
+      "compatiblePrepositions": ["ngeni"],
+      "compatibleObjectCategories": ["general", "tools"],
+      "exampleSentences": [
+        { "chuukese": "Ua fóni ewe chók", "english": "I make the thing" },
+        { "chuukese": "Ua áttéi ewe imw", "english": "I fix the house" }
+      ]
+    },
+    {
+      "id": "gathering",
+      "label": "Gathering",
+      "verbs": [
+        { "chuukese": "tufich", "english": "to gather; to assemble", "simpleEnglish": "gather" }
+      ],
+      "compatibleDirectionals": ["long", "to"],
+      "compatiblePrepositions": ["non"],
+      "compatibleObjectCategories": ["people", "general"],
+      "exampleSentences": [
+        { "chuukese": "Sia tufich non ewe imw", "english": "We gather in the house" }
+      ]
+    },
+    {
+      "id": "using",
+      "label": "Using",
+      "verbs": [
+        { "chuukese": "úk", "english": "to use; to employ", "simpleEnglish": "use" },
+        { "chuukese": "angang", "english": "to do; to work; to perform", "simpleEnglish": "work" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["seni"],
+      "compatibleObjectCategories": ["tools", "general"],
+      "exampleSentences": [
+        { "chuukese": "Ua úk ewe pén", "english": "I use the pen" },
+        { "chuukese": "Ua angang seni ewe chék", "english": "I work with the tool" }
+      ]
+    },
+    {
+      "id": "waiting",
+      "label": "Waiting/Staying",
+      "verbs": [
+        { "chuukese": "kénúchi", "english": "to wait; to stay", "simpleEnglish": "wait" },
+        { "chuukese": "móór", "english": "to live; to be alive", "simpleEnglish": "live" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": ["non", "won", "ngeni"],
+      "compatibleObjectCategories": ["locations", "people"],
+      "exampleSentences": [
+        { "chuukese": "Ua kénúchi ngeni seei", "english": "I wait for my friend" },
+        { "chuukese": "Ua móór non ewe imw", "english": "I live in the house" }
+      ]
+    },
+    {
+      "id": "ability",
+      "label": "Ability",
+      "verbs": [
+        { "chuukese": "méfi", "english": "to be able; can", "simpleEnglish": "can" }
+      ],
+      "compatibleDirectionals": [],
+      "compatiblePrepositions": [],
+      "compatibleObjectCategories": [],
+      "exampleSentences": [
+        { "chuukese": "Ua méfi nukun", "english": "I can read" }
+      ]
+    }
+  ],
+  "objectCategories": {
+    "reading_materials": {
+      "label": "Reading Materials",
+      "objects": [
+        { "chuukese": "puk", "english": "book" },
+        { "chuukese": "péépar", "english": "paper" },
+        { "chuukese": "léttar", "english": "letter" },
+        { "chuukese": "stori", "english": "story" }
+      ]
+    },
+    "food": {
+      "label": "Food",
+      "objects": [
+        { "chuukese": "mái", "english": "breadfruit" },
+        { "chuukese": "ik", "english": "fish" },
+        { "chuukese": "wúnúmei", "english": "taro" },
+        { "chuukese": "ón", "english": "coconut" },
+        { "chuukese": "ráis", "english": "rice" }
+      ]
+    },
+    "drinks": {
+      "label": "Drinks",
+      "objects": [
+        { "chuukese": "pii", "english": "water" },
+        { "chuukese": "ón", "english": "coconut (water)" }
+      ]
+    },
+    "tools": {
+      "label": "Tools/Items",
+      "objects": [
+        { "chuukese": "pén", "english": "pen" },
+        { "chuukese": "chék", "english": "tool" },
+        { "chuukese": "naip", "english": "knife" }
+      ]
+    },
+    "people": {
+      "label": "People",
+      "objects": [
+        { "chuukese": "aramas", "english": "person/people" },
+        { "chuukese": "seei", "english": "friend" },
+        { "chuukese": "fféin", "english": "child/children" },
+        { "chuukese": "meinisin", "english": "everyone" }
+      ]
+    },
+    "locations": {
+      "label": "Locations",
+      "objects": [
+        { "chuukese": "imw", "english": "house" },
+        { "chuukese": "sukuun", "english": "school" },
+        { "chuukese": "nómw", "english": "room" },
+        { "chuukese": "fénúún", "english": "floor" },
+        { "chuukese": "chotá", "english": "bag" }
+      ]
+    },
+    "general": {
+      "label": "General Objects",
+      "objects": [
+        { "chuukese": "chók", "english": "thing" },
+        { "chuukese": "angang", "english": "work/task" },
+        { "chuukese": "fénú", "english": "news/story" }
+      ]
+    }
+  },
+  "directionalSuffixes": [
+    { "id": "to", "chuukese": "-to", "english": "up / upward", "notes": "Motion or direction upward" },
+    { "id": "lo", "chuukese": "-ló", "english": "down / downward", "notes": "Motion or direction downward" },
+    { "id": "ta", "chuukese": "-tá", "english": "toward / hither", "notes": "Motion toward the speaker" },
+    { "id": "tiw", "chuukese": "-tiw", "english": "through / away / completely", "notes": "Motion away or through to completion" },
+    { "id": "long", "chuukese": "-long", "english": "into / inside", "notes": "Motion into something" },
+    { "id": "wou", "chuukese": "-wou", "english": "out / outside", "notes": "Motion out of something" },
+    { "id": "sefan", "chuukese": "-sefán", "english": "across / over", "notes": "Motion across a surface" }
+  ],
+  "prepositionalPhrases": [
+    { "id": "ngeni", "chuukese": "ngeni", "english": "to / for (someone)", "notes": "Recipient or beneficiary" },
+    { "id": "seni", "chuukese": "seni", "english": "from / with / using", "notes": "Source, instrument, or accompaniment" },
+    { "id": "non", "chuukese": "non", "english": "in / inside", "notes": "Location within something" },
+    { "id": "pwe", "chuukese": "pwe", "english": "because / so that", "notes": "Reason or purpose" },
+    { "id": "ren", "chuukese": "ren", "english": "about / concerning", "notes": "Topic or subject matter" },
+    { "id": "me", "chuukese": "me", "english": "and / with", "notes": "Conjunction or accompaniment" },
+    { "id": "won", "chuukese": "won", "english": "on / upon / at", "notes": "Surface location" }
+  ],
+  "sentences": [
+    {
+      "id": "existential",
+      "name": "There is...",
+      "pattern": "A wor [number] [noun] woon ewe [location]",
+      "english": "There is/are [number] [noun] on the [location]",
+      "example": { "chuukese": "A wor eu puk woon ewe sanif", "english": "There is one book on the shelf" }
+    },
+    {
+      "id": "possession",
+      "name": "I have...",
+      "pattern": "[subject] wor [number] [noun]",
+      "english": "[subject] have/has [number] [noun]",
+      "example": { "chuukese": "Ua wor eu puk", "english": "I have one book" }
+    }
+  ],
+  "pronouns": [
+    { 
+      "english": "I", 
+      "chuukese": "Ngang",
+      "pastPresent": "Ua",
+      "future": "Upwe",
+      "indefinite": "Upwap",
+      "simpleNegative": "Use",
+      "emphaticNegative": "Usap"
+    },
+    { 
+      "english": "you (sg.)", 
+      "chuukese": "En",
+      "pastPresent": "Ka",
+      "future": "Kopwe",
+      "indefinite": "Kopwap",
+      "simpleNegative": "Kose",
+      "emphaticNegative": "Kosap"
+    },
+    { 
+      "english": "he/she/it", 
+      "chuukese": "I",
+      "pastPresent": "A",
+      "future": "Epwe",
+      "indefinite": "Ese",
+      "simpleNegative": "Ese",
+      "emphaticNegative": "Esap"
+    },
+    { 
+      "english": "we (incl.)", 
+      "chuukese": "Kich",
+      "pastPresent": "Sia",
+      "future": "Sipwe",
+      "indefinite": "Sipwap",
+      "simpleNegative": "Sise",
+      "emphaticNegative": "Sisap"
+    },
+    { 
+      "english": "we (excl.)", 
+      "chuukese": "Am",
+      "pastPresent": "Aua",
+      "future": "Aupwe",
+      "indefinite": "Aupwap",
+      "simpleNegative": "Ause",
+      "emphaticNegative": "Ausap"
+    },
+    { 
+      "english": "you (pl.)", 
+      "chuukese": "Ami",
+      "pastPresent": "Oua",
+      "future": "Oupwe",
+      "indefinite": "Oupwap",
+      "simpleNegative": "Ouse",
+      "emphaticNegative": "Ousap"
+    },
+    { 
+      "english": "they", 
+      "chuukese": "Ir",
+      "pastPresent": "Ra",
+      "future": "Repwe",
+      "indefinite": "Repwap",
+      "simpleNegative": "Rese",
+      "emphaticNegative": "Resap"
+    }
+  ],
+  "pronounTenses": [
+    { "id": "pastPresent", "label": "Past/Present" },
+    { "id": "future", "label": "Future" },
+    { "id": "indefinite", "label": "Indefinite" },
+    { "id": "simpleNegative", "label": "Simple Negative" },
+    { "id": "emphaticNegative", "label": "Emphatic Negative" }
+  ],
+  "articles": [
+    { "category": "Definite (Singular)", "chuukese": "ewe", "meaning": "the (one specific)", "notes": "Most common article; marks one known item.", "isPlural": false },
+    { "category": "Definite (Plural)", "chuukese": "ekkewe", "meaning": "the (plural)", "notes": "Marks plural items; noun itself does not change.", "isPlural": true },
+    { "category": "Demonstrative — Near", "chuukese": "ewe", "meaning": "this / the (near)", "notes": "Same form as definite; proximity clarified in speech context.", "isPlural": false },
+    { "category": "Demonstrative — Mid-distance", "chuukese": "ekkena", "meaning": "that (over there)", "notes": "Refers to something away from the speaker but visible.", "isPlural": false },
+    { "category": "Demonstrative — Far", "chuukese": "ekkewe (far)", "meaning": "that / those (far away)", "notes": "Same as plural form; distance clarified by gesture or context.", "isPlural": true },
+    { "category": "Indefinite", "chuukese": "apwá / apwa", "meaning": "a / one / a certain", "notes": "Indicates nonspecific or unknown item (\"a book\").", "isPlural": false },
+    { "category": "Specific Unit Classifier", "chuukese": "epwech", "meaning": "one (specific unit)", "notes": "Strong emphasis on \"one single item.\"", "isPlural": false },
+    { "category": "Numeral Classifiers (General)", "chuukese": "epwér, epwún, epwei, etc.", "meaning": "classifier-based articles", "notes": "Used with specific counting categories; older style, still valid.", "isPlural": false },
+    { "category": "Plural Demonstrative", "chuukese": "ekkewe, ekkena ekkewe", "meaning": "these / those", "notes": "Combine article + demonstrative clarifier.", "isPlural": true }
+  ],
+  "numbers": {
+    "general": {
+      "label": "General counting",
+      "words": [
+        { "chuukese": "eu", "english": "one" },
+        { "chuukese": "ruu", "english": "two" },
+        { "chuukese": "unun", "english": "three" },
+        { "chuukese": "faan", "english": "four" },
+        { "chuukese": "niim", "english": "five" },
+        { "chuukese": "won", "english": "six" },
+        { "chuukese": "fuus", "english": "seven" },
+        { "chuukese": "waan", "english": "eight" },
+        { "chuukese": "tiw", "english": "nine" },
+        { "chuukese": "engon", "english": "ten" }
+      ]
+    },
+    "longThin": {
+      "label": "Long/thin objects (books, pens)",
+      "words": [
+        { "chuukese": "efoch", "english": "one" },
+        { "chuukese": "rufoch", "english": "two" },
+        { "chuukese": "unufoch", "english": "three" },
+        { "chuukese": "faafoch", "english": "four" },
+        { "chuukese": "nimofoch", "english": "five" },
+        { "chuukese": "wonofoch", "english": "six" },
+        { "chuukese": "fusofoch", "english": "seven" },
+        { "chuukese": "wanofoch", "english": "eight" },
+        { "chuukese": "tiwofoch", "english": "nine" },
+        { "chuukese": "engofoch", "english": "ten" }
+      ]
+    },
+    "round": {
+      "label": "Round objects (fruits, coins)",
+      "words": [
+        { "chuukese": "ewu", "english": "one" },
+        { "chuukese": "ruwu", "english": "two" },
+        { "chuukese": "unuwu", "english": "three" },
+        { "chuukese": "faawu", "english": "four" },
+        { "chuukese": "nimowu", "english": "five" },
+        { "chuukese": "wonowu", "english": "six" },
+        { "chuukese": "fusowu", "english": "seven" },
+        { "chuukese": "wanowu", "english": "eight" },
+        { "chuukese": "tiwowu", "english": "nine" },
+        { "chuukese": "engowu", "english": "ten" }
+      ]
+    },
+    "animate": {
+      "label": "Living things (animals, people)",
+      "words": [
+        { "chuukese": "eman", "english": "one" },
+        { "chuukese": "ruman", "english": "two" },
+        { "chuukese": "unuman", "english": "three" },
+        { "chuukese": "faaman", "english": "four" },
+        { "chuukese": "nimoman", "english": "five" },
+        { "chuukese": "wonoman", "english": "six" },
+        { "chuukese": "fusoman", "english": "seven" },
+        { "chuukese": "wanoman", "english": "eight" },
+        { "chuukese": "tiwoman", "english": "nine" },
+        { "chuukese": "engoman", "english": "ten" }
+      ]
+    }
+  },
+  "existentialVerb": {
+    "chuukese": "wor",
+    "english": "exists / there is"
+  },
+  "article": {
+    "chuukese": "ewe",
+    "english": "the"
+  },
+  "nouns": [
+    { "chuukese": "puk", "english": "book", "category": "longThin" },
+    { "chuukese": "magazine", "english": "magazine", "category": "longThin" },
+    { "chuukese": "brochure", "english": "brochure", "category": "longThin" },
+    { "chuukese": "eriki", "english": "tract", "category": "longThin" },
+    { "chuukese": "puk kéél", "english": "songbook", "category": "longThin" },
+    { "chuukese": "Paipel", "english": "Bible", "category": "longThin" },
+    { "chuukese": "puk sukuun", "english": "textbook", "category": "longThin" },
+    { "chuukese": "notepad", "english": "notepad", "category": "longThin" },
+    { "chuukese": "pen", "english": "pen", "category": "longThin" },
+    { "chuukese": "photograph", "english": "photograph", "category": "longThin" },
+    { "chuukese": "map", "english": "map", "category": "longThin" },
+    { "chuukese": "microphone", "english": "microphone", "category": "longThin" },
+    { "chuukese": "skipping rope", "english": "skipping rope", "category": "longThin" },
+    { "chuukese": "moni", "english": "coin", "category": "round" },
+    { "chuukese": "keik", "english": "cake", "category": "round" },
+    { "chuukese": "apel", "english": "apple", "category": "round" },
+    { "chuukese": "tomato", "english": "tomato", "category": "round" },
+    { "chuukese": "likúkútong", "english": "ant", "category": "animate" },
+    { "chuukese": "kiesik", "english": "mouse", "category": "animate" },
+    { "chuukese": "katto", "english": "cat", "category": "animate" }
+  ],
+  "locations": [
+    { "chuukese": "sanif", "english": "shelf", "preposition": "woon", "englishPreposition": "on the" },
+    { "chuukese": "wa", "english": "car", "preposition": "woon", "englishPreposition": "in the" },
+    { "chuukese": "refrigerator", "english": "refrigerator", "preposition": "woon", "englishPreposition": "in the" },
+    { "chuukese": "sitoa", "english": "store", "preposition": "woon", "englishPreposition": "at the" },
+    { "chuukese": "chepel", "english": "table", "preposition": "woon", "englishPreposition": "on the" },
+    { "chuukese": "imw", "english": "house", "preposition": "woon", "englishPreposition": "in the" },
+    { "chuukese": "sukuun", "english": "school", "preposition": "woon", "englishPreposition": "at the" },
+    { "chuukese": "nómw", "english": "room", "preposition": "woon", "englishPreposition": "in the" },
+    { "chuukese": "fénúún", "english": "floor", "preposition": "woon", "englishPreposition": "on the" },
+    { "chuukese": "chotá", "english": "bag", "preposition": "woon", "englishPreposition": "in the" }
+  ],
+  "reduplicationExamples": [
+    { "base": "nom", "reduplicated": "nonom", "baseEnglish": "eat", "reduplicatedEnglish": "eating repeatedly / keep eating" },
+    { "base": "appiru", "reduplicated": "akkappiru", "baseEnglish": "help", "reduplicatedEnglish": "help each other" },
+    { "base": "sómosom", "reduplicated": "sósómosom", "baseEnglish": "speak", "reduplicatedEnglish": "speaking continuously" },
+    { "base": "fiti", "reduplicated": "fifiti", "baseEnglish": "pull", "reduplicatedEnglish": "pulling repeatedly" },
+    { "base": "wewe", "reduplicated": "wewewe", "baseEnglish": "carry", "reduplicatedEnglish": "carrying back and forth" }
+  ]
+}
