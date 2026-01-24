@@ -20,6 +20,11 @@ uploads
 *.log
 .DS_Store
 
+# Large data assets (not needed for runtime image)
+data
+test_results
+training_data
+
 # Documentation
 README.md
 docs

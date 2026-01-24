@@ -1,10 +1,11 @@
 # Dockerfile for Ollama service
 FROM python:3.11-slim
 
-# Install curl for Ollama installation
-RUN apt-get update && apt-get install -y \
+# Install curl and zstd (required by Ollama installer)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ollama
@@ -15,12 +16,15 @@ WORKDIR /app
 # Copy the Ollama modelfile
 COPY ollama-modelfile/ ./ollama-modelfile/
 
-# Pre-pull the llama3.2:3b model during build
-RUN ollama serve & \
-    OLLAMA_PID=$! && \
-    sleep 5 && \
-    ollama pull llama3.2:3b && \
-    kill $OLLAMA_PID
+# Optional pre-pull of llama3.2:3b to warm the image (set PREPULL_LLM=true at build time)
+ARG PREPULL_LLM=false
+RUN if [ "$PREPULL_LLM" = "true" ]; then \
+            ollama serve & \
+            OLLAMA_PID=$! && \
+            sleep 5 && \
+            ollama pull llama3.2:3b && \
+            kill $OLLAMA_PID; \
+        fi
 
 # Copy the entrypoint script for Ollama
 COPY ollama-entrypoint.sh /ollama-entrypoint.sh

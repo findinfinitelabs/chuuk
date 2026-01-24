@@ -187,6 +187,14 @@ deploy_ollama() {
   log "Deploying Ollama Container App (${OLLAMA_APP_NAME})..."
   local image_ref="${ACR_LOGIN_SERVER}/${OLLAMA_IMAGE}:${IMAGE_TAG}"
   if az containerapp show --name "$OLLAMA_APP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    # Refresh registry credentials before pulling new image
+    az containerapp registry set \
+      --name "$OLLAMA_APP_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --server "$ACR_LOGIN_SERVER" \
+      --username "$ACR_USERNAME" \
+      --password "$ACR_PASSWORD" >/dev/null
+
     az containerapp update \
       --name "$OLLAMA_APP_NAME" \
       --resource-group "$RESOURCE_GROUP" \
@@ -241,6 +249,14 @@ deploy_main() {
   fi
 
   if az containerapp show --name "$MAIN_APP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    # Refresh registry credentials before pulling new image
+    az containerapp registry set \
+      --name "$MAIN_APP_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --server "$ACR_LOGIN_SERVER" \
+      --username "$ACR_USERNAME" \
+      --password "$ACR_PASSWORD" >/dev/null
+
     az containerapp update \
       --name "$MAIN_APP_NAME" \
       --resource-group "$RESOURCE_GROUP" \

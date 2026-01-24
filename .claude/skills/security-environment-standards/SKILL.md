@@ -6,6 +6,7 @@ description: Security and environment configuration standards for web applicatio
 # Security Environment Standards
 
 ## Core Security Principles
+
 - **Defense in depth**: Multiple layers of security controls
 - **Principle of least privilege**: Minimal access rights for users and systems
 - **Secure by default**: Security features enabled by default
@@ -15,6 +16,7 @@ description: Security and environment configuration standards for web applicatio
 ## Environment Configuration
 
 ### 1. Environment Variables
+
 ```python
 # .env file structure (never commit to version control)
 # Database Configuration
@@ -43,6 +45,7 @@ SESSION_COOKIE_HTTPONLY=True
 ```
 
 ### 2. Environment-Specific Configuration
+
 ```python
 # config.py
 import os
@@ -103,6 +106,7 @@ class TestingConfig(Config):
 ## Security Implementation
 
 ### 1. Input Validation and Sanitization
+
 ```python
 from flask_wtf import FlaskForm
 from wtforms import StringField, TextAreaField
@@ -156,6 +160,7 @@ def sanitize_user_input(text):
 ```
 
 ### 2. Authentication and Authorization
+
 ```python
 from flask_login import UserMixin, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -227,6 +232,7 @@ def require_auth(role=None):
 ```
 
 ### 3. Database Security
+
 ```python
 from sqlalchemy import text
 from sqlalchemy.orm import validates
@@ -288,6 +294,7 @@ class DictionaryEntry(Base):
 ```
 
 ### 4. API Security
+
 ```python
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -370,6 +377,7 @@ def api_translate():
 ## Production Deployment Security
 
 ### 1. HTTPS and SSL/TLS
+
 ```nginx
 # nginx.conf - Force HTTPS
 server {
@@ -409,6 +417,7 @@ server {
 ```
 
 ### 2. Docker Security
+
 ```dockerfile
 # Dockerfile with security best practices
 FROM python:3.11-slim as base
@@ -446,6 +455,7 @@ CMD ["python", "app.py"]
 ## Security Monitoring
 
 ### 1. Logging Security Events
+
 ```python
 import logging
 from flask import request
@@ -504,6 +514,7 @@ def log_requests():
 ```
 
 ### 2. Security Headers Implementation
+
 ```python
 from flask import Flask
 from flask_talisman import Talisman
@@ -530,30 +541,35 @@ Talisman(app, {
 ## Best Practices
 
 ### 1. Environment Management
+
 - Never commit secrets to version control
 - Use separate environments for development, staging, and production
 - Rotate API keys and secrets regularly
 - Use environment-specific configuration files
 
 ### 2. Regular Security Updates
+
 - Keep all dependencies updated
 - Monitor security advisories for used packages
 - Implement automated security scanning in CI/CD
 - Regular security audits and penetration testing
 
 ### 3. Data Protection
+
 - Encrypt sensitive data at rest
 - Use HTTPS for all communications
 - Implement proper session management
 - Regular database backups with encryption
 
 ### 4. Access Control
+
 - Implement principle of least privilege
 - Use strong authentication mechanisms
 - Regular access reviews and cleanup
 - Proper error handling without information disclosure
 
 ## Dependencies
+
 - `flask-limiter`: API rate limiting
 - `flask-talisman`: Security headers
 - `python-jose`: JWT token handling
@@ -561,7 +577,9 @@ Talisman(app, {
 - `cryptography`: Encryption utilities
 
 ## Validation Criteria
+
 Security implementation should:
+
 - ✅ Use HTTPS in production environments
 - ✅ Implement proper input validation and sanitization
 - ✅ Use parameterized queries for database operations

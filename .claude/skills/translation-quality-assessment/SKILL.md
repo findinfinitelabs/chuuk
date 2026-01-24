@@ -1,20 +1,26 @@
 ---
 name: translation-quality-assessment
-description: Assess and validate translation quality between Chuukese and English with cultural context awareness, linguistic accuracy checking, and automated quality metrics. Use when evaluating translation outputs, building quality control systems, or validating translation models.
+description: Assess and validate translation quality between Chuukese and English with cultural context awareness, linguistic accuracy checking, and automated quality metrics. Supports Helsinki-NLP model evaluation with BLEU, chrF, and model-specific scoring. Use when evaluating translation outputs, building quality control systems, or validating translation models.
 ---
 
 # Translation Quality Assessment
 
 ## Overview
+
 A specialized skill for assessing translation quality between Chuukese and English, incorporating cultural context validation, linguistic accuracy checking, and automated quality metrics. Designed to ensure high-quality translations that preserve both linguistic meaning and cultural nuances.
 
+**Supported Models**: Helsinki-NLP OPUS-MT, fine-tuned Chuukese models, hybrid translation systems
+
 ## Capabilities
+
 - **Cultural Context Validation**: Ensure translations maintain cultural appropriateness and traditional concepts
 - **Linguistic Accuracy Assessment**: Check grammatical correctness and meaning preservation
-- **Automated Quality Metrics**: BLEU, ROUGE, and custom Chuukese-specific scoring
+- **Automated Quality Metrics**: BLEU, chrF, ROUGE, and custom Chuukese-specific scoring
+- **Helsinki-NLP Model Evaluation**: Model-specific metrics for OPUS-MT fine-tuned models
 - **Consistency Checking**: Verify terminology consistency across translations
 - **Fluency Evaluation**: Assess naturalness and readability of translations
 - **Back-Translation Validation**: Round-trip translation quality assessment
+- **Low-Resource Language Metrics**: chrF preferred for morphologically rich languages
 
 ## Core Components
 
@@ -149,17 +155,34 @@ class ChuukeseLinguisticChecker:
 ```python
 import math
 from collections import Counter
+import sacrebleu
+from typing import List, Dict, Optional
 
 class TranslationQualityMetrics:
+    """
+    Quality metrics for translation evaluation.
+    Optimized for low-resource languages like Chuukese.
+    """
+    
     def __init__(self):
         self.reference_translations = {}  # Load from reference corpus
     
-    def calculate_bleu_score(self, candidate, reference):
-        """Calculate BLEU score for translation quality"""
+    def calculate_bleu_score(self, candidate: str, reference: str) -> float:
+        """
+        Calculate BLEU score using sacrebleu for consistency.
+        Note: chrF is preferred for morphologically rich languages.
+        """
+        try:
+            bleu = sacrebleu.sentence_bleu(candidate, [reference])
+            return bleu.score / 100.0  # Normalize to 0-1
+        except Exception:
+            return self._fallback_bleu(candidate, reference)
+    
+    def _fallback_bleu(self, candidate: str, reference: str) -> float:
+        """Fallback BLEU calculation if sacrebleu unavailable"""
         candidate_tokens = candidate.lower().split()
         reference_tokens = reference.lower().split()
         
-        # Calculate n-gram precision for n=1,2,3,4
         precisions = []
         for n in range(1, 5):
             candidate_ngrams = self.get_ngrams(candidate_tokens, n)
@@ -174,24 +197,50 @@ class TranslationQualityMetrics:
             
             precisions.append(precision)
         
-        # Brevity penalty
         candidate_length = len(candidate_tokens)
         reference_length = len(reference_tokens)
         
         if candidate_length > reference_length:
             bp = 1
         else:
-            bp = math.exp(1 - reference_length / candidate_length)
+            bp = math.exp(1 - reference_length / max(candidate_length, 1))
         
-        # Calculate BLEU
         if min(precisions) > 0:
-            bleu = bp * math.exp(sum(math.log(p) for p in precisions) / 4)
+            bleu = bp * math.exp(sum(math.log(p) for p in precisions if p > 0) / 4)
         else:
             bleu = 0
         
         return bleu
     
-    def get_ngrams(self, tokens, n):
+    def calculate_chrf_score(self, candidate: str, reference: str) -> float:
+        """
+        Calculate chrF score - PREFERRED for low-resource and morphologically rich languages.
+        chrF is character-based and handles Chuukese accents better than BLEU.
+        """
+        try:
+            chrf = sacrebleu.sentence_chrf(candidate, [reference])
+            return chrf.score / 100.0  # Normalize to 0-1
+        except Exception:
+            return self._fallback_chrf(candidate, reference)
+    
+    def _fallback_chrf(self, candidate: str, reference: str) -> float:
+        """Simple character F-score fallback"""
+        candidate_chars = set(candidate.lower())
+        reference_chars = set(reference.lower())
+        
+        if not candidate_chars or not reference_chars:
+            return 0.0
+        
+        intersection = candidate_chars & reference_chars
+        precision = len(intersection) / len(candidate_chars)
+        recall = len(intersection) / len(reference_chars)
+        
+        if precision + recall == 0:
+            return 0.0
+        
+        return 2 * precision * recall / (precision + recall)
+    
+    def get_ngrams(self, tokens: List[str], n: int) -> Counter:
         """Extract n-grams from token list"""
         ngrams = Counter()
         for i in range(len(tokens) - n + 1):
@@ -199,19 +248,113 @@ class TranslationQualityMetrics:
             ngrams[ngram] += 1
         return ngrams
     
-    def calculate_cultural_preservation_score(self, cultural_validation_results):
+    def calculate_cultural_preservation_score(self, cultural_validation_results: Dict) -> float:
         """Calculate score based on cultural context preservation"""
         base_score = cultural_validation_results.get('cultural_accuracy_score', 0.0)
         
-        # Penalty for missing cultural context
         missing_context_penalty = len(cultural_validation_results.get('missing_context', [])) * 0.1
-        
-        # Bonus for proper cultural explanations
         proper_translations_bonus = len(cultural_validation_results.get('proper_translations', [])) * 0.05
         
         final_score = max(0.0, min(1.0, base_score - missing_context_penalty + proper_translations_bonus))
         
         return final_score
+
+
+class HelsinkiModelEvaluator:
+    """
+    Specialized evaluator for Helsinki-NLP OPUS-MT models.
+    Handles fine-tuned Chuukese translation models.
+    """
+    
+    def __init__(self, model_path: str = None):
+        self.model_path = model_path
+        self.metrics = TranslationQualityMetrics()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    def evaluate_model(
+        self, 
+        test_pairs: List[Dict[str, str]],
+        direction: str = "chk_to_en"
+    ) -> Dict[str, float]:
+        """
+        Evaluate Helsinki-NLP model on test set.
+        
+        Args:
+            test_pairs: List of {'source': str, 'target': str}
+            direction: 'chk_to_en' or 'en_to_chk'
+        
+        Returns:
+            Dictionary with aggregate metrics
+        """
+        bleu_scores = []
+        chrf_scores = []
+        
+        for pair in test_pairs:
+            source = pair['source']
+            target = pair['target']
+            
+            # Get model prediction
+            prediction = self.translate(source, direction)
+            
+            # Calculate metrics
+            bleu = self.metrics.calculate_bleu_score(prediction, target)
+            chrf = self.metrics.calculate_chrf_score(prediction, target)
+            
+            bleu_scores.append(bleu)
+            chrf_scores.append(chrf)
+        
+        return {
+            'bleu_mean': sum(bleu_scores) / len(bleu_scores),
+            'chrf_mean': sum(chrf_scores) / len(chrf_scores),
+            'bleu_scores': bleu_scores,
+            'chrf_scores': chrf_scores,
+            'samples_evaluated': len(test_pairs)
+        }
+    
+    def compare_models(
+        self, 
+        base_model_path: str,
+        finetuned_model_path: str,
+        test_pairs: List[Dict[str, str]]
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Compare base vs fine-tuned model performance.
+        
+        Returns improvement metrics for the fine-tuned model.
+        """
+        base_results = self._evaluate_with_model(base_model_path, test_pairs)
+        finetuned_results = self._evaluate_with_model(finetuned_model_path, test_pairs)
+        
+        return {
+            'base_model': base_results,
+            'finetuned_model': finetuned_results,
+            'improvement': {
+                'bleu_improvement': finetuned_results['bleu_mean'] - base_results['bleu_mean'],
+                'chrf_improvement': finetuned_results['chrf_mean'] - base_results['chrf_mean'],
+                'bleu_percent_improvement': (
+                    (finetuned_results['bleu_mean'] - base_results['bleu_mean']) / 
+                    max(base_results['bleu_mean'], 0.01) * 100
+                ),
+                'chrf_percent_improvement': (
+                    (finetuned_results['chrf_mean'] - base_results['chrf_mean']) / 
+                    max(base_results['chrf_mean'], 0.01) * 100
+                )
+            }
+        }
+    
+    def translate(self, text: str, direction: str = "chk_to_en") -> str:
+        """Translate text using loaded model"""
+        # Implementation uses HelsinkiChuukeseTranslator
+        pass
+    
+    def _evaluate_with_model(
+        self, 
+        model_path: str, 
+        test_pairs: List[Dict[str, str]]
+    ) -> Dict[str, float]:
+        """Evaluate specific model"""
+        # Load model and evaluate
+        pass
 ```
 
 ### 4. Comprehensive Quality Assessment Pipeline
@@ -310,6 +453,7 @@ class TranslationQualityAssessment:
 ## Usage Examples
 
 ### Basic Translation Assessment
+
 ```python
 # Initialize assessment system
 assessor = TranslationQualityAssessment("reference_corpus.json")
@@ -331,6 +475,7 @@ for recommendation in assessment['recommendations']:
 ```
 
 ### Batch Translation Evaluation
+
 ```python
 def evaluate_translation_batch(translation_pairs):
     """Evaluate multiple translations and generate summary report"""
@@ -361,24 +506,28 @@ def evaluate_translation_batch(translation_pairs):
 ## Best Practices
 
 ### Quality Assessment
+
 1. **Multiple validation layers**: Combine automated metrics with cultural validation
 2. **Reference corpus usage**: Maintain high-quality reference translations for comparison
 3. **Community validation**: Involve native speakers in quality assessment
 4. **Continuous improvement**: Update assessment criteria based on feedback
 
 ### Cultural Sensitivity
+
 1. **Context preservation**: Ensure cultural concepts are properly explained
 2. **Respect levels**: Validate appropriate formality and respect markers
 3. **Traditional knowledge**: Incorporate understanding of Chuukese customs
 4. **Community standards**: Align with community expectations for translation quality
 
 ### Technical Implementation
+
 1. **Comprehensive metrics**: Use multiple quality indicators
 2. **Actionable feedback**: Provide specific, implementable recommendations
 3. **Scalable assessment**: Design for batch processing and automation
 4. **Continuous learning**: Adapt assessment criteria based on new insights
 
 ## Dependencies
+
 - `re`: Regular expression pattern matching
 - `math`: Mathematical operations for scoring
 - `collections`: Counter for n-gram analysis
@@ -386,7 +535,9 @@ def evaluate_translation_batch(translation_pairs):
 - `nltk`: Natural language processing utilities
 
 ## Validation Criteria
+
 A successful implementation should:
+
 - ✅ Accurately assess cultural context preservation
 - ✅ Validate linguistic accuracy and grammatical consistency
 - ✅ Provide meaningful quality scores and metrics

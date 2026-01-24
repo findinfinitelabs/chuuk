@@ -6,9 +6,11 @@ description: Process scanned documents and images containing Chuukese text using
 # Document OCR Processing
 
 ## Overview
+
 Specialized OCR processing for documents containing Chuukese text, with enhanced accuracy for accented characters, traditional formatting patterns, and multilingual content. Designed to handle the unique challenges of digitizing historical and contemporary Chuukese documents.
 
 ## Capabilities
+
 - **Chuukese-Aware OCR**: Enhanced recognition of accented characters (á, é, í, ó, ú, ā, ē, ī, ō, ū)
 - **Traditional Format Recognition**: Handle traditional document layouts and formatting
 - **Multilingual Processing**: Process documents with both Chuukese and English text
@@ -108,6 +110,7 @@ class ChuukeseOCRPostProcessor:
 ## Usage Examples
 
 ### Process Single Document
+
 ```python
 # Initialize processor
 processor = BatchOCRProcessor("output/ocr_results")
@@ -121,6 +124,7 @@ dictionary_entries = result['document_structure']['dictionary_entries']
 ```
 
 ### Batch Process Directory
+
 ```python
 # Process all images in a directory
 batch_results = processor.process_batch(
@@ -134,18 +138,21 @@ print(f"Processed {batch_results['successfully_processed']} documents")
 ## Best Practices
 
 ### Image Preprocessing
+
 1. **Quality assessment**: Check image quality before processing
 2. **Resolution optimization**: Ensure minimum 300 DPI for OCR
 3. **Noise reduction**: Apply appropriate filtering for cleaner text
 4. **Orientation correction**: Detect and correct page rotation
 
 ### OCR Accuracy
+
 1. **Language-specific tuning**: Optimize for Chuukese character set
 2. **Confidence thresholds**: Filter low-confidence results
 3. **Multiple engine comparison**: Use different OCR engines for comparison
 4. **Human validation**: Sample-based quality checking
 
 ## Dependencies
+
 - `pytesseract`: OCR engine interface
 - `opencv-python`: Image preprocessing
 - `Pillow`: Image handling and manipulation

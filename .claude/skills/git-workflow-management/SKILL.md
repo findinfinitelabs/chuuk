@@ -6,9 +6,11 @@ description: Automate frequent Git operations including adding changes, committi
 # Git Workflow Management
 
 ## Overview
+
 A comprehensive skill for automating and streamlining Git version control operations, focusing on frequent commits with meaningful messages, proper staging practices, and efficient push workflows. Designed to maintain clean commit history and regular backup of development progress.
 
 ## Capabilities
+
 - **Smart Change Detection**: Automatically identify modified, added, and deleted files
 - **Intelligent Commit Messaging**: Generate meaningful commit messages based on changes
 - **Selective Staging**: Stage specific files or file types based on context
@@ -625,6 +627,7 @@ if __name__ == "__main__":
 ## Usage Examples
 
 ### 1. Quick Workflow (Most Common)
+
 ```bash
 # Stage all changes, commit with auto-generated message, and push
 python git_workflow.py quick
@@ -637,6 +640,7 @@ python git_workflow.py quick -t feat -s chuukese -m "Add accent normalization fu
 ```
 
 ### 2. Step-by-Step Workflow
+
 ```bash
 # Check status
 python git_workflow.py status
@@ -655,6 +659,7 @@ python git_workflow.py push
 ```
 
 ### 3. Sync with Remote
+
 ```bash
 # Sync with remote repository
 python git_workflow.py sync
@@ -666,6 +671,7 @@ python git_workflow.py sync -r upstream -b main
 ## Best Practices
 
 ### 1. Commit Message Conventions
+
 - **feat**: New features or functionality
 - **fix**: Bug fixes
 - **docs**: Documentation changes
@@ -675,6 +681,7 @@ python git_workflow.py sync -r upstream -b main
 - **chore**: Maintenance tasks, dependency updates
 
 ### 2. Frequent Commit Guidelines
+
 - Commit after completing logical units of work
 - Keep commits focused on single concerns
 - Use descriptive commit messages
@@ -682,12 +689,14 @@ python git_workflow.py sync -r upstream -b main
 - Push regularly to backup work
 
 ### 3. File Organization
+
 - Group related changes in single commits
 - Separate feature development from documentation updates
 - Commit configuration changes separately from code changes
 - Keep dependency updates in dedicated commits
 
 ### 4. Workflow Automation
+
 - Use quick commands for routine work
 - Set up aliases for common operations
 - Automate repetitive staging patterns
@@ -696,6 +705,7 @@ python git_workflow.py sync -r upstream -b main
 ## Integration with Development Tools
 
 ### 1. VS Code Integration
+
 ```json
 // .vscode/tasks.json
 {
@@ -726,6 +736,7 @@ python git_workflow.py sync -r upstream -b main
 ```
 
 ### 2. Shell Aliases
+
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
 alias gq='python git_workflow.py quick'
@@ -736,13 +747,16 @@ alias gsync='python git_workflow.py sync'
 ```
 
 ## Dependencies
+
 - `subprocess`: Process execution for Git commands
 - `argparse`: Command-line interface
 - `os`: Operating system interface
 - `datetime`: Timestamp management
 
 ## Validation Criteria
+
 A successful implementation should:
+
 - ✅ Automatically detect and stage relevant file changes
 - ✅ Generate meaningful commit messages based on content
 - ✅ Handle Git conflicts and errors gracefully
