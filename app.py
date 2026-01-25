@@ -355,7 +355,7 @@ def role_required(*allowed_roles):
 ROLE_PERMISSIONS = {
     'user': ['home', 'lookup', 'sentences', 'translate', 'grammar'],
     'translator': ['home', 'lookup', 'sentences', 'translate', 'database', 'game', 'grammar'],
-    'admin': ['home', 'lookup', 'sentences', 'translate', 'database', 'game', 'publications', 'new_publication', 'grammar']
+    'admin': ['home', 'lookup', 'sentences', 'translate', 'database', 'game', 'publications', 'new_publication', 'grammar', 'admin_users']
 }
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -546,6 +546,127 @@ def api_auth_status():
             'permissions': permissions
         })
     return jsonify({'authenticated': False})
+
+# ============================================================================
+# Admin User Management API
+# ============================================================================
+
+@app.route('/api/admin/users', methods=['GET'])
+@role_required('admin')
+def api_get_users():
+    """Get all users (admin only)"""
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        users = user_db.get_all_users()
+        # Remove access_code from response for security
+        safe_users = []
+        for user in users:
+            safe_user = {k: v for k, v in user.items() if k != 'access_code'}
+            safe_users.append(safe_user)
+        return jsonify({'users': safe_users})
+    else:
+        # Fallback to file-based
+        users = load_users()
+        safe_users = []
+        for user in users:
+            safe_user = {k: v for k, v in user.items() if k != 'access_code'}
+            safe_users.append(safe_user)
+        return jsonify({'users': safe_users})
+
+
+@app.route('/api/admin/users', methods=['POST'])
+@role_required('admin')
+def api_create_user():
+    """Create a new user (admin only)"""
+    data = request.get_json()
+    email = data.get('email', '').strip().lower()
+    name = data.get('name', '').strip()
+    role = data.get('role', 'user')
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    # Validate role
+    if role not in ['user', 'translator', 'admin']:
+        return jsonify({'error': 'Invalid role. Must be user, translator, or admin'}), 400
+    
+    # Generate random access code
+    access_code = secrets.token_urlsafe(18)  # ~24 character code
+    
+    user_data = {
+        'email': email,
+        'name': name or email.split('@')[0],
+        'role': role,
+        'access_code': access_code,
+        'terms_accepted': False,
+        'created_at': datetime.now(timezone.utc).isoformat()
+    }
+    
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        if user_db.get_user_by_email(email):
+            return jsonify({'error': 'User already exists'}), 409
+        
+        if user_db.create_user(user_data):
+            return jsonify({
+                'success': True,
+                'user': {
+                    'email': email,
+                    'name': user_data['name'],
+                    'role': role
+                },
+                'access_code': access_code  # Return once so admin can share
+            })
+        else:
+            return jsonify({'error': 'Failed to create user'}), 500
+    else:
+        # Fallback to file-based
+        users = load_users()
+        for user in users:
+            if user['email'].lower() == email:
+                return jsonify({'error': 'User already exists'}), 409
+        
+        users.append(user_data)
+        save_users(users)
+        return jsonify({
+            'success': True,
+            'user': {
+                'email': email,
+                'name': user_data['name'],
+                'role': role
+            },
+            'access_code': access_code
+        })
+
+
+@app.route('/api/admin/users/<email>', methods=['DELETE'])
+@role_required('admin')
+def api_delete_user(email):
+    """Delete a user (admin only)"""
+    email = email.lower()
+    
+    # Prevent deleting yourself
+    if email == session.get('user_email', '').lower():
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        if user_db.delete_user(email):
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'User not found'}), 404
+    else:
+        # Fallback to file-based
+        users = load_users()
+        original_count = len(users)
+        users = [u for u in users if u['email'].lower() != email]
+        
+        if len(users) < original_count:
+            save_users(users)
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'User not found'}), 404
+
 
 # ============================================================================
 

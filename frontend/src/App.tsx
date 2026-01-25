@@ -16,6 +16,7 @@ import TranslationGame from './pages/TranslationGame'
 import Grammar from './pages/Grammar'
 import Sentences from './pages/Sentences'
 import Verbs from './pages/Verbs'
+import AdminUsers from './pages/AdminUsers'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import { chuukTheme } from './theme'
@@ -261,6 +262,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('admin_users') && (
+              <NavLink 
+                label="Users" 
+                leftSection={<IconUser size="1.2rem" />} 
+                component={Link}
+                to="/admin/users"
+                active={location.pathname === '/admin/users'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             {hasPermission('game') && (
               <NavLink 
                 label="Translation Game" 
@@ -348,6 +360,7 @@ function App() {
               <Route path="/publications/:id" element={hasPermission('publications') ? <PublicationDetail /> : <AccessDenied />} />
               <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
               <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
+              <Route path="/admin/users" element={hasPermission('admin_users') ? <AdminUsers /> : <AccessDenied />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </UserContext.Provider>
