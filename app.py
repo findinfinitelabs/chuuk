@@ -224,9 +224,38 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'docx'}
 # Authentication Functions
 # ============================================================================
 
+# Initialize UserDB for Cosmos DB authentication
+_user_db = None
+
+def get_user_db():
+    """Get UserDB instance with lazy initialization"""
+    global _user_db
+    if _user_db is None:
+        try:
+            from src.database.user_db import UserDB
+            _user_db = UserDB()
+            if _user_db.is_connected():
+                print("✅ Using Cosmos DB for user authentication")
+            else:
+                print("⚠️ UserDB not connected, using file fallback")
+                _user_db = None
+        except Exception as e:
+            print(f"⚠️ Failed to initialize UserDB: {e}, using file fallback")
+            _user_db = None
+    return _user_db
+
 def load_users():
-    """Load users from config file or environment variable"""
-    # First check for environment variable (for production/Docker)
+    """Load users from Cosmos DB, with fallback to config file"""
+    # Try Cosmos DB first
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        users = user_db.get_all_users()
+        if users:
+            return users
+        # If no users in DB, check if we should migrate from file
+        print("ℹ️ No users in Cosmos DB yet")
+    
+    # Fallback: Check for environment variable (for Docker without Cosmos DB)
     users_json = os.getenv('APP_USERS_JSON')
     if users_json:
         try:
@@ -235,7 +264,7 @@ def load_users():
         except json.JSONDecodeError:
             print("⚠️ Failed to parse APP_USERS_JSON environment variable")
     
-    # Fall back to config file
+    # Fallback: Local config file (for local development)
     users_file = Path(__file__).parent / 'config' / 'users.json'
     if users_file.exists():
         with open(users_file, 'r') as f:
@@ -243,17 +272,23 @@ def load_users():
             return data.get('users', [])
     
     # No users configured - log warning
-    print("⚠️ No users configured. Set APP_USERS_JSON env var or create config/users.json")
+    print("⚠️ No users configured. Set up Cosmos DB users or create config/users.json")
     return []
 
 def save_users(users):
-    """Save users to config file"""
+    """Save users - only used for local file-based storage"""
     users_file = Path(__file__).parent / 'config' / 'users.json'
     with open(users_file, 'w') as f:
         json.dump({'users': users}, f, indent=2)
 
 def update_user_terms_acceptance(email, terms_accepted_at):
     """Update user's terms acceptance timestamp"""
+    # Try Cosmos DB first
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        return user_db.update_terms_acceptance(email, terms_accepted_at)
+    
+    # Fallback to file-based
     users = load_users()
     for user in users:
         if user['email'].lower() == email.lower():
@@ -265,6 +300,14 @@ def update_user_terms_acceptance(email, terms_accepted_at):
 
 def authenticate_user(email, access_code):
     """Authenticate user by email and access code"""
+    # Try Cosmos DB first
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        user = user_db.authenticate_user(email, access_code)
+        if user:
+            return user
+    
+    # Fallback to file-based
     users = load_users()
     for user in users:
         if user['email'].lower() == email.lower() and user['access_code'] == access_code:

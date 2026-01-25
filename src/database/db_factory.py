@@ -115,5 +115,6 @@ def get_database_config():
         'pages_container': 'dictionary_pages',
         'words_container': 'words',
         'phrases_container': 'phrases', 
-        'paragraphs_container': 'paragraphs'
+        'paragraphs_container': 'paragraphs',
+        'users_container': 'users'
     }
