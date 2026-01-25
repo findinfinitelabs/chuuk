@@ -1,0 +1,48 @@
+{
+  "description": "Scripture book names for parsing - includes abbreviations and full names in English and Chuukese",
+  "sources": {
+    "chuukese_ot": "https://fsm.bible/chk/ (Genesis-Malachi)",
+    "chuukese_nt": "https://fsm.bible/chk/ and wol.jw.org (Matthew-Revelation)"
+  },
+  "books": {
+    "english_abbreviations": [
+      "Gen", "Ex", "Lev", "Num", "Deut", "Josh", "Judg", "Ruth", "Sam", "Kings", "Chron",
+      "Ezra", "Neh", "Esth", "Job", "Ps", "Prov", "Eccl", "Song", "Isa", "Jer", "Lam",
+      "Ezek", "Dan", "Hos", "Joel", "Amos", "Obad", "Jon", "Mic", "Nah", "Hab", "Zeph",
+      "Hag", "Zech", "Mal", "Matt", "Mark", "Luke", "John", "Acts", "Rom", "Cor", "Gal",
+      "Eph", "Phil", "Col", "Thess", "Tim", "Tit", "Philem", "Heb", "Jas", "Pet", "Jude", "Rev"
+    ],
+    "english_full_names": [
+      "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges",
+      "Samuel", "Chronicles", "Nehemiah", "Esther", "Psalms", "Proverbs", "Ecclesiastes",
+      "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel", "Hosea", "Obadiah",
+      "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi",
+      "Matthew", "Romans", "Corinthians", "Galatians", "Ephesians", "Philippians",
+      "Colossians", "Thessalonians", "Timothy", "Philemon", "Hebrews", "James", "Peter",
+      "Revelation"
+    ],
+    "chuukese_full_names_ot": [
+      "Keneses", "Ekistos", "Lifitikos", "Numperis", "Tuteronomi", "Josua", "Soukapwüng",
+      "Rut", "King", "Kronika", "Esra", "Nehemia", "Ester", "Hiop", "Kölfel",
+      "Salomon", "Fos", "Afalafal", "Köl",
+      "Aisea", "Jeremaia", "Kölün", "Isikiel", "Taniel", "Osea", "Sowel",
+      "Opataia", "Sona", "Mika", "Apakuk", "Sefanaia", "Akai", "Sekaraia", "Malakai"
+    ],
+    "chuukese_full_names_nt": [
+      "Mateus", "Markus", "Lukas", "Johannes", "Föför", "Korint", "Kalatia",
+      "Efisos", "Filipi", "Kolose", "Tesalonika", "Timoty", "Titus", "Filimon",
+      "Ipru", "James", "Petrus", "Jutas", "Pwärätä"
+    ],
+    "chuukese_abbreviations_wol": [
+      "Féf", "Kor", "Kal", "Kol", "Tess", "Fil", "Pil", "Filom", "Hep", "Sak", "Sut", "Sef", "Fón",
+      "Ken", "Ek", "Lif", "Tut", "Jos", "Souk", "Kron", "Esr", "Neh", "Est", "Hiop",
+      "Ais", "Jer", "Isik", "Tan", "Os", "Sow", "Opat", "Mik", "Nah", "Apak", "Aka", "Sek", "Mal",
+      "Mat", "Mar", "Luk", "Joh", "Föf", "Rom", "Kalt", "Efis", "Flip", "Kols", "Tes", "Timo", "Tit",
+      "Flm", "Ipr", "Jam", "Ptr", "Jut", "Pwär", "Salf"
+    ],
+    "chuukese_full_names_wol": [
+      "Féffér", "Korintus", "Efisus", "Filipai", "Kolosi",
+      "Timoteus", "Filémon", "Hepru", "Sémes", "Pétrus", "Sutás", "Séféniú", "Fónun"
+    ]
+  }
+}

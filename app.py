@@ -3389,19 +3389,27 @@ def api_fetch_article():
                         return f"https://wol.jw.org{href}"
             return None
         
-        def extract_scripture_refs(element):
-            """Extract scripture references from links and format them properly"""
+        def extract_endnote_scripture_refs(element):
+            """Extract scripture references from endnote/footnote sections - each as separate entry"""
             scripture_refs = []
-            # Find all scripture links (usually have class 'b' or contain scripture data attributes)
             for link in element.find_all('a', href=True):
                 href = link.get('href', '')
                 text = link.get_text(strip=True)
-                # Check if this is a scripture reference link
-                if '/nwtsty/' in href or '/bible/' in href or 'data-bid' in str(link) or link.get('data-bid'):
-                    # Get the scripture text (e.g., "1 Corinthians 15:33")
+                # Check if this is a scripture reference link (in endnotes/footnotes)
+                if ('/bc/' in href or '/nwtsty/' in href or '/bible/' in href) and re.search(r'\d+:\d+', text):
                     if text and len(text) > 1:
                         scripture_refs.append(text)
             return scripture_refs
+        
+        def is_endnote_section(element):
+            """Check if element is part of an endnote/footnote section"""
+            # Check for common endnote indicators
+            text = element.get_text(strip=True)
+            if text.startswith('PWAL') or text.startswith('SEE ALSO'):
+                return True
+            # Check parent classes
+            parent = element.find_parent(class_=re.compile(r'footnote|endnote|groupFootnote|boxContent'))
+            return parent is not None
         
         def parse_sentences(html):
             soup = BeautifulSoup(html, 'html.parser')
@@ -3417,40 +3425,89 @@ def api_fetch_article():
             sentences = []
             
             for idx, para in enumerate(paragraphs):
-                # Extract scripture references from links before getting text
-                scripture_refs = extract_scripture_refs(para)
-                
                 text = para.get_text(separator=' ', strip=True)
                 
-                # Clean bullet points and other unwanted characters
+                # Remove zero-width characters and other invisible Unicode
+                text = re.sub(r'[\u200b\u200c\u200d\u00ad\ufeff\u2060]', '', text)
+                
+                # Clean bullet points but preserve content
                 text = re.sub(r'^[•●◦▪▫■□‣⁃∙]+\s*', '', text)  # Remove leading bullets
                 text = re.sub(r'^\*+\s*', '', text)  # Remove asterisk bullets
-                text = re.sub(r'^\d+\.\s*', '', text)  # Remove numbered list markers
                 text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
                 text = text.strip()
                 
                 if len(text) < 15:
                     continue
                 
-                sent_list = re.split(r'(?<=[.!?])\s+', text)
+                # Check if this is an endnote section - handle differently
+                if is_endnote_section(para):
+                    # Extract each scripture reference as its own line
+                    endnote_refs = extract_endnote_scripture_refs(para)
+                    for ref in endnote_refs:
+                        sentences.append({
+                            'id': len(sentences) + 1,
+                            'text': f"📖 {ref}",
+                            'paragraph_index': idx,
+                            'is_scripture_ref': True
+                        })
+                    continue
+                
+                # KEY FIX: Keep em-dash (—) and hyphen-dash (-) scripture references attached to sentences
+                # Pattern matches: sentence ending + em-dash/hyphen + scripture reference
+                # Examples: "...kapas allim."—Féf. 5:42  or  "...example."—1 Cor. 15:33
+                
+                # STEP 1: Protect ALL scripture references from being split
+                # This includes inline refs, em-dash refs, and parenthetical refs
+                # Book names loaded from config/scripture_books.json
+                from src.utils.scripture_parser import get_scripture_reference_pattern
+                
+                any_scripture_pattern = get_scripture_reference_pattern()
+                protected_refs = []
+                
+                def protect_any_scripture(match):
+                    placeholder = f"<<<REF_{len(protected_refs)}>>>"
+                    protected_refs.append(match.group(0))
+                    return placeholder
+                
+                # First protect all inline scripture references
+                text_protected = re.sub(any_scripture_pattern, protect_any_scripture, text)
+                
+                # Also protect em-dash + scripture that might have already been partially matched
+                # Pattern: punctuation + em-dash + placeholder (already protected scripture)
+                emdash_pattern = r'([.!?])\s*(—|–|-)\s*(<<<REF_\d+>>>)'
+                text_protected = re.sub(emdash_pattern, r'\1\2\3', text_protected)
+                
+                # Protect parenthetical scriptures: ( placeholder ) or ( text with placeholder )
+                # These should stay together with surrounding sentence
+                protected_parens = []  # Separate list for parenthetical references
+                paren_pattern = r'\(\s*(<<<REF_\d+>>>(?:\s*;\s*<<<REF_\d+>>>)*)\s*\)'
+                
+                def protect_paren(match):
+                    placeholder = f"<<<PAREN_{len(protected_parens)}>>>"
+                    protected_parens.append(match.group(1))  # Store the inner content (just the REF placeholders)
+                    return placeholder
+                
+                text_protected = re.sub(paren_pattern, protect_paren, text_protected)
+                
+                # Now split on sentence boundaries (. ! ?) followed by space
+                # But not at our placeholders (which start with <) and not after book abbreviations
+                sent_list = re.split(r'(?<=[.!?])\s+(?![<])', text_protected)
+                
                 for sent in sent_list:
+                    # First restore parenthetical placeholders (which contain REF placeholders)
+                    for i, paren_content in enumerate(protected_parens):
+                        sent = sent.replace(f"<<<PAREN_{i}>>>", f"({paren_content})")
+                    
+                    # Then restore scripture references
+                    for i, ref in enumerate(protected_refs):
+                        sent = sent.replace(f"<<<REF_{i}>>>", ref)
+                    
                     sent = sent.strip()
                     if len(sent) > 20:
                         sentences.append({
                             'id': len(sentences) + 1,
                             'text': sent,
                             'paragraph_index': idx
-                        })
-                
-                # Add scripture references as separate sentences for easier matching
-                for ref in scripture_refs:
-                    # Only add if it looks like a scripture reference (has book name and numbers)
-                    if re.search(r'\d+:\d+', ref) or re.search(r'\d+\s+\w+\s+\d+', ref):
-                        sentences.append({
-                            'id': len(sentences) + 1,
-                            'text': f"📖 {ref}",
-                            'paragraph_index': idx,
-                            'is_scripture_ref': True
                         })
             
             return sentences, title

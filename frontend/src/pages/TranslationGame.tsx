@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput } from '@mantine/core'
-import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip } from '@mantine/core'
+import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './TranslationGame.css'
@@ -386,6 +386,81 @@ function TranslationGame() {
           )}
         </Group>
       </Card>
+
+      {/* URL Display Card - shown when article is loaded */}
+      {englishSentences.length > 0 && (
+        <Card withBorder>
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-start">
+              <Title order={4}>
+                <IconWorld size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+                Article URLs
+              </Title>
+              <Button 
+                onClick={fetchFromUrl}
+                loading={loading}
+                leftSection={<IconRefresh size={16} />}
+                variant="light"
+                size="sm"
+              >
+                Rescan Document
+              </Button>
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="sm" fw={500} style={{ minWidth: '60px' }}>English:</Text>
+              <Text 
+                size="sm" 
+                c="blue" 
+                style={{ 
+                  wordBreak: 'break-all', 
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  flex: 1
+                }}
+                onClick={() => window.open(englishUrl, '_blank')}
+                title="Click to open in new tab"
+              >
+                {englishUrl}
+              </Text>
+              <CopyButton value={englishUrl}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? 'Copied!' : 'Copy URL'}>
+                    <ActionIcon color={copied ? 'teal' : 'gray'} variant="subtle" onClick={copy} size="sm">
+                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="sm" fw={500} style={{ minWidth: '60px' }}>Chuukese:</Text>
+              <Text 
+                size="sm" 
+                c="blue" 
+                style={{ 
+                  wordBreak: 'break-all', 
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  flex: 1
+                }}
+                onClick={() => window.open(chuukeseUrl, '_blank')}
+                title="Click to open in new tab"
+              >
+                {chuukeseUrl}
+              </Text>
+              <CopyButton value={chuukeseUrl}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? 'Copied!' : 'Copy URL'}>
+                    <ActionIcon color={copied ? 'teal' : 'gray'} variant="subtle" onClick={copy} size="sm">
+                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            </Group>
+          </Stack>
+        </Card>
+      )}
 
       {/* URL Input Card */}
       {englishSentences.length === 0 && (
