@@ -376,6 +376,11 @@ def api_login():
         if terms_accepted and terms_accepted_at:
             update_user_terms_acceptance(email, terms_accepted_at)
         
+        # Record login time for activity tracking
+        user_db = get_user_db()
+        if user_db and user_db.is_connected():
+            user_db.record_login(email)
+        
         # Generate unique session ID for single active session enforcement
         new_session_id = secrets.token_hex(32)
         
@@ -511,12 +516,42 @@ def api_verify_magic_link(token):
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
     """API endpoint for logout"""
-    # Remove from active sessions
+    # Record session end for activity tracking
     user_email = session.get('user_email', '').lower()
+    if user_email:
+        user_db = get_user_db()
+        if user_db and user_db.is_connected():
+            duration = user_db.record_logout(user_email)
+            if duration is not None:
+                print(f"📊 Session ended for {user_email}: {duration} minutes")
+    
+    # Remove from active sessions
     if user_email in active_sessions:
         del active_sessions[user_email]
     session.clear()
     return jsonify({'success': True})
+
+
+@app.route('/api/auth/track-page', methods=['POST'])
+@login_required
+def api_track_page():
+    """Track page access for the current user"""
+    user_email = session.get('user_email', '')
+    if not user_email:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    page_path = data.get('page', '').strip()
+    
+    if not page_path:
+        return jsonify({'error': 'Page path is required'}), 400
+    
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        user_db.record_page_access(user_email, page_path)
+    
+    return jsonify({'success': True})
+
 
 @app.route('/api/auth/status', methods=['GET'])
 def api_auth_status():

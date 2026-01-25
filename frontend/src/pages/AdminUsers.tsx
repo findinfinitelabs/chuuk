@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Container, Title, Paper, Table, Button, Group, TextInput, Select, Modal, Text, Badge, CopyButton, ActionIcon, Tooltip, Alert, Stack, Code } from '@mantine/core'
+import { Container, Title, Paper, Table, Button, Group, TextInput, Select, Modal, Text, Badge, CopyButton, ActionIcon, Tooltip, Alert, Stack, Code, ScrollArea } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { IconPlus, IconTrash, IconCopy, IconCheck, IconAlertCircle } from '@tabler/icons-react'
 import axios from 'axios'
@@ -10,6 +10,9 @@ interface User {
   role: string
   terms_accepted?: boolean
   created_at?: string
+  last_login_at?: string
+  pages_accessed?: string[]
+  last_session_duration_minutes?: number
 }
 
 interface NewUserResponse {
@@ -139,8 +142,33 @@ export default function AdminUsers() {
     }
   }
 
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '—'
+    try {
+      const date = new Date(dateStr)
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch {
+      return '—'
+    }
+  }
+
+  const formatDuration = (minutes?: number) => {
+    if (minutes === undefined || minutes === null) return '—'
+    if (minutes < 1) return '<1 min'
+    if (minutes < 60) return `${minutes} min`
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return `${hours}h ${mins}m`
+  }
+
   return (
-    <Container size="lg" py="xl">
+    <Container size="xl" py="xl">
       <Group justify="space-between" mb="lg">
         <Title order={2}>User Management</Title>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateModalOpen(true)}>
@@ -149,59 +177,88 @@ export default function AdminUsers() {
       </Group>
 
       <Paper shadow="sm" p="md" withBorder>
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Role</Table.Th>
-              <Table.Th>Terms Accepted</Table.Th>
-              <Table.Th>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {loading ? (
+        <ScrollArea>
+          <Table striped highlightOnHover style={{ minWidth: 900 }}>
+            <Table.Thead>
               <Table.Tr>
-                <Table.Td colSpan={5}>Loading...</Table.Td>
+                <Table.Th>Email</Table.Th>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Role</Table.Th>
+                <Table.Th>Created</Table.Th>
+                <Table.Th>Last Login</Table.Th>
+                <Table.Th>Pages Accessed</Table.Th>
+                <Table.Th>Last Session</Table.Th>
+                <Table.Th>Actions</Table.Th>
               </Table.Tr>
-            ) : users.length === 0 ? (
-              <Table.Tr>
-                <Table.Td colSpan={5}>No users found</Table.Td>
-              </Table.Tr>
-            ) : (
-              users.map((user) => (
-                <Table.Tr key={user.email}>
-                  <Table.Td>{user.email}</Table.Td>
-                  <Table.Td>{user.name}</Table.Td>
-                  <Table.Td>
-                    <Badge color={getRoleBadgeColor(user.role)}>{user.role}</Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {user.terms_accepted ? (
-                      <Badge color="green">Yes</Badge>
-                    ) : (
-                      <Badge color="gray">No</Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Tooltip label="Delete user">
-                      <ActionIcon
-                        color="red"
-                        variant="subtle"
-                        onClick={() => {
-                          setUserToDelete(user.email)
-                          setDeleteModalOpen(true)
-                        }}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Tooltip>
+            </Table.Thead>
+            <Table.Tbody>
+              {loading ? (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>Loading...</Table.Td>
+                </Table.Tr>
+              ) : users.length === 0 ? (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>No users found</Table.Td>
+                </Table.Tr>
+              ) : (
+                users.map((user) => (
+                  <Table.Tr key={user.email}>
+                    <Table.Td>
+                      <Text size="sm">{user.email}</Text>
+                    </Table.Td>
+                    <Table.Td>{user.name}</Table.Td>
+                    <Table.Td>
+                      <Badge color={getRoleBadgeColor(user.role)} size="sm">{user.role}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">{formatDate(user.created_at)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">{formatDate(user.last_login_at)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {user.pages_accessed && user.pages_accessed.length > 0 ? (
+                        <Tooltip label={user.pages_accessed.join(', ')}>
+                          <Group gap={4} wrap="nowrap">
+                            {user.pages_accessed.slice(0, 3).map((page, idx) => (
+                              <Badge key={idx} size="xs" variant="light" color="gray">
+                                {page.replace('/', '') || 'home'}
+                              </Badge>
+                            ))}
+                            {user.pages_accessed.length > 3 && (
+                              <Badge size="xs" variant="light" color="blue">
+                                +{user.pages_accessed.length - 3}
+                              </Badge>
+                            )}
+                          </Group>
+                        </Tooltip>
+                      ) : (
+                        <Text size="xs" c="dimmed">—</Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">{formatDuration(user.last_session_duration_minutes)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Tooltip label="Delete user">
+                        <ActionIcon
+                          color="red"
+                          variant="subtle"
+                          onClick={() => {
+                            setUserToDelete(user.email)
+                            setDeleteModalOpen(true)
+                          }}
+                        >
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                   </Table.Td>
                 </Table.Tr>
               ))
             )}
           </Table.Tbody>
         </Table>
+        </ScrollArea>
       </Paper>
 
       {/* Create User Modal */}

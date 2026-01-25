@@ -189,6 +189,112 @@ class UserDB:
         except Exception as e:
             print(f"❌ Failed to count users: {e}")
             return 0
+    
+    def record_login(self, email: str) -> bool:
+        """Record user login time and start session tracking"""
+        if not self.is_connected():
+            return False
+        
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            result = self.users_collection.update_one(
+                {'email': {'$regex': f'^{email}$', '$options': 'i'}},
+                {
+                    '$set': {
+                        'last_login_at': now,
+                        'session_start_at': now,
+                        'last_activity_at': now
+                    }
+                }
+            )
+            return result.modified_count > 0 or result.matched_count > 0
+        except Exception as e:
+            print(f"❌ Failed to record login for {email}: {e}")
+            return False
+    
+    def record_page_access(self, email: str, page_path: str) -> bool:
+        """Record a page access for the user (adds to unique set)"""
+        if not self.is_connected():
+            return False
+        
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            result = self.users_collection.update_one(
+                {'email': {'$regex': f'^{email}$', '$options': 'i'}},
+                {
+                    '$addToSet': {'pages_accessed': page_path},
+                    '$set': {'last_activity_at': now}
+                }
+            )
+            return result.modified_count > 0 or result.matched_count > 0
+        except Exception as e:
+            print(f"❌ Failed to record page access for {email}: {e}")
+            return False
+    
+    def record_logout(self, email: str) -> Optional[int]:
+        """Record logout and calculate session duration in minutes"""
+        if not self.is_connected():
+            return None
+        
+        try:
+            user = self.get_user_by_email(email)
+            if not user:
+                return None
+            
+            session_start = user.get('session_start_at')
+            if not session_start:
+                return None
+            
+            # Calculate duration
+            from datetime import datetime as dt
+            start = dt.fromisoformat(session_start.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            duration_minutes = int((now - start).total_seconds() / 60)
+            
+            # Update user with session duration
+            self.users_collection.update_one(
+                {'email': {'$regex': f'^{email}$', '$options': 'i'}},
+                {
+                    '$set': {
+                        'last_session_duration_minutes': duration_minutes,
+                        'session_start_at': None,
+                        'last_activity_at': now.isoformat()
+                    }
+                }
+            )
+            return duration_minutes
+        except Exception as e:
+            print(f"❌ Failed to record logout for {email}: {e}")
+            return None
+    
+    def check_and_end_inactive_sessions(self, timeout_minutes: int = 10) -> List[str]:
+        """Find users with sessions inactive for more than timeout_minutes and end them"""
+        if not self.is_connected():
+            return []
+        
+        try:
+            from datetime import timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)).isoformat()
+            
+            # Find users with active sessions that are inactive
+            inactive_users = list(self.users_collection.find({
+                'session_start_at': {'$ne': None},
+                'last_activity_at': {'$lt': cutoff}
+            }))
+            
+            ended_sessions = []
+            for user in inactive_users:
+                email = user.get('email')
+                if email:
+                    duration = self.record_logout(email)
+                    if duration is not None:
+                        ended_sessions.append(email)
+                        print(f"⏱️ Ended inactive session for {email} (duration: {duration} min)")
+            
+            return ended_sessions
+        except Exception as e:
+            print(f"❌ Failed to check inactive sessions: {e}")
+            return []
 
 
 # Global instance for easy access

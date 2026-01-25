@@ -62,6 +62,18 @@ function App() {
     }
   }, [location.pathname])
   
+  // Track page access for activity monitoring
+  useEffect(() => {
+    if (isAuthenticated && location.pathname) {
+      // Don't track login page or API routes
+      if (location.pathname !== '/login' && !location.pathname.startsWith('/api')) {
+        axios.post('/api/auth/track-page', { page: location.pathname }).catch(() => {
+          // Silently ignore tracking errors
+        })
+      }
+    }
+  }, [location.pathname, isAuthenticated])
+  
   // Check authentication status on mount
   useEffect(() => {
     checkAuthStatus()
