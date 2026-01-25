@@ -32,7 +32,8 @@ import {
   Divider,
   Select
 } from '@mantine/core'
-import { IconAlertCircle, IconInfoCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconInfoCircle, IconSearch } from '@tabler/icons-react'
+import axios from 'axios'
 import styles from './Verbs.module.css'
 
 // Types for grammar data
@@ -111,6 +112,13 @@ interface ReduplicationExample {
   reduplicatedEnglish: string
 }
 
+interface LookupResult {
+  chuukese: string
+  english: string
+  source: string
+  matchType: 'phrase' | 'verb'
+}
+
 type TenseKey = 'pastPresent' | 'future' | 'indefinite' | 'simpleNegative' | 'emphaticNegative'
 
 function Verbs() {
@@ -147,6 +155,11 @@ function Verbs() {
   const [verbModalOpen, setVerbModalOpen] = useState(false)
   const [reduplicationModalOpen, setReduplicationModalOpen] = useState(false)
   const [examplesModalOpen, setExamplesModalOpen] = useState(false)
+  const [lookupModalOpen, setLookupModalOpen] = useState(false)
+  const [lookupResults, setLookupResults] = useState<LookupResult[]>([])
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupSearchedPhrase, setLookupSearchedPhrase] = useState('')
+  const [lookupSearchedVerb, setLookupSearchedVerb] = useState('')
 
   // Load grammar data
   useEffect(() => {
@@ -363,6 +376,33 @@ function Verbs() {
     setVerbModalOpen(false)
   }, [])
 
+  // Handle lookup examples from database
+  const handleLookupExamples = useCallback(async () => {
+    if (!currentVerb) return
+    
+    const phrase = buildChuukesePhrase()
+    const verb = currentVerb.chuukese
+    
+    setLookupSearchedPhrase(phrase)
+    setLookupSearchedVerb(verb)
+    setLookupLoading(true)
+    setLookupModalOpen(true)
+    setLookupResults([])
+    
+    try {
+      const response = await axios.post('/api/verbs/lookup-examples', {
+        phrase,
+        verb
+      })
+      setLookupResults(response.data.results || [])
+    } catch (err) {
+      console.error('Lookup failed:', err)
+      setLookupResults([])
+    } finally {
+      setLookupLoading(false)
+    }
+  }, [currentVerb, buildChuukesePhrase])
+
   if (loading) {
     return (
       <Stack align="center" justify="center" h={300}>
@@ -468,17 +508,27 @@ function Verbs() {
         </Box>
 
         {/* Example sentences link */}
-        {currentCategory?.exampleSentences && currentCategory.exampleSentences.length > 0 && (
+        <Group mt="sm" gap="sm">
+          {currentCategory?.exampleSentences && currentCategory.exampleSentences.length > 0 && (
+            <Button 
+              variant="subtle" 
+              size="xs"
+              onClick={() => setExamplesModalOpen(true)}
+              leftSection={<IconInfoCircle size={14} />}
+            >
+              See {currentCategory.exampleSentences.length} example sentences for "{currentCategory.label}"
+            </Button>
+          )}
           <Button 
-            variant="subtle" 
-            size="xs" 
-            mt="sm"
-            onClick={() => setExamplesModalOpen(true)}
-            leftSection={<IconInfoCircle size={14} />}
+            variant="light" 
+            size="xs"
+            onClick={handleLookupExamples}
+            leftSection={<IconSearch size={14} />}
+            loading={lookupLoading}
           >
-            See {currentCategory.exampleSentences.length} example sentences for "{currentCategory.label}"
+            Lookup Examples
           </Button>
-        )}
+        </Group>
       </Card>
 
       {/* Selector Cards */}
@@ -945,6 +995,66 @@ function Verbs() {
             ))}
           </Table.Tbody>
         </Table>
+      </Modal>
+
+      {/* Lookup Examples Modal */}
+      <Modal 
+        opened={lookupModalOpen} 
+        onClose={() => setLookupModalOpen(false)} 
+        title="Lookup Examples"
+        size="xl"
+        centered
+      >
+        <Stack gap="md">
+          <Box>
+            <Text size="sm" fw={600}>Searched phrase:</Text>
+            <Text size="lg" c="teal" fw={700}>{lookupSearchedPhrase}</Text>
+          </Box>
+          
+          {lookupLoading ? (
+            <Stack align="center" py="xl">
+              <Loader size="md" />
+              <Text c="dimmed">Searching for examples...</Text>
+            </Stack>
+          ) : lookupResults.length === 0 ? (
+            <Alert icon={<IconInfoCircle size={16} />} color="blue">
+              No examples found for "{lookupSearchedPhrase}" or "{lookupSearchedVerb}". 
+              Try a different verb or phrase combination.
+            </Alert>
+          ) : (
+            <>
+              <Text size="sm" c="dimmed">
+                Found {lookupResults.length} example{lookupResults.length !== 1 ? 's' : ''} 
+                {lookupResults.some(r => r.matchType === 'phrase') && lookupResults.some(r => r.matchType === 'verb') 
+                  ? ` (matching phrase and verb "${lookupSearchedVerb}")`
+                  : lookupResults.every(r => r.matchType === 'verb')
+                    ? ` (matching verb "${lookupSearchedVerb}")`
+                    : ' (matching phrase)'}
+              </Text>
+              <Stack gap="sm">
+                {lookupResults.map((result, idx) => (
+                  <Card key={idx} shadow="xs" p="sm" radius="md" withBorder>
+                    <Group justify="space-between" mb="xs">
+                      <Badge 
+                        size="xs" 
+                        color={result.matchType === 'phrase' ? 'green' : 'blue'}
+                      >
+                        {result.matchType === 'phrase' ? 'Phrase match' : 'Verb match'}
+                      </Badge>
+                      <Text size="xs" c="dimmed">{result.source}</Text>
+                    </Group>
+                    <Text size="sm" fw={600} c="teal" mb="xs">
+                      {result.chuukese}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      {result.english}
+                    </Text>
+                  </Card>
+                ))}
+              </Stack>
+            </>
+          )}
+        </Stack>
       </Modal>
     </Stack>
   )

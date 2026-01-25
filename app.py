@@ -3580,6 +3580,91 @@ def api_get_brochure_stats():
 
 
 # =============================================================================
+# Verb Example Lookup API
+# =============================================================================
+@app.route('/api/verbs/lookup-examples', methods=['POST'])
+@login_required
+def lookup_verb_examples():
+    """Search for example sentences containing a verb phrase or just the verb"""
+    try:
+        data = request.get_json()
+        phrase = data.get('phrase', '').strip()
+        verb = data.get('verb', '').strip()
+        
+        if not phrase and not verb:
+            return jsonify({'error': 'Phrase or verb is required'}), 400
+        
+        results = []
+        
+        # Search in paragraphs collection
+        if dict_db and dict_db.paragraphs_collection is not None:
+            # First try exact phrase match
+            if phrase:
+                cursor = dict_db.paragraphs_collection.find(
+                    {'chuukese_paragraph': {'$regex': phrase, '$options': 'i'}},
+                    {'_id': 0, 'chuukese_paragraph': 1, 'english_paragraph': 1, 'source': 1}
+                ).limit(5)
+                
+                for doc in cursor:
+                    results.append({
+                        'chuukese': doc.get('chuukese_paragraph', ''),
+                        'english': doc.get('english_paragraph', ''),
+                        'source': doc.get('source', 'Unknown'),
+                        'matchType': 'phrase'
+                    })
+            
+            # If no results or need more, try just the verb
+            if len(results) < 5 and verb:
+                already_found = {r['chuukese'] for r in results}
+                cursor = dict_db.paragraphs_collection.find(
+                    {'chuukese_paragraph': {'$regex': verb, '$options': 'i'}},
+                    {'_id': 0, 'chuukese_paragraph': 1, 'english_paragraph': 1, 'source': 1}
+                ).limit(10 - len(results))
+                
+                for doc in cursor:
+                    chk = doc.get('chuukese_paragraph', '')
+                    if chk not in already_found:
+                        results.append({
+                            'chuukese': chk,
+                            'english': doc.get('english_paragraph', ''),
+                            'source': doc.get('source', 'Unknown'),
+                            'matchType': 'verb'
+                        })
+        
+        # Also search in phrases collection
+        if dict_db and dict_db.phrases_collection is not None and len(results) < 5:
+            search_term = phrase if phrase else verb
+            if search_term:
+                already_found = {r['chuukese'] for r in results}
+                cursor = dict_db.phrases_collection.find(
+                    {'chuukese': {'$regex': search_term, '$options': 'i'}},
+                    {'_id': 0, 'chuukese': 1, 'english': 1, 'source': 1}
+                ).limit(5)
+                
+                for doc in cursor:
+                    chk = doc.get('chuukese', '')
+                    if chk not in already_found:
+                        results.append({
+                            'chuukese': chk,
+                            'english': doc.get('english', ''),
+                            'source': doc.get('source', 'Phrases'),
+                            'matchType': 'phrase' if phrase and phrase in chk else 'verb'
+                        })
+        
+        return jsonify({
+            'phrase': phrase,
+            'verb': verb,
+            'results': results[:10],  # Max 10 results
+            'totalFound': len(results)
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
 # React app routes - handle all non-API routes
 # =============================================================================
 @app.route('/api/sentences/analyze', methods=['POST'])
