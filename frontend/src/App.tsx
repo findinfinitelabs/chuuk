@@ -262,17 +262,6 @@ function App() {
                 onClick={toggleNav}
               />
             )}
-            {hasPermission('admin_users') && (
-              <NavLink 
-                label="Users" 
-                leftSection={<IconUser size="1.2rem" />} 
-                component={Link}
-                to="/admin/users"
-                active={location.pathname === '/admin/users'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
             {hasPermission('game') && (
               <NavLink 
                 label="Translation Game" 
@@ -280,6 +269,17 @@ function App() {
                 component={Link}
                 to="/game"
                 active={location.pathname === '/game'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('admin_users') && (
+              <NavLink 
+                label="Users" 
+                leftSection={<IconUser size="1.2rem" />} 
+                component={Link}
+                to="/admin/users"
+                active={location.pathname === '/admin/users'}
                 className="nav-link"
                 onClick={toggleNav}
               />
