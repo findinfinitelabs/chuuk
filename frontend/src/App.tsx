@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText, IconLetterV } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText, IconLetterV, IconMessage } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -16,6 +16,7 @@ import TranslationGame from './pages/TranslationGame'
 import Grammar from './pages/Grammar'
 import Sentences from './pages/Sentences'
 import Verbs from './pages/Verbs'
+import Compose from './pages/Compose'
 import AdminUsers from './pages/AdminUsers'
 import Login from './pages/Login'
 import Footer from './components/Footer'
@@ -216,6 +217,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('grammar') && (
+              <NavLink 
+                label="Compose Sentences" 
+                leftSection={<IconMessage size="1.2rem" />} 
+                component={Link}
+                to="/compose"
+                active={location.pathname === '/compose'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             {hasPermission('lookup') && (
               <NavLink 
                 label="Word Lookup" 
@@ -372,6 +384,7 @@ function App() {
               <Route path="/publications/:id" element={hasPermission('publications') ? <PublicationDetail /> : <AccessDenied />} />
               <Route path="/game" element={hasPermission('game') ? <TranslationGame /> : <AccessDenied />} />
               <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
+              <Route path="/compose" element={hasPermission('grammar') ? <Compose /> : <AccessDenied />} />
               <Route path="/admin/users" element={hasPermission('admin_users') ? <AdminUsers /> : <AccessDenied />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

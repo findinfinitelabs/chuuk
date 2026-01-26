@@ -1,0 +1,700 @@
+{
+  "categories": [
+    {
+      "id": "greetings",
+      "label": "Greetings & Farewells",
+      "icon": "hand",
+      "sentences": [
+        {
+          "id": "hello",
+          "english": "Hello / Good day",
+          "chuukese": "Ran annim",
+          "words": [
+            { "chuukese": "Ran", "english": "day", "position": 1 },
+            { "chuukese": "annim", "english": "good", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "pwapwa", "english": "happy" },
+            { "chuukese": "ewe", "english": "the" }
+          ],
+          "notes": "Literally 'Good day' - common greeting"
+        },
+        {
+          "id": "goodbye",
+          "english": "Goodbye",
+          "chuukese": "Keió",
+          "words": [
+            { "chuukese": "Keió", "english": "goodbye", "position": 1 }
+          ],
+          "distractors": [
+            { "chuukese": "Ran", "english": "day" },
+            { "chuukese": "annim", "english": "good" }
+          ],
+          "notes": "General farewell"
+        },
+        {
+          "id": "see_you_later",
+          "english": "See you later",
+          "chuukese": "Kopwe churi ngei mwirin",
+          "words": [
+            { "chuukese": "Kopwe", "english": "you will", "position": 1 },
+            { "chuukese": "churi", "english": "see", "position": 2 },
+            { "chuukese": "ngei", "english": "me", "position": 3 },
+            { "chuukese": "mwirin", "english": "later", "position": 4 }
+          ],
+          "distractors": [
+            { "chuukese": "apwan", "english": "tomorrow" },
+            { "chuukese": "Ua", "english": "I (past)" }
+          ],
+          "notes": "Literally 'You will see me later'"
+        },
+        {
+          "id": "see_you_tomorrow",
+          "english": "See you tomorrow",
+          "chuukese": "Kopwe churi ngei mwirin apwan",
+          "words": [
+            { "chuukese": "Kopwe", "english": "you will", "position": 1 },
+            { "chuukese": "churi", "english": "see", "position": 2 },
+            { "chuukese": "ngei", "english": "me", "position": 3 },
+            { "chuukese": "mwirin", "english": "later", "position": 4 },
+            { "chuukese": "apwan", "english": "tomorrow", "position": 5 }
+          ],
+          "distractors": [
+            { "chuukese": "Keió", "english": "goodbye" },
+            { "chuukese": "Ran", "english": "day" }
+          ],
+          "notes": "Literally 'You will see me later tomorrow'"
+        }
+      ]
+    },
+    {
+      "id": "introductions",
+      "label": "Introductions",
+      "icon": "user",
+      "sentences": [
+        {
+          "id": "what_is_your_name",
+          "english": "What is your name?",
+          "chuukese": "Met itóm?",
+          "words": [
+            { "chuukese": "Met", "english": "what", "position": 1 },
+            { "chuukese": "itóm?", "english": "your name", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "itei", "english": "my name" },
+            { "chuukese": "iten", "english": "his/her name" },
+            { "chuukese": "Ia", "english": "where" }
+          ],
+          "notes": "Literally 'What your-name?'"
+        },
+        {
+          "id": "my_name_is",
+          "english": "My name is John",
+          "chuukese": "Itei John",
+          "words": [
+            { "chuukese": "Itei", "english": "my name", "position": 1 },
+            { "chuukese": "John", "english": "John", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "itóm", "english": "your name" },
+            { "chuukese": "iten", "english": "his/her name" },
+            { "chuukese": "Met", "english": "what" }
+          ],
+          "notes": "Pattern: Itei + [name]"
+        },
+        {
+          "id": "his_name_is",
+          "english": "His name is David",
+          "chuukese": "Iten David",
+          "words": [
+            { "chuukese": "Iten", "english": "his/her name", "position": 1 },
+            { "chuukese": "David", "english": "David", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "Itei", "english": "my name" },
+            { "chuukese": "itóm", "english": "your name" },
+            { "chuukese": "seei", "english": "friend" }
+          ],
+          "notes": "Pattern: Iten + [name] (same for he/she)"
+        },
+        {
+          "id": "this_is_my_friend_male",
+          "english": "This is my friend (male)",
+          "chuukese": "Ekewe seei mwáán",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "seei", "english": "my friend", "position": 2 },
+            { "chuukese": "mwáán", "english": "male", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "fefin", "english": "female" },
+            { "chuukese": "pwuui", "english": "my spouse" },
+            { "chuukese": "Itei", "english": "my name" }
+          ],
+          "notes": "mwáán = male, fefin = female"
+        },
+        {
+          "id": "this_is_my_friend_female",
+          "english": "This is my friend (female)",
+          "chuukese": "Ekewe seei fefin",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "seei", "english": "my friend", "position": 2 },
+            { "chuukese": "fefin", "english": "female", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "mwáán", "english": "male" },
+            { "chuukese": "pwuui", "english": "my spouse" },
+            { "chuukese": "iten", "english": "his/her name" }
+          ],
+          "notes": "mwáán = male, fefin = female"
+        },
+        {
+          "id": "this_is_my_husband",
+          "english": "This is my husband",
+          "chuukese": "Ekewe pwuui",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "pwuui", "english": "my husband", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "seei", "english": "my friend" },
+            { "chuukese": "fefin", "english": "female" },
+            { "chuukese": "mwáán", "english": "male" }
+          ],
+          "notes": "pwuui can mean spouse (husband)"
+        },
+        {
+          "id": "this_is_my_wife",
+          "english": "This is my wife",
+          "chuukese": "Ekewe pwuui fefin",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "pwuui", "english": "my spouse", "position": 2 },
+            { "chuukese": "fefin", "english": "female", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "seei", "english": "my friend" },
+            { "chuukese": "mwáán", "english": "male" },
+            { "chuukese": "Itei", "english": "my name" }
+          ],
+          "notes": "pwuui fefin = my wife (female spouse)"
+        },
+        {
+          "id": "pleased_to_meet_you",
+          "english": "I am pleased to meet you",
+          "chuukese": "Ua pwapwa óni nukum",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "pwapwa", "english": "happy/pleased", "position": 2 },
+            { "chuukese": "óni", "english": "at/meeting", "position": 3 },
+            { "chuukese": "nukum", "english": "you", "position": 4 }
+          ],
+          "distractors": [
+            { "chuukese": "ngei", "english": "me" },
+            { "chuukese": "Kopwe", "english": "you will" },
+            { "chuukese": "pwal", "english": "also" }
+          ],
+          "notes": "Literally 'I am happy meeting you'"
+        },
+        {
+          "id": "pleased_to_meet_you_too",
+          "english": "I am pleased to meet you too",
+          "chuukese": "Ua pwapwa óni nukum pwal",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "pwapwa", "english": "happy/pleased", "position": 2 },
+            { "chuukese": "óni", "english": "at/meeting", "position": 3 },
+            { "chuukese": "nukum", "english": "you", "position": 4 },
+            { "chuukese": "pwal", "english": "also/too", "position": 5 }
+          ],
+          "distractors": [
+            { "chuukese": "ngei", "english": "me" },
+            { "chuukese": "Kopwe", "english": "you will" },
+            { "chuukese": "Ekewe", "english": "this is" }
+          ],
+          "notes": "Add 'pwal' (also) at the end"
+        }
+      ]
+    },
+    {
+      "id": "origin_residence",
+      "label": "Origin & Residence",
+      "icon": "map",
+      "sentences": [
+        {
+          "id": "where_are_you_from",
+          "english": "Where are you from?",
+          "chuukese": "Ka seni ia?",
+          "words": [
+            { "chuukese": "Ka", "english": "you (past/present)", "position": 1 },
+            { "chuukese": "seni", "english": "from", "position": 2 },
+            { "chuukese": "ia?", "english": "where", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Ua", "english": "I (past)" },
+            { "chuukese": "non", "english": "in" },
+            { "chuukese": "nonom", "english": "live" }
+          ],
+          "notes": "Literally 'You from where?'"
+        },
+        {
+          "id": "i_was_born_in_weno",
+          "english": "I was born in Weno",
+          "chuukese": "Ua fanúfanú non Wééné",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "fanúfanú", "english": "was born", "position": 2 },
+            { "chuukese": "non", "english": "in", "position": 3 },
+            { "chuukese": "Wééné", "english": "Weno", "position": 4 }
+          ],
+          "distractors": [
+            { "chuukese": "seni", "english": "from" },
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "nonom", "english": "live" }
+          ],
+          "notes": "fanúfanú = was born"
+        },
+        {
+          "id": "i_grew_up_in_chuuk",
+          "english": "I grew up in Chuuk",
+          "chuukese": "Ua nónnóó non Chuuk",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "nónnóó", "english": "grew up", "position": 2 },
+            { "chuukese": "non", "english": "in", "position": 3 },
+            { "chuukese": "Chuuk", "english": "Chuuk", "position": 4 }
+          ],
+          "distractors": [
+            { "chuukese": "fanúfanú", "english": "was born" },
+            { "chuukese": "seni", "english": "from" },
+            { "chuukese": "nonom", "english": "live" }
+          ],
+          "notes": "nónnóó = grew up"
+        },
+        {
+          "id": "where_do_you_live",
+          "english": "Where do you live?",
+          "chuukese": "Ka nonom ia?",
+          "words": [
+            { "chuukese": "Ka", "english": "you (past/present)", "position": 1 },
+            { "chuukese": "nonom", "english": "live", "position": 2 },
+            { "chuukese": "ia?", "english": "where", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Ua", "english": "I (past)" },
+            { "chuukese": "seni", "english": "from" },
+            { "chuukese": "non", "english": "in" }
+          ],
+          "notes": "Literally 'You live where?'"
+        },
+        {
+          "id": "i_live_in_guam",
+          "english": "I live in Guam",
+          "chuukese": "Ua nonom non Guam",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "nonom", "english": "live", "position": 2 },
+            { "chuukese": "non", "english": "in", "position": 3 },
+            { "chuukese": "Guam", "english": "Guam", "position": 4 }
+          ],
+          "distractors": [
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "seni", "english": "from" },
+            { "chuukese": "ia", "english": "where" }
+          ],
+          "notes": "Pattern: Ua nonom non + [place]"
+        }
+      ]
+    },
+    {
+      "id": "directions",
+      "label": "Directions & Locations",
+      "icon": "location",
+      "sentences": [
+        {
+          "id": "where_is_the_store",
+          "english": "Where is the store?",
+          "chuukese": "Ia ewe sitoa?",
+          "words": [
+            { "chuukese": "Ia", "english": "where", "position": 1 },
+            { "chuukese": "ewe", "english": "the", "position": 2 },
+            { "chuukese": "sitoa?", "english": "store", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Met", "english": "what" },
+            { "chuukese": "sukuun", "english": "school" },
+            { "chuukese": "non", "english": "in" }
+          ],
+          "notes": "Pattern: Ia ewe + [place]?"
+        },
+        {
+          "id": "where_is_the_school",
+          "english": "Where is the school?",
+          "chuukese": "Ia ewe sukuun?",
+          "words": [
+            { "chuukese": "Ia", "english": "where", "position": 1 },
+            { "chuukese": "ewe", "english": "the", "position": 2 },
+            { "chuukese": "sukuun?", "english": "school", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "sitoa", "english": "store" },
+            { "chuukese": "imw", "english": "house" },
+            { "chuukese": "Met", "english": "what" }
+          ],
+          "notes": "Pattern: Ia ewe + [place]?"
+        },
+        {
+          "id": "can_you_show_me_map",
+          "english": "Can you show me on the map?",
+          "chuukese": "Kopwe ani ngeni ngei won ewe map?",
+          "words": [
+            { "chuukese": "Kopwe", "english": "you will", "position": 1 },
+            { "chuukese": "ani", "english": "show/see", "position": 2 },
+            { "chuukese": "ngeni", "english": "to", "position": 3 },
+            { "chuukese": "ngei", "english": "me", "position": 4 },
+            { "chuukese": "won", "english": "on", "position": 5 },
+            { "chuukese": "ewe", "english": "the", "position": 6 },
+            { "chuukese": "map?", "english": "map", "position": 7 }
+          ],
+          "distractors": [
+            { "chuukese": "Ua", "english": "I (past)" },
+            { "chuukese": "nukum", "english": "you" },
+            { "chuukese": "non", "english": "in" }
+          ],
+          "notes": "Asking for directions on a map"
+        }
+      ]
+    },
+    {
+      "id": "common_phrases",
+      "label": "Common Phrases",
+      "icon": "question",
+      "sentences": [
+        {
+          "id": "how_are_you",
+          "english": "How are you?",
+          "chuukese": "Ifa usun óóm?",
+          "words": [
+            { "chuukese": "Ifa", "english": "how", "position": 1 },
+            { "chuukese": "usun", "english": "manner/way", "position": 2 },
+            { "chuukese": "óóm?", "english": "your", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Met", "english": "what" },
+            { "chuukese": "Ia", "english": "where" },
+            { "chuukese": "pwapwa", "english": "happy" }
+          ],
+          "notes": "Literally 'How manner your?'"
+        },
+        {
+          "id": "i_am_fine",
+          "english": "I am fine / I am happy",
+          "chuukese": "Ua pwapwa",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "pwapwa", "english": "happy/fine", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "óni", "english": "at" },
+            { "chuukese": "annim", "english": "good" }
+          ],
+          "notes": "Common response to 'How are you?'"
+        },
+        {
+          "id": "do_you_speak_english",
+          "english": "Do you speak English?",
+          "chuukese": "Ka sóómosom Merike?",
+          "words": [
+            { "chuukese": "Ka", "english": "you (past/present)", "position": 1 },
+            { "chuukese": "sóómosom", "english": "speak", "position": 2 },
+            { "chuukese": "Merike?", "english": "English/American", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Ua", "english": "I (past)" },
+            { "chuukese": "mecheres", "english": "understand" },
+            { "chuukese": "kinikin", "english": "a little" }
+          ],
+          "notes": "Merike = American/English language"
+        },
+        {
+          "id": "i_speak_a_little",
+          "english": "I speak a little",
+          "chuukese": "Ua sóómosom kinikin",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "sóómosom", "english": "speak", "position": 2 },
+            { "chuukese": "kinikin", "english": "a little", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "Merike", "english": "English" },
+            { "chuukese": "mecheres", "english": "understand" }
+          ],
+          "notes": "kinikin = a little/small amount"
+        },
+        {
+          "id": "i_dont_understand",
+          "english": "I don't understand",
+          "chuukese": "Use mecheres",
+          "words": [
+            { "chuukese": "Use", "english": "I don't", "position": 1 },
+            { "chuukese": "mecheres", "english": "understand", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "Ua", "english": "I (past)" },
+            { "chuukese": "sóómosom", "english": "speak" },
+            { "chuukese": "kinikin", "english": "a little" }
+          ],
+          "notes": "Use = I don't (simple negative)"
+        },
+        {
+          "id": "please_repeat",
+          "english": "Can you repeat that please?",
+          "chuukese": "Kopwe pwári pwal?",
+          "words": [
+            { "chuukese": "Kopwe", "english": "you will", "position": 1 },
+            { "chuukese": "pwári", "english": "say/repeat", "position": 2 },
+            { "chuukese": "pwal?", "english": "again", "position": 3 }
+          ],
+          "distractors": [
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "sóómosom", "english": "speak" },
+            { "chuukese": "mecheres", "english": "understand" }
+          ],
+          "notes": "Polite request to repeat"
+        }
+      ]
+    },
+    {
+      "id": "polite_expressions",
+      "label": "Polite Expressions",
+      "icon": "heart",
+      "sentences": [
+        {
+          "id": "thank_you",
+          "english": "Thank you",
+          "chuukese": "Kinnisou",
+          "words": [
+            { "chuukese": "Kinnisou", "english": "thank you", "position": 1 }
+          ],
+          "distractors": [
+            { "chuukese": "chapur", "english": "big/very" },
+            { "chuukese": "pwapwa", "english": "happy" }
+          ],
+          "notes": "Basic expression of gratitude"
+        },
+        {
+          "id": "thank_you_very_much",
+          "english": "Thank you very much",
+          "chuukese": "Kinnisou chapur",
+          "words": [
+            { "chuukese": "Kinnisou", "english": "thank you", "position": 1 },
+            { "chuukese": "chapur", "english": "big/very much", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "pwal", "english": "also" },
+            { "chuukese": "annim", "english": "good" }
+          ],
+          "notes": "Stronger expression of gratitude"
+        },
+        {
+          "id": "youre_welcome",
+          "english": "You're welcome",
+          "chuukese": "Chechemeni",
+          "words": [
+            { "chuukese": "Chechemeni", "english": "you're welcome", "position": 1 }
+          ],
+          "distractors": [
+            { "chuukese": "Kinnisou", "english": "thank you" },
+            { "chuukese": "pwapwa", "english": "happy" }
+          ],
+          "notes": "Response to 'thank you'"
+        },
+        {
+          "id": "excuse_me",
+          "english": "Excuse me / Pardon me",
+          "chuukese": "Kopwe kópwéú",
+          "words": [
+            { "chuukese": "Kopwe", "english": "you will", "position": 1 },
+            { "chuukese": "kópwéú", "english": "pardon/excuse", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "pwénúpwénú", "english": "sorry" },
+            { "chuukese": "Ua", "english": "I (past)" }
+          ],
+          "notes": "Getting attention or apologizing"
+        },
+        {
+          "id": "im_sorry",
+          "english": "I'm sorry",
+          "chuukese": "Ua pwénúpwénú",
+          "words": [
+            { "chuukese": "Ua", "english": "I (past/present)", "position": 1 },
+            { "chuukese": "pwénúpwénú", "english": "sorry", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "Ka", "english": "you" },
+            { "chuukese": "kópwéú", "english": "excuse" },
+            { "chuukese": "pwapwa", "english": "happy" }
+          ],
+          "notes": "Expression of apology"
+        }
+      ]
+    },
+    {
+      "id": "family",
+      "label": "Family",
+      "icon": "users",
+      "sentences": [
+        {
+          "id": "this_is_my_mother",
+          "english": "This is my mother",
+          "chuukese": "Ekewe inei",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "inei", "english": "my mother", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "semei", "english": "my father" },
+            { "chuukese": "seei", "english": "my friend" },
+            { "chuukese": "neei", "english": "my child" }
+          ],
+          "notes": "inei = my mother"
+        },
+        {
+          "id": "this_is_my_father",
+          "english": "This is my father",
+          "chuukese": "Ekewe semei",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "semei", "english": "my father", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "inei", "english": "my mother" },
+            { "chuukese": "seei", "english": "my friend" },
+            { "chuukese": "pwuui", "english": "my spouse" }
+          ],
+          "notes": "semei = my father"
+        },
+        {
+          "id": "this_is_my_child",
+          "english": "This is my child",
+          "chuukese": "Ekewe neei",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "neei", "english": "my child", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "inei", "english": "my mother" },
+            { "chuukese": "semei", "english": "my father" },
+            { "chuukese": "seei", "english": "my friend" }
+          ],
+          "notes": "neei = my child"
+        },
+        {
+          "id": "this_is_my_brother",
+          "english": "This is my brother",
+          "chuukese": "Ekewe mwáánei",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "mwáánei", "english": "my brother", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "féinei", "english": "my sister" },
+            { "chuukese": "seei", "english": "my friend" },
+            { "chuukese": "neei", "english": "my child" }
+          ],
+          "notes": "mwáánei = my brother (said by female)"
+        },
+        {
+          "id": "this_is_my_sister",
+          "english": "This is my sister",
+          "chuukese": "Ekewe féinei",
+          "words": [
+            { "chuukese": "Ekewe", "english": "this is", "position": 1 },
+            { "chuukese": "féinei", "english": "my sister", "position": 2 }
+          ],
+          "distractors": [
+            { "chuukese": "mwáánei", "english": "my brother" },
+            { "chuukese": "inei", "english": "my mother" },
+            { "chuukese": "seei", "english": "my friend" }
+          ],
+          "notes": "féinei = my sister (said by male)"
+        }
+      ]
+    }
+  ],
+  "wordBank": {
+    "pronouns": [
+      { "chuukese": "Ngang", "english": "I (subject)" },
+      { "chuukese": "Ua", "english": "I (past/present)" },
+      { "chuukese": "Upwe", "english": "I will" },
+      { "chuukese": "Use", "english": "I don't" },
+      { "chuukese": "Ka", "english": "you (past/present)" },
+      { "chuukese": "Kopwe", "english": "you will" },
+      { "chuukese": "ngei", "english": "me" },
+      { "chuukese": "nukum", "english": "you (object)" }
+    ],
+    "possessives": [
+      { "chuukese": "itei", "english": "my name" },
+      { "chuukese": "itóm", "english": "your name" },
+      { "chuukese": "iten", "english": "his/her name" },
+      { "chuukese": "óóm", "english": "your" },
+      { "chuukese": "seei", "english": "my friend" },
+      { "chuukese": "pwuui", "english": "my spouse" },
+      { "chuukese": "inei", "english": "my mother" },
+      { "chuukese": "semei", "english": "my father" },
+      { "chuukese": "neei", "english": "my child" },
+      { "chuukese": "mwáánei", "english": "my brother" },
+      { "chuukese": "féinei", "english": "my sister" }
+    ],
+    "verbs": [
+      { "chuukese": "churi", "english": "see" },
+      { "chuukese": "nonom", "english": "live" },
+      { "chuukese": "fanúfanú", "english": "was born" },
+      { "chuukese": "nónnóó", "english": "grew up" },
+      { "chuukese": "sóómosom", "english": "speak" },
+      { "chuukese": "mecheres", "english": "understand" },
+      { "chuukese": "ani", "english": "show/see" },
+      { "chuukese": "pwári", "english": "say/repeat" }
+    ],
+    "prepositions": [
+      { "chuukese": "non", "english": "in" },
+      { "chuukese": "seni", "english": "from" },
+      { "chuukese": "won", "english": "on" },
+      { "chuukese": "ngeni", "english": "to" }
+    ],
+    "questionWords": [
+      { "chuukese": "Met", "english": "what" },
+      { "chuukese": "Ia", "english": "where" },
+      { "chuukese": "Ifa", "english": "how" }
+    ],
+    "articles": [
+      { "chuukese": "ewe", "english": "the" },
+      { "chuukese": "Ekewe", "english": "this is" }
+    ],
+    "adjectives": [
+      { "chuukese": "annim", "english": "good" },
+      { "chuukese": "pwapwa", "english": "happy" },
+      { "chuukese": "mwáán", "english": "male" },
+      { "chuukese": "fefin", "english": "female" },
+      { "chuukese": "kinikin", "english": "a little" },
+      { "chuukese": "chapur", "english": "big/very" }
+    ],
+    "timeWords": [
+      { "chuukese": "mwirin", "english": "later" },
+      { "chuukese": "apwan", "english": "tomorrow" },
+      { "chuukese": "pwal", "english": "also/again" }
+    ],
+    "places": [
+      { "chuukese": "Wééné", "english": "Weno" },
+      { "chuukese": "Chuuk", "english": "Chuuk" },
+      { "chuukese": "Guam", "english": "Guam" },
+      { "chuukese": "sitoa", "english": "store" },
+      { "chuukese": "sukuun", "english": "school" },
+      { "chuukese": "imw", "english": "house" }
+    ]
+  }
+}
