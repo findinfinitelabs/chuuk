@@ -1,0 +1,227 @@
+/* Compose Page Styles - Word Puzzle Interface */
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Category Navigation */
+.categoryNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.categoryButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #495057;
+}
+
+.categoryButton:hover {
+  border-color: #7950f2;
+  background: rgba(121, 80, 242, 0.05);
+}
+
+.categoryButtonActive {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border: 2px solid #7950f2;
+  border-radius: 10px;
+  background: rgba(121, 80, 242, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #7950f2;
+}
+
+/* Progress Section */
+.progressSection {
+  margin-bottom: 1.5rem;
+}
+
+/* Challenge Card */
+.challengeCard {
+  background: #f8f9fa;
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+/* Target Sentence */
+.targetSentence {
+  text-align: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #7950f2 0%, #9775fa 100%);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.englishText {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: white;
+  line-height: 1.4;
+}
+
+/* Answer Area */
+.answerArea {
+  margin-bottom: 1.5rem;
+}
+
+.selectedWordsContainer {
+  min-height: 80px;
+  background: white;
+  border: 2px dashed #dee2e6;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.placeholder {
+  width: 100%;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Word Bank Area */
+.wordBankArea {
+  margin-bottom: 1rem;
+}
+
+.wordBank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+/* Word Chips */
+.wordChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: white;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 80px;
+}
+
+.wordChip:hover:not(:disabled) {
+  border-color: #7950f2;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(121, 80, 242, 0.2);
+}
+
+.wordChip:disabled {
+  cursor: default;
+}
+
+.selectedWord {
+  background: #e7f5ff;
+  border-color: #228be6;
+}
+
+.wordCorrect {
+  background: #d3f9d8 !important;
+  border-color: #40c057 !important;
+}
+
+.wordIncorrect {
+  background: #ffe3e3 !important;
+  border-color: #fa5252 !important;
+}
+
+.wordChuukese {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #7950f2;
+}
+
+.wordEnglish {
+  font-size: 0.75rem;
+  color: #868e96;
+  margin-top: 2px;
+}
+
+/* Hint Alert */
+.hintAlert {
+  margin-top: 1rem;
+}
+
+/* Result Alert */
+.resultAlert {
+  margin-top: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .categoryNav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .categoryButton,
+  .categoryButtonActive {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  
+  .englishText {
+    font-size: 1.2rem;
+  }
+  
+  .wordChip {
+    padding: 0.5rem 0.75rem;
+    min-width: 70px;
+  }
+  
+  .wordChuukese {
+    font-size: 1rem;
+  }
+  
+  .challengeCard {
+    padding: 1rem;
+  }
+}
+
+/* Animations */
+@keyframes correctPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.wordCorrect {
+  animation: correctPulse 0.3s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.wordIncorrect {
+  animation: shake 0.3s ease;
+}
