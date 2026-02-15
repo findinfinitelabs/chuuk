@@ -226,6 +226,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'pdf', 'docx'}
 
 # Initialize UserDB for Cosmos DB authentication
 _user_db = None
+_auto_sync_completed = False
 
 def get_user_db():
     """Get UserDB instance with lazy initialization"""
@@ -244,8 +245,60 @@ def get_user_db():
             _user_db = None
     return _user_db
 
+def auto_sync_users_to_cosmos():
+    """Automatically sync users from config file to Cosmos DB if connected"""
+    global _auto_sync_completed
+    
+    # Only run once per app startup
+    if _auto_sync_completed:
+        return
+    
+    user_db = get_user_db()
+    if not user_db or not user_db.is_connected():
+        _auto_sync_completed = True
+        return
+    
+    # Load users from file
+    users_file = Path(__file__).parent / 'config' / 'users.json'
+    if not users_file.exists():
+        _auto_sync_completed = True
+        return
+    
+    try:
+        with open(users_file, 'r') as f:
+            data = json.load(f)
+            file_users = data.get('users', [])
+        
+        if not file_users:
+            _auto_sync_completed = True
+            return
+        
+        # Get existing users from Cosmos DB
+        db_users = user_db.get_all_users()
+        db_emails = {u['email'].lower() for u in db_users}
+        
+        # Sync any missing users
+        synced_count = 0
+        for file_user in file_users:
+            email = file_user.get('email', '').lower()
+            if email and email not in db_emails:
+                if user_db.create_user(file_user.copy()):
+                    synced_count += 1
+                    print(f"🔄 Auto-synced user to Cosmos DB: {email}")
+        
+        if synced_count > 0:
+            print(f"✅ Auto-synced {synced_count} user(s) from config file to Cosmos DB")
+        
+    except Exception as e:
+        print(f"⚠️ Auto-sync failed: {e}")
+    finally:
+        _auto_sync_completed = True
+
 def load_users():
     """Load users from Cosmos DB, with fallback to config file"""
+    # Auto-sync users from file to Cosmos DB if connected
+    auto_sync_users_to_cosmos()
+    
     # Try Cosmos DB first
     user_db = get_user_db()
     if user_db and user_db.is_connected():
