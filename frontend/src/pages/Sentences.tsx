@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Container, Title, Text, Textarea, Button, Stack, Card, Group, Badge, Divider, Loader, Alert, Paper, Grid, Modal } from '@mantine/core'
-import { IconLanguage, IconArrowRight, IconAlertCircle, IconFileText } from '@tabler/icons-react'
+import { Container, Title, Text, TextInput, Textarea, Button, Stack, Card, Group, Badge, Divider, Loader, Alert, Paper, Grid, Modal } from '@mantine/core'
+import { IconLanguage, IconArrowRight, IconAlertCircle, IconFileText, IconEdit } from '@tabler/icons-react'
 import axios from 'axios'
 import styles from './Sentences.module.css'
 
@@ -39,6 +39,34 @@ function Sentences() {
   const [addWordModalOpened, setAddWordModalOpened] = useState(false)
   const [newWordData, setNewWordData] = useState({ chuukese: '', english: '', definition: '', grammar: '' })
   const [saveLoading, setSaveLoading] = useState(false)
+  const [editModalOpened, setEditModalOpened] = useState(false)
+  const [editData, setEditData] = useState({ english: '', grammar: '', definition: '', notes: '' })
+  const [updateLoading, setUpdateLoading] = useState(false)
+
+  const saveWordUpdate = async () => {
+    if (!selectedWord?.full_entry?.entry_id) return
+    if (!editData.english.trim() || !editData.grammar.trim()) {
+      setError('English translation and grammar type are required')
+      return
+    }
+    setUpdateLoading(true)
+    setError('')
+    try {
+      await axios.put('/api/dictionary/update', {
+        entry_id: selectedWord.full_entry.entry_id,
+        english_translation: editData.english,
+        grammar: editData.grammar,
+        definition: editData.definition,
+        notes: editData.notes,
+      })
+      setEditModalOpened(false)
+      await analyzeSentence()
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update word')
+    } finally {
+      setUpdateLoading(false)
+    }
+  }
 
   const addNewWord = async () => {
     if (!newWordData.english.trim() || !newWordData.grammar.trim()) {
@@ -440,9 +468,96 @@ function Sentences() {
                 </div>
               </div>
             )}
+
+            {/* Edit button — only shown when entry has an ID */}
+            {selectedWord.full_entry?.entry_id && (
+              <Group justify="flex-end" mt="sm" pt="sm" style={{ borderTop: '1px solid var(--mantine-color-gray-2)' }}>
+                <Button
+                  variant="light"
+                  size="sm"
+                  leftSection={<IconEdit size={16} />}
+                  onClick={() => {
+                    setEditData({
+                      english: selectedWord.full_entry?.english || selectedWord.english || '',
+                      grammar: selectedWord.grammar || '',
+                      definition: selectedWord.full_entry?.definition || selectedWord.definition || '',
+                      notes: selectedWord.full_entry?.notes || '',
+                    })
+                    setModalOpened(false)
+                    setEditModalOpened(true)
+                  }}
+                >
+                  Edit Entry
+                </Button>
+              </Group>
+            )}
           </Stack>
         )}
       </Modal>
+
+      {/* Edit Word Modal */}
+      <Modal
+        opened={editModalOpened}
+        onClose={() => { setEditModalOpened(false); setError('') }}
+        title={
+          <Group gap="xs">
+            <IconEdit size={20} />
+            <Text size="xl" fw={700}>Edit: {selectedWord?.original}</Text>
+          </Group>
+        }
+        size="lg"
+      >
+        <Stack gap="md">
+          <div>
+            <Text size="sm" c="dimmed" fw={500} mb={4}>English Translation *</Text>
+            <TextInput
+              value={editData.english}
+              onChange={(e) => setEditData({ ...editData, english: e.target.value })}
+              placeholder="English translation"
+            />
+          </div>
+          <div>
+            <Text size="sm" c="dimmed" fw={500} mb={4}>Grammar Type *</Text>
+            <TextInput
+              value={editData.grammar}
+              onChange={(e) => setEditData({ ...editData, grammar: e.target.value })}
+              placeholder="e.g. noun, verb, adjective"
+            />
+          </div>
+          <div>
+            <Text size="sm" c="dimmed" fw={500} mb={4}>Definition</Text>
+            <Textarea
+              value={editData.definition}
+              onChange={(e) => setEditData({ ...editData, definition: e.target.value })}
+              placeholder="Detailed definition"
+              minRows={3}
+            />
+          </div>
+          <div>
+            <Text size="sm" c="dimmed" fw={500} mb={4}>Notes</Text>
+            <Textarea
+              value={editData.notes}
+              onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
+              placeholder="Additional notes"
+              minRows={2}
+            />
+          </div>
+          {error && (
+            <Alert icon={<IconAlertCircle size={16} />} color="red" radius="md">{error}</Alert>
+          )}
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" onClick={() => { setEditModalOpened(false); setError('') }}>Cancel</Button>
+            <Button
+              onClick={saveWordUpdate}
+              loading={updateLoading}
+              leftSection={<IconEdit size={16} />}
+            >
+              Save Changes
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       {/* Add New Word Modal */}
       <Modal
         opened={addWordModalOpened}
