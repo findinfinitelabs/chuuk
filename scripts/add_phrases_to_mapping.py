@@ -3,12 +3,13 @@
 
 import sys
 import json
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database.dictionary_db import DictionaryDB
 
 # Load existing mapping
-MAPPING_FILE = '/Users/findinfinitelabs/DevApps/chuuk/data/grammar/grammar_mapping.json'
+MAPPING_FILE = str(Path(__file__).resolve().parent.parent / 'data' / 'grammar' / 'grammar_mapping.json')
 with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
     mapping_data = json.load(f)
     existing_mapping = mapping_data['mapping']

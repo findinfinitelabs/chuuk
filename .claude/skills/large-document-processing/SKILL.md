@@ -1,90 +1,110 @@
 ---
 name: large-document-processing
-description: Process large documents (200+ pages) with structure preservation, intelligent parsing, and memory-efficient handling. Use when working with complex formatted documents, multi-level hierarchies, or when you need to extract structured data from large files like PDFs, DOCX, or text files.
+description: Process large documents (200+ pages) with structure preservation, intelligent parsing, and memory-efficient handling. Also covers intelligent text chunking for AI training and RAG systems. Use when working with complex formatted documents, multi-level hierarchies, or when splitting large content for AI pipelines.
 ---
 
-# Large Document Processing
+# Large Document Processing & Intelligent Text Chunking
 
 ## Overview
 
-A comprehensive skill for processing large documents (200+ pages) with structure preservation, intelligent parsing, and memory-efficient handling. Designed for documents with complex formatting, hierarchical structures, and multi-level indentation.
+Two tightly related concerns combined here:
+1. **Large document parsing** — DOCX/PDF/EPUB ingestion with structure preservation
+2. **Intelligent text chunking** — splitting parsed text into semantically coherent pieces for AI training or RAG
 
-## Capabilities
+## Source Files
 
-- **Multi-format Support**: DOCX, PDF, and text files
-- **Structure Preservation**: Maintains document hierarchy, indentation, and formatting
-- **Memory Efficiency**: Chunked processing to handle very large documents
-- **Intelligent Parsing**: Recognizes headings, lists, dictionary entries, and semantic boundaries
-- **Progress Tracking**: Real-time processing status and error recovery
-- **Metadata Extraction**: Comprehensive document analysis and statistics
+| File | Purpose |
+|---|---|
+| `src/utils/nwt_epub_parser.py` | EPUB parser for NWT Bible (English + Chuukese) |
+| `scripts/extract_jwpub.py` | Extract JW publication `.jwpub` archives |
+| `scripts/setup_large_document_processing.py` | One-time document pipeline setup |
+| `output/processed_document/` | Output directory for processed content |
 
-## Core Components
+## Document Processing
 
-### 1. Advanced Document Parser
+### Supported Formats
 
-Parse complex document structures while preserving formatting and hierarchy.
+- **DOCX** via `python-docx`
+- **PDF** via `PyMuPDF` (import as `fitz`) — note: `fitz==0.0.1.dev2` is NOT in requirements; use `PyMuPDF` only
+- **EPUB** via `ebooklib` + `NWTEpubParser`
+- **Plain text / CSV** — direct read
 
-**Key Features**:
-
-- Hierarchical structure detection (levels 1-10)
-- Formatting preservation (bold, italic, fonts, sizes)
-- Page-by-page processing for memory efficiency
-- Intelligent content classification
-- Multi-language support with accent character handling
-
-### 2. Implementation Pattern
+### EPUB Pattern (NWT Bible)
 
 ```python
-from .large_document_processor import LargeDocumentProcessor, ProcessingConfig
+from src.utils.nwt_epub_parser import NWTEpubParser
 
-# Configure processing
-config = ProcessingConfig(
-    chunk_size_pages=50,
-    parallel_workers=4,
-    preserve_formatting=True
-)
-
-# Initialize processor
-processor = LargeDocumentProcessor(config)
-
-# Process document
-results = processor.process_large_document(
-    input_file="large_document.docx",
-    output_dir="output/processed"
-)
+parser = NWTEpubParser('data/bible/nwt_E.epub')
+verse_text = parser.get_verse('John', 3, 16)
+chapter_verses = parser.get_chapter('Genesis', 1)
 ```
 
-### 3. Intelligent Text Chunking
+### PDF/DOCX Pattern
 
 ```python
-from .intelligent_chunker import IntelligentTextChunker, ChunkType
+import fitz  # PyMuPDF — installed as PyMuPDF, exposed as fitz
 
-chunker = IntelligentTextChunker(
-    max_chunk_size=1024,
-    overlap_ratio=0.15,
-    preserve_sentences=True
-)
-
-chunks = chunker.chunk_document(text, ChunkType.SEMANTIC)
+doc = fitz.open('large_document.pdf')
+for page_num, page in enumerate(doc):
+    text = page.get_text()
+    # process text...
 ```
+
+## Intelligent Text Chunking
+
+### Strategy Selection
+
+| Strategy | Use case |
+|---|---|
+| Semantic | AI training data — respect topic/paragraph boundaries |
+| Structural | Documents with clear headings/sections |
+| Fixed-size | RAG systems needing predictable chunk sizes |
+| Sliding window | QA tasks needing context overlap |
+
+### Implementation Pattern
+
+```python
+# Sentence-boundary-aware chunking
+def chunk_text(text: str, max_chars: int = 1024, overlap: int = 100) -> list[str]:
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks, current = [], ''
+    for sent in sentences:
+        if len(current) + len(sent) > max_chars and current:
+            chunks.append(current.strip())
+            current = current[-overlap:] + ' ' + sent  # overlap
+        else:
+            current += ' ' + sent
+    if current.strip():
+        chunks.append(current.strip())
+    return chunks
+```
+
+### Chuukese-aware chunking
+
+```python
+# Chuukese uses the same sentence terminators as English
+SENTENCE_ENDINGS = re.compile(r'(?<=[.!?])\s+')
+
+def detect_language(text: str) -> str:
+    has_accents = bool(re.search(r'[áéíóú]', text))
+    return 'chuukese' if has_accents else 'english'
+```
+
+## Memory Efficiency
+
+- Process large PDFs page-by-page, not loading the full DOM into memory
+- Stream EPUB chapters — do not load the entire book at once
+- Write chunk output incrementally to JSONL files rather than accumulating in RAM
 
 ## Output Formats
 
-- **Structured JSON**: Complete document hierarchy and metadata
-- **Plain text**: Clean extracted text with optional formatting markers
-- **Chunked data**: AI-ready text segments with overlap and metadata
-- **Statistics report**: Processing metrics and quality analysis
-
-## Best Practices
-
-1. **Memory Management**: Use chunked processing for documents >100MB
-2. **Parallel Processing**: Leverage multiple workers for batch operations
-3. **Structure Validation**: Verify hierarchy detection accuracy
-4. **Progress Tracking**: Provide user feedback for long-running operations
+- **JSONL**: one JSON object per line — best for large training datasets
+- **JSON array**: for smaller batches consumed by the frontend
+- **Plain text**: cleaned extracted text for inspection
 
 ## Dependencies
 
-- `python-docx`: DOCX file processing
-- `PyMuPDF`: Advanced PDF processing
-- `Pillow`: Image processing for embedded content
-- `pathlib`: Cross-platform path handling
+- `PyMuPDF==1.23.8` — PDF processing (do NOT add `fitz==0.0.1.dev2`)
+- `python-docx>=1.2.0`
+- `ebooklib>=0.18`
+- `beautifulsoup4>=4.12.0`

@@ -140,3 +140,25 @@ print(f"Traditional concepts: {context['traditional_concepts']}")
 - `re`: Regular expression pattern matching
 - `difflib`: Fuzzy string matching
 - `csv`: Dictionary file processing
+
+
+## Multi-Language Document Processing
+
+When documents contain a mix of Chuukese and English (or other languages), detect language at the
+paragraph/sentence level before applying language-specific normalisation.
+
+```python
+from langdetect import detect
+
+def detect_language(text: str) -> str:
+    try:
+        lang = detect(text)
+        # 'id' (Indonesian) is the closest code langdetect returns for Chuukese
+        return 'chuukese' if lang in ('id', 'ms') else lang
+    except Exception:
+        # Fall back to accent-pattern heuristic
+        return 'chuukese' if re.search(r'[áéíóú]', text) else 'unknown'
+```
+
+Use the accent-pattern normalisation from this skill's main section after language detection.
+Documents that are purely English (e.g., brochure English side) should skip Chuukese normalisation.

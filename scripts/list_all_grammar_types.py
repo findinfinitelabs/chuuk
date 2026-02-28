@@ -5,7 +5,8 @@ Script to list all unique grammar types with their IDs and counts from the datab
 
 import sys
 import json
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database.dictionary_db import DictionaryDB, GRAMMAR_NORMALIZATION
 
@@ -131,7 +132,7 @@ def get_all_grammar_types():
         'normalization_map': GRAMMAR_NORMALIZATION
     }
     
-    output_file = '/Users/findinfinitelabs/DevApps/chuuk/scripts/grammar_types_analysis.json'
+    output_file = str(Path(__file__).resolve().parent / 'grammar_types_analysis.json')
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(export_data, f, indent=2, ensure_ascii=False)
     

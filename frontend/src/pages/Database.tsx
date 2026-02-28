@@ -355,6 +355,7 @@ interface DatabaseStats {
 function Database() {
   const [entries, setEntries] = useState<DictionaryEntry[]>([])
   const [stats, setStats] = useState<DatabaseStats | null>(null)
+  const statsRetryCountRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -426,9 +427,18 @@ function Database() {
     loadFilterOptions()
   }, [])
 
-  // Load entries and stats when filters/pagination change
+  // Load stats on mount (separate from entries to avoid request contention)
   useEffect(() => {
-    loadDatabaseStats()
+    // Small delay helps avoid cold-start timeouts when combined with entries fetch
+    const timeoutId = window.setTimeout(() => {
+      statsRetryCountRef.current = 0
+      loadDatabaseStats()
+    }, 250)
+    return () => window.clearTimeout(timeoutId)
+  }, [])
+
+  // Load entries when filters/pagination change
+  useEffect(() => {
     loadEntries()
   }, [currentPage, sortBy, sortOrder, filterType, filterGrammar, filterGrammarModifier, filterScripture, filterBook, exactMatch])
 
@@ -484,9 +494,10 @@ function Database() {
     
     // Then fetch fresh data with timeout
     try {
-      const response = await axios.get('/api/database/stats', { timeout: 10000 })
+      const response = await axios.get('/api/database/stats', { timeout: 30000 })
       setStats(response.data)
       localStorage.setItem('db_stats', JSON.stringify(response.data))
+      statsRetryCountRef.current = 0
     } catch (err: any) {
       console.error('Failed to load database stats:', err?.message || err)
       if (!cached) {
@@ -498,6 +509,15 @@ function Database() {
         })
       }
       // Keep using cached data if fetch fails
+
+      // If we have no cached stats, retry a couple times (cold start / transient DB latency)
+      if (!cached && statsRetryCountRef.current < 2) {
+        statsRetryCountRef.current += 1
+        const retryDelayMs = 1500 * (statsRetryCountRef.current + 1)
+        window.setTimeout(() => {
+          loadDatabaseStats()
+        }, retryDelayMs)
+      }
     }
   }
 

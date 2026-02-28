@@ -2,7 +2,8 @@
 """Search for wor pattern and related words."""
 
 import sys
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database.dictionary_db import DictionaryDB
 
