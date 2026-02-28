@@ -3,12 +3,13 @@
 Analyze all grammar types and extract core grammar types vs modifiers.
 """
 
+from pathlib import Path
 import json
 import re
 from collections import defaultdict
 
 # Load the full grammar types analysis
-with open('/Users/findinfinitelabs/DevApps/chuuk/scripts/grammar_types_analysis.json', 'r') as f:
+with open(Path(__file__).resolve().parent / 'grammar_types_analysis.json', 'r') as f:
     data = json.load(f)
 
 # Extract core grammar types and modifiers
@@ -218,7 +219,7 @@ for core in sorted(core_types):
         })
 
 # Save core grammar types
-output_file = '/Users/findinfinitelabs/DevApps/chuuk/data/grammar/core_grammar_types.json'
+output_file = str(Path(__file__).resolve().parent.parent / 'data' / 'grammar' / 'core_grammar_types.json')
 with open(output_file, 'w', encoding='utf-8') as f:
     json.dump(core_grammar_types, f, indent=2, ensure_ascii=False)
 

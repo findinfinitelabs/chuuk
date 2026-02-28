@@ -1,5 +1,6 @@
 import sys
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.database.db_factory import get_database_client, get_database_config
 
 config = get_database_config()

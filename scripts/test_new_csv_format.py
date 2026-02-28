@@ -3,7 +3,8 @@
 chuukese_phrase, english_translation, type, direction, definition_notes
 """
 import sys
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Test data with new format (tab-separated)
 test_csv = """chuukese_phrase	english_translation	type	direction	definition_notes

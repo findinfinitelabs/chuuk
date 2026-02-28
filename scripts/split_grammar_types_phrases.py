@@ -11,13 +11,14 @@ import sys
 import json
 import time
 from typing import Dict, Tuple, Optional
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.database.dictionary_db import DictionaryDB
 
 
 # Load the grammar mapping
-MAPPING_FILE = '/Users/findinfinitelabs/DevApps/chuuk/data/grammar/grammar_mapping.json'
+MAPPING_FILE = str(Path(__file__).resolve().parent.parent / 'data' / 'grammar' / 'grammar_mapping.json')
 with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
     mapping_data = json.load(f)
     GRAMMAR_MAPPING = mapping_data['mapping']

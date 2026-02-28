@@ -5,11 +5,13 @@ Script to load CSV dictionary data into the database
 
 import sys
 import os
+from pathlib import Path
 import pandas as pd
 from datetime import datetime
 
 # Add the project root to sys.path
-sys.path.insert(0, '/Users/findinfinitelabs/DevApps/chuuk')
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.database.dictionary_db import DictionaryDB
 
@@ -26,7 +28,7 @@ def load_csv_data():
     print("✅ Connected to database")
     
     # Load CSV file
-    csv_path = '/Users/findinfinitelabs/DevApps/chuuk/output/processed_document/CHUUKESE_TO_ENGLISH_dictionary.csv'
+    csv_path = _PROJECT_ROOT / 'output' / 'processed_document' / 'CHUUKESE_TO_ENGLISH_dictionary.csv'
     
     try:
         df = pd.read_csv(csv_path)
