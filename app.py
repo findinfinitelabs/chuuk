@@ -3763,21 +3763,25 @@ def analyze_sentence():
         
         for word in words:
             # Try exact match first
-            result = dict_db.collection.find_one(
+            result = dict_db.dictionary_collection.find_one(
                 {'chuukese_word': {'$regex': f'^{re.escape(word)}$', '$options': 'i'}}
             )
             
             # If not found, try without case sensitivity
             if not result:
-                result = dict_db.collection.find_one(
+                result = dict_db.dictionary_collection.find_one(
                     {'chuukese_word': {'$regex': f'^{re.escape(word)}', '$options': 'i'}}
                 )
             
             if result:
                 # Prepare full entry for modal display
                 full_entry = {
+                    'entry_id': str(result['_id']),
                     'notes': result.get('notes', ''),
                     'examples': result.get('examples', ''),
+                    'english': result.get('english_translation', ''),
+                    'grammar': result.get('grammar', ''),
+                    'definition': result.get('definition', ''),
                     'pronunciation': result.get('pronunciation', ''),
                     'source': result.get('source', ''),
                     'etymology': result.get('etymology', ''),
@@ -3846,7 +3850,7 @@ def add_dictionary_word():
             return jsonify({'error': 'Chuukese word, English translation, and grammar type are required'}), 400
         
         # Check if word already exists
-        existing = dict_db.collection.find_one(
+        existing = dict_db.dictionary_collection.find_one(
             {'chuukese_word': {'$regex': f'^{re.escape(chuukese_word)}$', '$options': 'i'}}
         )
         
@@ -3877,7 +3881,7 @@ def add_dictionary_word():
         }
         
         # Insert into database
-        result = dict_db.collection.insert_one(new_entry)
+        result = dict_db.dictionary_collection.insert_one(new_entry)
         
         if result.inserted_id:
             return jsonify({
@@ -3892,6 +3896,55 @@ def add_dictionary_word():
         print(f"Error adding word to dictionary: {str(e)}")
         import traceback
         traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dictionary/update', methods=['PUT'])
+@login_required
+def update_dictionary_word():
+    """Update an existing dictionary entry from sentence analysis"""
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        data = request.get_json()
+
+        entry_id = data.get('entry_id', '').strip()
+        if not entry_id:
+            return jsonify({'error': 'entry_id is required'}), 400
+
+        try:
+            object_id = ObjectId(entry_id)
+        except InvalidId:
+            return jsonify({'error': 'Invalid entry ID'}), 400
+
+        update_fields = {}
+        for field in ('english_translation', 'grammar', 'definition', 'notes'):
+            if field in data and data[field] is not None:
+                value = data[field].strip() if isinstance(data[field], str) else data[field]
+                update_fields[field] = value
+
+        if not update_fields:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        if 'grammar' in update_fields:
+            raw = update_fields['grammar']
+            update_fields['grammar'] = dict_db._normalize_grammar(raw) if raw else raw
+
+        update_fields['updated_date'] = datetime.now()
+        update_fields['updated_by'] = session.get('username', 'unknown')
+
+        result = dict_db.dictionary_collection.update_one(
+            {'_id': object_id},
+            {'$set': update_fields}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'success': True, 'message': 'Entry updated successfully'}), 200
+
+    except Exception as e:
+        print(f"Error updating dictionary word: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 

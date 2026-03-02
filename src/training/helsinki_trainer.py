@@ -144,16 +144,21 @@ class HelsinkiFineTuner:
                 padding='max_length'
             )
             
-            # Setup the tokenizer for targets
-            with tokenizer.as_target_tokenizer():
-                labels = tokenizer(
-                    examples['target'],
-                    max_length=max_length,
-                    truncation=True,
-                    padding='max_length'
-                )
+            # Use text_target= (replaces deprecated as_target_tokenizer)
+            labels = tokenizer(
+                text_target=examples['target'],
+                max_length=max_length,
+                truncation=True,
+                padding='max_length'
+            )
             
-            model_inputs['labels'] = labels['input_ids']
+            # Replace padding token ids with -100 so they are ignored in loss
+            label_ids = labels['input_ids']
+            label_ids = [
+                [(t if t != tokenizer.pad_token_id else -100) for t in seq]
+                for seq in label_ids
+            ]
+            model_inputs['labels'] = label_ids
             return model_inputs
         
         tokenized_dataset = dataset.map(
@@ -236,7 +241,12 @@ class HelsinkiFineTuner:
                 model.save_pretrained(model_path)
                 tokenizer.save_pretrained(model_path)
             
-            model = model.to(self.device)
+            # Allow forcing CPU to avoid MPS Metal command buffer corruption
+            force_cpu = os.environ.get('FORCE_CPU', '0') == '1'
+            train_device = 'cpu' if force_cpu else self.device
+            if force_cpu:
+                print("🖥️  FORCE_CPU=1: Using CPU to avoid MPS instability")
+            model = model.to(train_device)
             
             # Load training data
             self._update_progress(f"Preparing {stage_name} data", 20)
@@ -281,6 +291,8 @@ class HelsinkiFineTuner:
                 push_to_hub=False,
                 dataloader_num_workers=0,  # Single-threaded data loading for stability
                 max_grad_norm=1.0,  # Gradient clipping for stability
+                use_cpu=force_cpu,                                        # Force CPU when requested
+                use_mps_device=(self.device == "mps" and not force_cpu),  # Disable MPS when forced to CPU
             )
             
             # Data collator
