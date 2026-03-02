@@ -379,7 +379,7 @@ function Translate() {
           AI-Powered Chuukese Translation
         </Title>
         <Text color="dimmed">
-          Compare translations from Google Translate, Helsinki-NLP, and Ollama AI models side-by-side.
+          Compare translations from Google Translate and Helsinki-NLP side-by-side.
         </Text>
       </Card>
 
@@ -390,14 +390,6 @@ function Translate() {
             Local Chuukese translators are trained and ready to use.
           </Text>
           <Group gap="xs">
-            <Button
-              size="xs"
-              variant="outline"
-              leftSection={<IconRefresh size={14} />}
-              onClick={() => trainModel('llm')}
-            >
-              Retrain Ollama
-            </Button>
             <Button
               size="xs"
               variant="outline"
@@ -501,7 +493,7 @@ function Translate() {
       )}
 
       {/* Translation Results - Four columns */}
-      {(translations.google || translations.helsinki || translations.ollama) && (
+      {(translations.google || translations.helsinki) && (
         <>
           <Group grow align="stretch">
             {/* Google Translate */}
@@ -552,35 +544,6 @@ function Translate() {
                       }}
                     >
                       {translations.helsinki}
-                    </Text>
-                  </Paper>
-                ) : (
-                  <Text color="dimmed" ta="center" py="xl">
-                    Translating...
-                  </Text>
-                )}
-              </Card.Section>
-            </Card>
-
-            {/* Ollama */}
-            <Card withBorder>
-              <Card.Section withBorder inheritPadding py="sm">
-                <Group gap="xs">
-                  <IconRobot size={20} color="var(--mantine-color-violet-6)" />
-                  <Title order={4}>Ollama AI</Title>
-                </Group>
-              </Card.Section>
-              <Card.Section inheritPadding py="md" pos="relative">
-                <LoadingOverlay visible={loading} />
-                {translations.ollama ? (
-                  <Paper p="md" withBorder style={{ backgroundColor: 'var(--mantine-color-violet-0)', minHeight: '150px' }}>
-                    <Text
-                      style={{
-                        fontFamily: '"Noto Sans", "Arial Unicode MS", system-ui, sans-serif',
-                        whiteSpace: 'pre-wrap'
-                      }}
-                    >
-                      {translations.ollama}
                     </Text>
                   </Paper>
                 ) : (
