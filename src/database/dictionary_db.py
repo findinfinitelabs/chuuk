@@ -1108,10 +1108,22 @@ class DictionaryDB:
                 "chuukese_word": {"$regex": " "}
             })
             
-            # Count sentences (type = 'sentence')
+            # Count sentences (type = 'sentence') — also check phrases_collection
             sentences_count = self.dictionary_collection.count_documents({
                 "type": "sentence"
             })
+            try:
+                sentences_count += self.phrases_collection.count_documents({
+                    "type": "sentence"
+                })
+            except Exception:
+                pass
+
+            # Include phrases_collection counts
+            try:
+                phrases_count += self.phrases_collection.count_documents({})
+            except Exception:
+                pass
             
             # Count entries with scripture references
             scripture_count = self.dictionary_collection.count_documents({
@@ -1142,7 +1154,8 @@ class DictionaryDB:
                 'total_sentences': sentences_count,
                 'total_with_scripture': scripture_count,
                 'grammar_breakdown': grammar_breakdown,
-                'last_updated': last_updated
+                'last_updated': last_updated,
+                'fetched_at': __import__('datetime').datetime.utcnow().isoformat()
             }
         except Exception as e:
             print(f"Error getting database stats: {e}")

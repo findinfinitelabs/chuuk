@@ -18,6 +18,11 @@ interface TrainingStatus {
   progress?: number
   message?: string
   last_training?: string
+  epoch_current?: number | null
+  epoch_total?: number | null
+  epoch_step_pct?: number | null
+  epoch_loss?: number | null
+  current_direction?: string | null
 }
 
 interface PhraseTranslation {
@@ -51,6 +56,8 @@ function Translate() {
   const [selectedPhrase, setSelectedPhrase] = useState<PhraseTranslation | null>(null)
   const [userConfidence, setUserConfidence] = useState<number>(3)
   const [existingPhraseMatch, setExistingPhraseMatch] = useState<any>(null)
+  const [trainingStartTime, setTrainingStartTime] = useState<number | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const textInputRef = useRef<HTMLInputElement>(null)
 
   // Sync local state to cache when it changes
@@ -94,6 +101,23 @@ function Translate() {
 
     return () => clearInterval(interval)
   }, [])
+
+  // Elapsed timer — starts when training begins, resets when done
+  useEffect(() => {
+    if (trainingStatus?.is_training) {
+      if (trainingStartTime === null) {
+        setTrainingStartTime(Date.now())
+        setElapsedSeconds(0)
+      }
+      const tick = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - (trainingStartTime ?? Date.now())) / 1000))
+      }, 1000)
+      return () => clearInterval(tick)
+    } else {
+      setTrainingStartTime(null)
+      setElapsedSeconds(0)
+    }
+  }, [trainingStatus?.is_training, trainingStartTime])
 
   // Load suggestions when text changes
   useEffect(() => {
@@ -312,10 +336,8 @@ function Translate() {
           message: 'Translation corrected and models will be retrained',
           color: 'green'
         })
-        // Clear inputs after successful save
-        setText('')
+        // Clear only the correction field; leave translation results visible
         setCorrection('')
-        setTranslations({})
       } else {
         notifications.show({
           title: 'Error',
@@ -921,44 +943,106 @@ function Translate() {
 
           {trainingStatus.is_training ? (
             <Stack gap="md">
-              <Text size="sm" c="dimmed">
-                {trainingStatus.message || 'Training models with your corrections...'}
-              </Text>
-              
+              {/* Step + elapsed timer */}
+              {(() => {
+                const pct = trainingStatus.progress || 0
+                let step = 1, stepLabel = 'Validating with Google Translate'
+                if (pct >= 15 && pct < 60) { step = 2; stepLabel = 'Fine-tuning Helsinki-NLP models' }
+                else if (pct >= 60) { step = 3; stepLabel = 'Training Ollama AI model' }
+                const mins = Math.floor(elapsedSeconds / 60)
+                const secs = elapsedSeconds % 60
+                const elapsed = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+                return (
+                  <Group justify="space-between" align="flex-start">
+                    <Stack gap={2}>
+                      <Text size="sm" fw={600} c="violet">
+                        Step {step} of 3 — {stepLabel}
+                      </Text>
+                      {trainingStatus.epoch_current != null && trainingStatus.epoch_total != null && (
+                        <Stack gap={4}>
+                          <Group gap="sm" align="center">
+                            <Badge color="green" variant="light" size="sm">
+                              Epoch {trainingStatus.epoch_current} / {trainingStatus.epoch_total}
+                            </Badge>
+                            {trainingStatus.epoch_loss != null && (
+                              <Text size="xs" c="dimmed">loss: {trainingStatus.epoch_loss}</Text>
+                            )}
+                            {trainingStatus.epoch_step_pct != null && (
+                              <Text size="xs" c="dimmed">{trainingStatus.epoch_step_pct}%</Text>
+                            )}
+                          </Group>
+                          <Progress
+                            value={trainingStatus.epoch_step_pct ?? 0}
+                            size="sm"
+                            radius="xl"
+                            color="green"
+                            striped
+                            animated={trainingStatus.epoch_step_pct !== 100}
+                          />
+                        </Stack>
+                      )}
+                      <Text size="sm" c="dimmed">
+                        {trainingStatus.message || 'Training models with your corrections...'}
+                      </Text>
+                    </Stack>
+                    <Stack gap={2} align="flex-end">
+                      <Badge color="gray" variant="outline" size="sm">⏱ {elapsed}</Badge>
+                      <Text size="xs" c="dimmed">~20–40 min total</Text>
+                    </Stack>
+                  </Group>
+                )
+              })()}
+
+              {/* Overall progress bar */}
+              <Progress
+                value={trainingStatus.progress || 0}
+                size="xl"
+                radius="xl"
+                striped
+                animated
+                color="violet"
+              />
+              <Text size="xs" c="dimmed" ta="right">{trainingStatus.progress || 0}% complete</Text>
+
               {trainingStatus.models_training && trainingStatus.models_training.length > 0 && (
                 <Stack gap="xs">
                   {trainingStatus.models_training.map((model) => {
-                    // Determine color based on model type
-                    let progressColor = 'violet';
-                    if (model.includes('Google')) progressColor = 'blue';
-                    else if (model.includes('Helsinki')) progressColor = 'green';
-                    else if (model.includes('Ollama')) progressColor = 'violet';
-                    
+                    const pct = trainingStatus.progress || 0
+                    let modelDone = false
+                    let modelActive = false
+                    let progressColor = 'gray'
+                    if (model.includes('Google')) {
+                      modelDone = pct >= 15
+                      modelActive = pct < 15
+                      progressColor = 'blue'
+                    } else if (model.includes('Helsinki')) {
+                      modelDone = pct >= 60
+                      modelActive = pct >= 15 && pct < 60
+                      progressColor = 'green'
+                    } else if (model.includes('Ollama')) {
+                      modelDone = pct >= 100
+                      modelActive = pct >= 60
+                      progressColor = 'violet'
+                    }
                     return (
-                      <Group key={model} gap="sm">
-                        <Text size="sm" fw={500} style={{ minWidth: '180px' }}>
+                      <Group key={model} gap="sm" align="center">
+                        <Text size="xs" style={{ width: 16, textAlign: 'center' }}>
+                          {modelDone ? '✅' : modelActive ? '🔄' : '⏳'}
+                        </Text>
+                        <Text size="sm" fw={modelActive ? 600 : 400} c={modelDone ? 'dimmed' : modelActive ? undefined : 'dimmed'} style={{ minWidth: '200px' }}>
                           {model}
                         </Text>
-                        <Progress
-                          value={trainingStatus.progress || 0}
-                          size="lg"
-                          radius="xl"
-                          striped
-                          animated
-                          style={{ flex: 1 }}
-                          color={progressColor}
-                        />
-                        <Text size="xs" c="dimmed">
-                          {trainingStatus.progress || 0}%
+                        <Text size="xs" c={modelDone ? 'teal' : modelActive ? progressColor : 'dimmed'}>
+                          {modelDone ? 'Done' : modelActive ? 'Running...' : 'Waiting'}
                         </Text>
                       </Group>
-                    );
+                    )
                   })}
                 </Stack>
               )}
 
               <Alert color="blue" variant="light">
-                Please wait while the models learn from your corrections. This may take a few minutes.
+                Helsinki fine-tuning runs on CPU and takes the longest (~20–35 min). You can continue using the app while training runs in the background.
               </Alert>
             </Stack>
           ) : (

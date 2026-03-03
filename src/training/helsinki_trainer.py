@@ -11,12 +11,63 @@ from transformers import (
     MarianTokenizer,
     Seq2SeqTrainingArguments,
     Seq2SeqTrainer,
-    DataCollatorForSeq2Seq
+    DataCollatorForSeq2Seq,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState
 )
 from datasets import Dataset
 from typing import List, Dict, Optional, Callable
 import json
 from pathlib import Path
+
+
+class EpochProgressCallback(TrainerCallback):
+    """Reports epoch progress back via the progress_callback"""
+
+    def __init__(self, progress_callback: Optional[Callable], num_epochs: int, stage_name: str):
+        self.progress_callback = progress_callback
+        self.num_epochs = num_epochs
+        self.stage_name = stage_name
+
+    def on_epoch_begin(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        epoch = int(state.epoch) + 1
+        if self.progress_callback:
+            self.progress_callback(
+                f"Training {self.stage_name} — epoch {epoch}/{self.num_epochs}",
+                None,
+                epoch=epoch,
+                total_epochs=self.num_epochs,
+            )
+
+    def on_log(self, args, state: TrainerState, control: TrainerControl, logs=None, **kwargs):
+        # within-epoch progress: fractional part of state.epoch
+        epoch_frac = state.epoch % 1.0
+        # On the very end of an epoch epoch_frac == 0.0, treat as 100%
+        step_pct = int(epoch_frac * 100) if epoch_frac > 0 else 100
+        loss = (logs or {}).get('loss', None)
+        if self.progress_callback:
+            self.progress_callback(
+                f"Training {self.stage_name} — epoch {int(state.epoch) + 1}/{self.num_epochs}",
+                None,
+                epoch=int(state.epoch) + 1,
+                total_epochs=self.num_epochs,
+                epoch_step_pct=step_pct,
+                epoch_loss=round(loss, 4) if loss is not None else None,
+            )
+
+    def on_epoch_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        epoch = int(state.epoch)
+        loss = state.log_history[-1].get('loss', None) if state.log_history else None
+        if self.progress_callback:
+            self.progress_callback(
+                f"Finished epoch {epoch}/{self.num_epochs} ({self.stage_name})",
+                None,
+                epoch=epoch,
+                total_epochs=self.num_epochs,
+                epoch_step_pct=100,
+                epoch_loss=round(loss, 4) if loss is not None else None,
+            )
 
 
 class HelsinkiFineTuner:
@@ -301,6 +352,12 @@ class HelsinkiFineTuner:
             # Trainer
             self._update_progress(f"Training {stage_name} model", 30)
             
+            epoch_cb = EpochProgressCallback(
+                progress_callback=self.progress_callback,
+                num_epochs=num_epochs,
+                stage_name=stage_name,
+            )
+
             trainer = Seq2SeqTrainer(
                 model=model,
                 args=training_args,
@@ -308,6 +365,7 @@ class HelsinkiFineTuner:
                 eval_dataset=eval_dataset,
                 data_collator=data_collator,
                 tokenizer=tokenizer,
+                callbacks=[epoch_cb],
             )
             
             # Train!
