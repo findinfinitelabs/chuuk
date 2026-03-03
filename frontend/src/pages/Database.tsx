@@ -4,6 +4,7 @@ import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconP
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
+import { useUser } from '../contexts/UserContext'
 import './Database.css'
 
 // Grammar type descriptions with examples
@@ -353,8 +354,17 @@ interface DatabaseStats {
 }
 
 function Database() {
+  const { email: userEmail } = useUser()
   const [entries, setEntries] = useState<DictionaryEntry[]>([])
-  const [stats, setStats] = useState<DatabaseStats | null>(null)
+  const [stats, setStats] = useState<DatabaseStats | null>(() => {
+    // Seed from localStorage immediately so stats never start as null
+    try {
+      const cached = localStorage.getItem('db_stats')
+      return cached ? JSON.parse(cached) : null
+    } catch {
+      return null
+    }
+  })
   const statsRetryCountRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -427,15 +437,14 @@ function Database() {
     loadFilterOptions()
   }, [])
 
-  // Load stats on mount (separate from entries to avoid request contention)
+  // Load stats: bust cache on login (userEmail change), otherwise respect 5-min TTL
   useEffect(() => {
-    // Small delay helps avoid cold-start timeouts when combined with entries fetch
-    const timeoutId = window.setTimeout(() => {
-      statsRetryCountRef.current = 0
-      loadDatabaseStats()
-    }, 250)
+    statsRetryCountRef.current = 0
+    // Bust cache on login so fresh counts are fetched
+    localStorage.removeItem('db_stats_at')
+    const timeoutId = window.setTimeout(() => loadDatabaseStats(true), 250)
     return () => window.clearTimeout(timeoutId)
-  }, [])
+  }, [userEmail])
 
   // Load entries when filters/pagination change
   useEffect(() => {
@@ -481,42 +490,33 @@ function Database() {
       <IconSortDescending size={14} />
   }
 
-  const loadDatabaseStats = async () => {
-    // Load cached stats immediately
+  const loadDatabaseStats = async (bustCache = false) => {
+    // Always show cached stats immediately
     const cached = localStorage.getItem('db_stats')
+    const cachedAt = localStorage.getItem('db_stats_at')
     if (cached) {
-      try {
-        setStats(JSON.parse(cached))
-      } catch (e) {
-        console.error('Failed to parse cached stats:', e)
-      }
+      try { setStats(JSON.parse(cached)) } catch { /* ignore */ }
     }
-    
-    // Then fetch fresh data with timeout
+    // Skip network fetch if cache is fresh (< 5 min) and not a forced bust
+    const cacheAge = cachedAt ? Date.now() - parseInt(cachedAt) : Infinity
+    if (!bustCache && cacheAge < 5 * 60 * 1000) return
+
+    // Fetch fresh data
     try {
       const response = await axios.get('/api/database/stats', { timeout: 30000 })
-      setStats(response.data)
-      localStorage.setItem('db_stats', JSON.stringify(response.data))
+      const data = response.data
+      const isValid = data && data.fetched_at && (data.total_entries > 0 || Object.keys(data.grammar_breakdown || {}).length > 0)
+      if (isValid) {
+        setStats(data)
+        localStorage.setItem('db_stats', JSON.stringify(data))
+        localStorage.setItem('db_stats_at', Date.now().toString())
+      }
       statsRetryCountRef.current = 0
     } catch (err: any) {
       console.error('Failed to load database stats:', err?.message || err)
-      if (!cached) {
-        // If no cache and fetch fails, show error notification
-        notifications.show({
-          title: 'Stats Unavailable',
-          message: 'Using cached data or waiting for next refresh',
-          color: 'yellow'
-        })
-      }
-      // Keep using cached data if fetch fails
-
-      // If we have no cached stats, retry a couple times (cold start / transient DB latency)
-      if (!cached && statsRetryCountRef.current < 2) {
+      if (statsRetryCountRef.current < 2) {
         statsRetryCountRef.current += 1
-        const retryDelayMs = 1500 * (statsRetryCountRef.current + 1)
-        window.setTimeout(() => {
-          loadDatabaseStats()
-        }, retryDelayMs)
+        window.setTimeout(() => loadDatabaseStats(bustCache), 1500 * (statsRetryCountRef.current + 1))
       }
     }
   }
@@ -829,7 +829,8 @@ function Database() {
 
   const refreshDatabase = () => {
     setCurrentPage(1)
-    loadDatabaseStats()
+    localStorage.removeItem('db_stats_at') // force cache bust on manual refresh
+    loadDatabaseStats(true)
     loadEntries()
   }
 

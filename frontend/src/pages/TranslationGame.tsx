@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip } from '@mantine/core'
-import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip, Select, Divider, Loader } from '@mantine/core'
+import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy, IconLink, IconUnlink } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './TranslationGame.css'
@@ -17,6 +17,28 @@ interface Match {
   chuukeseIds: number[]  // Changed to array to support multiple Chuukese sentences
   editedEnglishText?: string
 }
+
+interface WordSuggestion {
+  chuukese: string
+  helsinki_translation: string
+  matched_english_words: string[]
+  grammar_suggestion: string
+  in_dictionary: boolean
+  confidence: 'high' | 'low'
+}
+
+interface WordPair {
+  id: string
+  englishIndices: number[]
+  chuukeseIndices: number[]
+  englishWords: string[]
+  chuukeseWords: string[]
+  grammar: string
+  color: string
+}
+
+const PAIR_COLORS = ['green', 'blue', 'orange', 'violet', 'teal', 'red', 'cyan', 'pink', 'grape', 'yellow']
+const GRAMMAR_OPTIONS = ['noun','verb','adjective','adverb','pronoun','preposition','particle','phrase','proper noun','numeral']
 
 function TranslationGame() {
   const [englishSentences, setEnglishSentences] = useState<Sentence[]>([])
@@ -41,6 +63,15 @@ function TranslationGame() {
   const [pendingChuukeseIds, setPendingChuukeseIds] = useState<number[]>([])  // Changed to array
   const [editedChuukeseTexts, setEditedChuukeseTexts] = useState<Record<number, string>>({})
 
+  // Word-level matching state
+  const [englishTokens, setEnglishTokens] = useState<string[]>([])
+  const [chuukeseTokens, setChuukeseTokens] = useState<string[]>([])
+  const [selEnTokens, setSelEnTokens] = useState<number[]>([])
+  const [selChkTokens, setSelChkTokens] = useState<number[]>([])
+  const [wordPairs, setWordPairs] = useState<WordPair[]>([])
+  const [wordSuggestions, setWordSuggestions] = useState<Record<string, WordSuggestion>>({})
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [showEditTexts, setShowEditTexts] = useState(false)
   useEffect(() => {
     loadStats()
     loadGameStateFromCache()
@@ -229,7 +260,9 @@ function TranslationGame() {
     if (englishSentence) {
       setEditingEnglishId(englishId)
       setPendingChuukeseIds(chuukeseIds)
-      setEditedText(englishSentence.editedText || englishSentence.text)
+      const engText = englishSentence.editedText || englishSentence.text
+      setEditedText(engText)
+
       // Initialize edited Chuukese texts with current values
       const initialChuukeseTexts: Record<number, string> = {}
       chuukeseIds.forEach(id => {
@@ -239,7 +272,36 @@ function TranslationGame() {
         }
       })
       setEditedChuukeseTexts(initialChuukeseTexts)
+
+      // Tokenize both sides (strip punctuation for display but keep original)
+      const enTokens = engText.split(/\s+/).filter(Boolean)
+      const chkTokens = Object.values(initialChuukeseTexts)
+        .join(' ')
+        .split(/\s+/)
+        .filter(Boolean)
+      setEnglishTokens(enTokens)
+      setChuukeseTokens(chkTokens)
+      setSelEnTokens([])
+      setSelChkTokens([])
+      setWordPairs([])
+      setWordSuggestions({})
+      setShowEditTexts(false)
       setEditModalOpen(true)
+
+      // Fetch Helsinki suggestions for each Chuukese token
+      setLoadingSuggestions(true)
+      axios.post('/api/translate/word-suggestions', {
+        chuukese_tokens: chkTokens,
+        english_sentence: engText
+      }).then(res => {
+        const map: Record<string, WordSuggestion> = {}
+        res.data.suggestions?.forEach((s: WordSuggestion) => {
+          map[s.chuukese] = s
+        })
+        setWordSuggestions(map)
+      }).catch(() => {
+        // suggestions unavailable — proceed without
+      }).finally(() => setLoadingSuggestions(false))
     }
   }
 
@@ -263,15 +325,74 @@ function TranslationGame() {
         })
       )
       
-      // Proceed with match (passing edited Chuukese texts)
+      // Proceed with sentence match
       attemptMatch(editingEnglishId, pendingChuukeseIds, editedText, editedChuukeseTexts)
+
+      // Save word pairs if any were linked
+      if (wordPairs.length > 0) {
+        axios.post('/api/brochures/match/words', {
+          word_pairs: wordPairs.map(p => ({
+            chuukese: p.chuukeseWords.join(' '),
+            english: p.englishWords.join(' '),
+            grammar: p.grammar
+          })),
+          source_sentence_id: `${editingEnglishId}_${pendingChuukeseIds.join('_')}`
+        }).catch(() => {
+          // non-critical — sentence match already saved
+        })
+      }
       
       setEditModalOpen(false)
       setEditingEnglishId(null)
       setPendingChuukeseIds([])
       setEditedText('')
       setEditedChuukeseTexts({})
+      setWordPairs([])
+      setSelEnTokens([])
+      setSelChkTokens([])
     }
+  }
+
+  const toggleEnToken = (idx: number) => {
+    setSelEnTokens(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    )
+  }
+
+  const toggleChkToken = (idx: number) => {
+    setSelChkTokens(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    )
+  }
+
+  const linkSelectedTokens = () => {
+    if (selEnTokens.length === 0 || selChkTokens.length === 0) return
+    const enWords = selEnTokens.sort((a,b)=>a-b).map(i => englishTokens[i].replace(/[.,!?;:]+$/, ''))
+    const chkWords = selChkTokens.sort((a,b)=>a-b).map(i => chuukeseTokens[i])
+    // Suggest grammar: if any Chuukese word has a suggestion, use it; else default noun
+    const primaryChk = chkWords[0]
+    const sugg = wordSuggestions[primaryChk]
+    const grammar = sugg?.grammar_suggestion || 'noun'
+    const color = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
+    setWordPairs(prev => [...prev, {
+      id: `${selEnTokens.join('-')}_${selChkTokens.join('-')}`,
+      englishIndices: [...selEnTokens],
+      chuukeseIndices: [...selChkTokens],
+      englishWords: enWords,
+      chuukeseWords: chkWords,
+      grammar,
+      color
+    }])
+    setSelEnTokens([])
+    setSelChkTokens([])
+  }
+
+  const unlinkPair = (pairId: string) => {
+    setWordPairs(prev => prev.filter(p => p.id !== pairId))
+  }
+
+  const updatePairGrammar = (pairId: string, grammar: string) => {
+    setWordPairs(prev => prev.map(p => p.id === pairId ? { ...p, grammar } : p))
   }
 
   const handleCancelEdit = () => {
@@ -280,6 +401,9 @@ function TranslationGame() {
     setPendingChuukeseIds([])
     setEditedText('')
     setEditedChuukeseTexts({})
+    setWordPairs([])
+    setSelEnTokens([])
+    setSelChkTokens([])
     setSelectedEnglish(null)
     setSelectedChuukese([])
   }
@@ -670,38 +794,154 @@ function TranslationGame() {
       <Modal
         opened={editModalOpen}
         onClose={handleCancelEdit}
-        title="Edit Translations"
-        size="lg"
+        title="Match Words"
+        size="xl"
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Review and edit the translations if needed before matching:
+            Select English words (blue) and Chuukese words (orange), then click <strong>Link</strong> to pair them.
+            {loadingSuggestions && <Loader size="xs" ml="xs" />}
           </Text>
-          
-          <Textarea
-            label="English Translation"
-            value={editedText}
-            onChange={(e) => setEditedText(e.target.value)}
-            minRows={3}
-            maxRows={6}
-            autosize
-          />
-          
-          {pendingChuukeseIds.length > 0 && (
-            <Stack gap="sm">
-              <Text size="sm" fw={500}>
-                Chuukese Sentence{pendingChuukeseIds.length > 1 ? 's' : ''} ({pendingChuukeseIds.length}):
+
+          {/* English word chips */}
+          <Stack gap={4}>
+            <Text size="xs" fw={600} tt="uppercase" c="blue">English</Text>
+            <Group gap={6} wrap="wrap">
+              {englishTokens.map((token, idx) => {
+                const pair = wordPairs.find(p => p.englishIndices.includes(idx))
+                const isSelected = selEnTokens.includes(idx)
+                const isPaired = !!pair
+                const pendingColor = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
+                return (
+                  <Badge
+                    key={idx}
+                    size="lg"
+                    variant={isPaired || isSelected ? 'filled' : 'outline'}
+                    color={isPaired ? pair.color : isSelected ? pendingColor : 'gray'}
+                    style={{ cursor: isPaired ? 'default' : 'pointer', userSelect: 'none' }}
+                    onClick={() => !isPaired && toggleEnToken(idx)}
+                  >
+                    {token}
+                  </Badge>
+                )
+              })}
+            </Group>
+          </Stack>
+
+          {/* Chuukese word chips */}
+          <Stack gap={4}>
+            <Text size="xs" fw={600} tt="uppercase" c="orange">Chuukese</Text>
+            <Group gap={6} wrap="wrap">
+              {chuukeseTokens.map((token, idx) => {
+                const pair = wordPairs.find(p => p.chuukeseIndices.includes(idx))
+                const isSelected = selChkTokens.includes(idx)
+                const isPaired = !!pair
+                const sugg = wordSuggestions[token]
+                const pendingColor = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
+                return (
+                  <Tooltip
+                    key={idx}
+                    label={sugg ? `→ "${sugg.helsinki_translation}" (${sugg.confidence})` : ''}
+                    disabled={!sugg}
+                    withArrow
+                  >
+                    <Badge
+                      size="lg"
+                      variant={isPaired || isSelected ? 'filled' : 'outline'}
+                      color={isPaired ? pair.color : isSelected ? pendingColor : 'gray'}
+                      style={{ cursor: isPaired ? 'default' : 'pointer', userSelect: 'none',
+                               outline: sugg?.confidence === 'high' && !isPaired && !isSelected ? '2px solid var(--mantine-color-orange-3)' : undefined }}
+                      onClick={() => !isPaired && toggleChkToken(idx)}
+                    >
+                      {token}
+                    </Badge>
+                  </Tooltip>
+                )
+              })}
+            </Group>
+          </Stack>
+
+          {/* Link button */}
+          <Group>
+            <Button
+              leftSection={<IconLink size={16} />}
+              disabled={selEnTokens.length === 0 || selChkTokens.length === 0}
+              onClick={linkSelectedTokens}
+              variant="light"
+              color="teal"
+              size="sm"
+            >
+              Link Selected Words ({selEnTokens.length} EN + {selChkTokens.length} CHK)
+            </Button>
+            {(selEnTokens.length > 0 || selChkTokens.length > 0) && (
+              <Button size="sm" variant="subtle" color="gray"
+                onClick={() => { setSelEnTokens([]); setSelChkTokens([]) }}>
+                Clear selection
+              </Button>
+            )}
+          </Group>
+
+          {/* Linked pairs */}
+          {wordPairs.length > 0 && (
+            <>
+              <Divider label="Linked word pairs" labelPosition="left" />
+              <Stack gap="xs">
+                {wordPairs.map(pair => (
+                  <Paper key={pair.id} withBorder p="xs" style={{ borderLeft: `4px solid var(--mantine-color-${pair.color}-5)` }}>
+                    <Group justify="space-between" wrap="nowrap">
+                      <Group gap="xs" wrap="wrap">
+                        <Badge color={pair.color} variant="filled">{pair.englishWords.join(' ')}</Badge>
+                        <Text size="sm" c="dimmed">↔</Text>
+                        <Badge color={pair.color} variant="light">{pair.chuukeseWords.join(' ')}</Badge>
+                      </Group>
+                      <Group gap="xs" wrap="nowrap">
+                        <Select
+                          size="xs"
+                          value={pair.grammar}
+                          data={GRAMMAR_OPTIONS}
+                          onChange={val => val && updatePairGrammar(pair.id, val)}
+                          w={130}
+                          styles={{ input: { fontSize: '12px' } }}
+                        />
+                        <ActionIcon size="sm" color="red" variant="subtle" onClick={() => unlinkPair(pair.id)}>
+                          <IconUnlink size={14} />
+                        </ActionIcon>
+                      </Group>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </>
+          )}
+
+          {/* Toggle sentence edit */}
+          <Divider
+            label={
+              <Text size="xs" style={{ cursor: 'pointer' }} c="dimmed"
+                onClick={() => setShowEditTexts(v => !v)}>
+                {showEditTexts ? '▲ Hide sentence edit' : '▼ Edit sentences'}
               </Text>
+            }
+            labelPosition="left"
+          />
+          {showEditTexts && (
+            <Stack gap="sm">
+              <Textarea
+                label="English Translation"
+                value={editedText}
+                onChange={(e) => setEditedText(e.target.value)}
+                minRows={2}
+                maxRows={5}
+                autosize
+              />
               {pendingChuukeseIds.map(id => {
                 const sentence = chuukeseSentences.find(s => s.id === id)
                 return sentence ? (
                   <Textarea
                     key={id}
+                    label="Chuukese"
                     value={editedChuukeseTexts[id] || sentence.text}
-                    onChange={(e) => setEditedChuukeseTexts(prev => ({
-                      ...prev,
-                      [id]: e.target.value
-                    }))}
+                    onChange={(e) => setEditedChuukeseTexts(prev => ({ ...prev, [id]: e.target.value }))}
                     minRows={2}
                     maxRows={4}
                     autosize
@@ -711,13 +951,11 @@ function TranslationGame() {
               })}
             </Stack>
           )}
-          
+
           <Group justify="flex-end" mt="md">
-            <Button variant="subtle" onClick={handleCancelEdit}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit}>
-              Confirm Match
+            <Button variant="subtle" onClick={handleCancelEdit}>Cancel</Button>
+            <Button leftSection={<IconCheck size={16} />} onClick={handleSaveEdit}>
+              Confirm Match{wordPairs.length > 0 ? ` & Save ${wordPairs.length} Word Pair${wordPairs.length > 1 ? 's' : ''}` : ''}
             </Button>
           </Group>
         </Stack>

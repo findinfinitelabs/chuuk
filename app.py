@@ -176,7 +176,12 @@ training_status = {
     'models_training': [],
     'progress': 0,
     'message': '',
-    'last_training': None
+    'last_training': None,
+    'epoch_current': None,
+    'epoch_total': None,
+    'epoch_step_pct': None,
+    'epoch_loss': None,
+    'current_direction': None,
 }
 # Lock to guard training_status across threads
 training_status_lock = threading.Lock()
@@ -1619,15 +1624,27 @@ def api_translate_correction():
                     print("🔄 Fine-tuning Helsinki-NLP models...")
                     training_status['progress'] = 20
                     training_status['message'] = 'Fine-tuning Helsinki-NLP models...'
-                    
+                    training_status['epoch_current'] = None
+                    training_status['epoch_total'] = None
+                    training_status['current_direction'] = 'chk_to_en'
+
                     try:
                         from src.training.helsinki_trainer import HelsinkiFineTuner
                         
-                        def helsinki_progress(stage, progress):
+                        def helsinki_progress(stage, progress, epoch=None, total_epochs=None, epoch_step_pct=None, epoch_loss=None):
                             # Map 20-60% for Helsinki training
-                            adjusted_progress = 20 + (progress * 0.4)
-                            training_status['progress'] = int(adjusted_progress)
+                            if progress is not None:
+                                adjusted_progress = 20 + (progress * 0.4)
+                                training_status['progress'] = int(adjusted_progress)
                             training_status['message'] = stage
+                            if epoch is not None:
+                                training_status['epoch_current'] = epoch
+                            if total_epochs is not None:
+                                training_status['epoch_total'] = total_epochs
+                            if epoch_step_pct is not None:
+                                training_status['epoch_step_pct'] = epoch_step_pct
+                            if epoch_loss is not None:
+                                training_status['epoch_loss'] = epoch_loss
                         
                         helsinki_trainer = HelsinkiFineTuner(progress_callback=helsinki_progress)
                         helsinki_success = helsinki_trainer.fine_tune_both_models(
@@ -1650,7 +1667,10 @@ def api_translate_correction():
                         # Continue with Ollama training even if Helsinki fails
                     
                     training_status['progress'] = 60
-                    
+                    training_status['epoch_current'] = None
+                    training_status['epoch_total'] = None
+                    training_status['current_direction'] = None
+
                     # Step 3: Retrain Ollama
                     from src.translation.llm_trainer import ChuukeseLLMTrainer
                     trainer = ChuukeseLLMTrainer()
@@ -2088,9 +2108,18 @@ def api_grammar_types():
 
 @app.route('/api/database/stats', methods=['GET'])
 def api_database_stats():
-    """API: Get database statistics"""
+    """API: Get database statistics (cached 60s to avoid Cosmos rate limits)"""
     try:
+        cache = app.config.setdefault('_stats_cache', {})
+        cached = cache.get('data')
+        cached_at = cache.get('at', 0)
+        if cached and (datetime.now(timezone.utc).timestamp() - cached_at) < 60:
+            return jsonify(cached)
         stats = dict_db.get_stats()
+        # Only cache if the result is valid (not an empty fallback)
+        if stats.get('total_entries', 0) > 0 or stats.get('grammar_breakdown'):
+            cache['data'] = stats
+            cache['at'] = datetime.now(timezone.utc).timestamp()
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2462,25 +2491,42 @@ def api_database_entries():
         total = len(all_entries)
         
         # Sort in Python to handle null/missing values properly
+        def _type_rank(entry):
+            """Words=0, Phrases=1, Sentences/Questions=2 for grouped default sort"""
+            t = (entry.get('type') or '').lower()
+            if t == 'word':
+                return 0
+            if t in ('phrase',):
+                return 1
+            if t in ('sentence', 'question'):
+                return 2
+            return 3
+
+        def _chuukese_alpha(entry):
+            v = entry.get('chuukese_word') or entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or entry.get('chuukese') or ''
+            return str(v).lower()
+
         if sort_by and sort_by in field_map:
             sort_field = field_map[sort_by]
             reverse = sort_order == 'desc'
-            
-            # Sort with nulls/empty at the end, case-insensitive for strings
-            def sort_key(entry):
-                # Handle different field names in different collections
-                value = entry.get(sort_field)
-                # For chuukese, also check chuukese_sentence and chuukese_phrase
-                if sort_field == 'chuukese_word' and not value:
-                    value = entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or entry.get('chuukese')
-                
-                if value is None or value == '':
-                    # Put nulls/empty at the end
-                    return (1, '')
-                # Case-insensitive string comparison
-                return (0, str(value).lower())
-            
-            all_entries.sort(key=sort_key, reverse=reverse)
+
+            if sort_by == 'chuukese':
+                # Default: group by type (word → phrase → sentence) then alpha within group
+                all_entries.sort(key=lambda e: (_type_rank(e), _chuukese_alpha(e)), reverse=reverse)
+            else:
+                # Sort with nulls/empty at the end, case-insensitive for strings
+                def sort_key(entry):
+                    value = entry.get(sort_field)
+                    if sort_field == 'chuukese_word' and not value:
+                        value = entry.get('chuukese_sentence') or entry.get('chuukese_phrase') or entry.get('chuukese')
+                    if value is None or value == '':
+                        return (1, '')
+                    return (0, str(value).lower())
+
+                all_entries.sort(key=sort_key, reverse=reverse)
+        else:
+            # No sort_by specified — apply default grouped sort
+            all_entries.sort(key=lambda e: (_type_rank(e), _chuukese_alpha(e)))
         
         # Apply pagination after sorting
         skip = (page - 1) * limit
@@ -3614,6 +3660,188 @@ def api_save_brochure_match():
             'entry_type': 'sentence',
             'confidence': 1.0
         }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/translate/word-suggestions', methods=['POST'])
+def api_word_suggestions():
+    """Translate each Chuukese token via Helsinki and cross-reference against the matched English sentence.
+    Returns per-token suggestions: matched English word(s) + grammar recommendation."""
+    try:
+        data = request.get_json()
+        chuukese_tokens = data.get('chuukese_tokens', [])   # list of individual Chuukese words
+        english_sentence = data.get('english_sentence', '') # full matched English sentence
+
+        if not chuukese_tokens or not english_sentence:
+            return jsonify({'error': 'chuukese_tokens and english_sentence are required'}), 400
+
+        if not helsinki_translator:
+            return jsonify({'error': 'Helsinki translator not available'}), 503
+
+        # Normalised English words for matching (lowercase, strip punctuation)
+        import re as _re
+        def _norm(w):
+            return _re.sub(r"[^a-z']", '', w.lower())
+
+        english_words = english_sentence.split()
+        english_norms = [_norm(w) for w in english_words]
+
+        def suggest_grammar(english_word: str) -> str:
+            """Simple POS heuristic based on the English word."""
+            w = english_word.lower().rstrip('s')
+            # Pronouns
+            if w in ('i','you','he','she','it','we','they','me','him','her','us','them','my','your','his','its','our','their'):
+                return 'pronoun'
+            # Common verbs
+            if w in ('is','was','were','be','been','being','have','has','had','do','does','did','will','would','can',
+                     'could','shall','should','may','might','must','go','come','say','get','make','know','think',
+                     'take','see','want','give','use','find','tell','ask','seem','feel','try','leave','call'):
+                return 'verb'
+            # Verb suffixes
+            if english_word.lower().endswith(('ing','ed','fy','ize','ise','en')):
+                return 'verb'
+            # Adjective suffixes
+            if english_word.lower().endswith(('ful','less','ous','ive','al','ble','ic','ish','like')):
+                return 'adjective'
+            # Adverb suffixes
+            if english_word.lower().endswith('ly'):
+                return 'adverb'
+            # Noun suffixes
+            if english_word.lower().endswith(('tion','sion','ness','ment','ity','er','or','ist','ism','age','ure')):
+                return 'noun'
+            # Articles / prepositions / conjunctions
+            if w in ('a','an','the','of','in','on','at','to','for','with','by','from','into','over','under',
+                     'and','but','or','so','yet','nor','although','because','since','while','if','when','that'):
+                return 'particle' if w in ('a','an','the') else 'preposition'
+            return 'noun'  # default
+
+        suggestions = []
+        for token in chuukese_tokens:
+            token = token.strip()
+            if not token:
+                continue
+
+            # First check if word already exists in dictionary
+            existing = dict_db.dictionary_collection.find_one(
+                {'chuukese_word': {'$regex': f'^{_re.escape(token)}$', '$options': 'i'}},
+                {'english_translation': 1, 'grammar': 1}
+            )
+            if existing:
+                suggestions.append({
+                    'chuukese': token,
+                    'helsinki_translation': existing.get('english_translation', ''),
+                    'matched_english_words': [],
+                    'grammar_suggestion': existing.get('grammar', 'noun'),
+                    'in_dictionary': True,
+                    'confidence': 'high'
+                })
+                continue
+
+            # Translate via Helsinki
+            try:
+                translation = helsinki_translator.translate_chuukese_to_english(token).strip()
+            except Exception:
+                translation = ''
+
+            # Cross-reference against words in the English sentence
+            translation_words = [_norm(w) for w in translation.split() if _norm(w)]
+            matched = [english_words[i] for i, en in enumerate(english_norms)
+                       if en and any(en == tw or en.startswith(tw[:4]) for tw in translation_words if len(tw) >= 4)]
+
+            grammar = suggest_grammar(matched[0]) if matched else (
+                suggest_grammar(translation.split()[0]) if translation else 'noun'
+            )
+
+            suggestions.append({
+                'chuukese': token,
+                'helsinki_translation': translation,
+                'matched_english_words': matched,
+                'grammar_suggestion': grammar,
+                'in_dictionary': False,
+                'confidence': 'high' if matched else 'low'
+            })
+
+        return jsonify({'suggestions': suggestions})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/brochures/match/words', methods=['POST'])
+def api_save_word_pairs():
+    """Save individual word pairs extracted from a validated sentence match.
+    Each pair is upserted into dictionary_collection at confidence 100 / verified."""
+    try:
+        data = request.get_json()
+        word_pairs = data.get('word_pairs', [])          # [{chuukese, english, grammar}]
+        source_sentence_id = data.get('source_sentence_id', '')
+
+        if not word_pairs:
+            return jsonify({'error': 'word_pairs is required'}), 400
+
+        saved = []
+        skipped = []
+
+        for pair in word_pairs:
+            chuukese_word = (pair.get('chuukese') or '').strip()
+            english_translation = (pair.get('english') or '').strip()
+            grammar = (pair.get('grammar') or 'noun').strip()
+
+            if not chuukese_word or not english_translation:
+                continue
+
+            entry = {
+                'chuukese_word': chuukese_word,
+                'english_translation': english_translation,
+                'grammar': grammar,
+                'confidence_score': 100,
+                'confidence_level': 'verified',
+                'verified': True,
+                'source': 'translation_game_word_pair',
+                'source_sentence_id': source_sentence_id,
+                'updated_date': datetime.now(timezone.utc),
+            }
+
+            existing = dict_db.dictionary_collection.find_one(
+                {'chuukese_word': {'$regex': f'^{re.escape(chuukese_word)}$', '$options': 'i'}}
+            )
+
+            if existing:
+                # Append new translation to definition/notes if different from current
+                existing_translation = existing.get('english_translation', '').strip()
+                existing_definition = existing.get('definition', '').strip()
+                update_fields = {
+                    'grammar': grammar,
+                    'confidence_score': 100,
+                    'confidence_level': 'verified',
+                    'verified': True,
+                    'updated_date': datetime.now(timezone.utc)
+                }
+                # Only update primary translation if field was empty
+                if not existing_translation:
+                    update_fields['english_translation'] = english_translation
+                elif english_translation.lower() != existing_translation.lower():
+                    # Different meaning — append to notes/definition on a new line
+                    note_line = f"Also: {english_translation} (translation game)"
+                    if note_line not in existing_definition:
+                        update_fields['definition'] = (existing_definition + '\n' + note_line).strip()
+                dict_db.dictionary_collection.update_one(
+                    {'_id': existing['_id']},
+                    {'$set': update_fields}
+                )
+                skipped.append(chuukese_word)
+            else:
+                entry['created_date'] = datetime.now(timezone.utc)
+                dict_db.dictionary_collection.insert_one(entry)
+                saved.append(chuukese_word)
+
+        return jsonify({
+            'saved': saved,
+            'updated': skipped,
+            'total': len(saved) + len(skipped)
+        }), 201
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
