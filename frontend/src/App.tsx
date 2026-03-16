@@ -206,24 +206,13 @@ function App() {
                 onClick={toggleNav}
               />
             )}
-            {hasPermission('grammar') && (
+            {hasPermission('sentences') && (
               <NavLink 
-                label="Grammar" 
-                leftSection={<IconAbc size="1.2rem" />} 
+                label="Sentence Analysis" 
+                leftSection={<IconFileText size="1.2rem" />} 
                 component={Link}
-                to="/grammar"
-                active={location.pathname === '/grammar'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('grammar') && (
-              <NavLink 
-                label="Compose Sentences" 
-                leftSection={<IconMessage size="1.2rem" />} 
-                component={Link}
-                to="/compose"
-                active={location.pathname === '/compose'}
+                to="/sentences"
+                active={location.pathname === '/sentences'}
                 className="nav-link"
                 onClick={toggleNav}
               />
@@ -239,20 +228,34 @@ function App() {
                 onClick={toggleNav}
               />
             )}
-            {hasPermission('sentences') && (
+            
+            <Divider my="sm" />
+            
+            {hasPermission('grammar') && (
               <NavLink 
-                label="Sentence Analysis" 
-                leftSection={<IconFileText size="1.2rem" />} 
+                label="Compose Sentences" 
+                leftSection={<IconMessage size="1.2rem" />} 
                 component={Link}
-                to="/sentences"
-                active={location.pathname === '/sentences'}
+                to="/compose"
+                active={location.pathname === '/compose'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('grammar') && (
+              <NavLink 
+                label="Grammar Practice" 
+                leftSection={<IconAbc size="1.2rem" />} 
+                component={Link}
+                to="/grammar"
+                active={location.pathname === '/grammar'}
                 className="nav-link"
                 onClick={toggleNav}
               />
             )}
             {hasPermission('sentences') && (
               <NavLink 
-                label="Verbs" 
+                label="Verb Usage" 
                 leftSection={<IconLetterV size="1.2rem" />} 
                 component={Link}
                 to="/verbs"

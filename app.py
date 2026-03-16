@@ -359,6 +359,42 @@ def update_user_terms_acceptance(email, terms_accepted_at):
             return True
     return False
 
+# Initials lookup cache (email → initials)
+_initials_cache = {}
+
+def _get_user_initials(email: Optional[str] = None) -> str:
+    """Return 2-letter initials for the logged-in user or given email.
+    Falls back to 'AI' for system/upload actions."""
+    email = email or session.get('user_email', '')
+    if not email:
+        return 'AI'
+    email_lower = email.lower()
+    if email_lower in _initials_cache:
+        return _initials_cache[email_lower]
+    # Check config/users.json first
+    try:
+        cfg_path = os.path.join(os.path.dirname(__file__), 'config', 'users.json')
+        with open(cfg_path) as f:
+            users_cfg = json.load(f).get('users', [])
+        for u in users_cfg:
+            if u.get('email', '').lower() == email_lower:
+                initials = u.get('initials', '')
+                if initials:
+                    _initials_cache[email_lower] = initials
+                    return initials
+    except Exception:
+        pass
+    # Derive from name in session
+    name = session.get('user_name', '')
+    if name:
+        parts = name.split()
+        initials = ''.join(p[0].upper() for p in parts[:2])
+        if initials:
+            _initials_cache[email_lower] = initials
+            return initials
+    return 'AI'
+
+
 def authenticate_user(email, access_code):
     """Authenticate user by email and access code"""
     # Try Cosmos DB first
@@ -2553,7 +2589,8 @@ def api_database_entries():
                 'notes': entry.get('notes', ''),
                 'references': entry.get('references', ''),
                 'user_confirmed': entry.get('user_confirmed', False),
-                'is_base_word': entry.get('is_base_word', False)
+                'is_base_word': entry.get('is_base_word', False),
+                'edited_by': entry.get('edited_by', ''),
             }
             normalized_entries.append(normalized)
         
@@ -2801,8 +2838,8 @@ def api_create_database_entry():
             'references': data.get('references', ''),
             'user_confirmed': bool(data.get('user_confirmed', False)),
             'is_base_word': bool(data.get('is_base_word', False)),
-            'source': 'User Input',
-            'updated_date': datetime.now()
+            'updated_date': datetime.now(),
+            'edited_by': _get_user_initials(),
         }
         
         # Add confidence fields if provided
@@ -2886,7 +2923,8 @@ def api_update_database_entry(entry_id):
             'references': data.get('references', ''),
             'user_confirmed': bool(data.get('user_confirmed', False)),
             'is_base_word': bool(data.get('is_base_word', False)),
-            'updated_date': datetime.now()
+            'updated_date': datetime.now(),
+            'edited_by': _get_user_initials(),
         }
         
         # Add confidence fields if provided
@@ -3612,6 +3650,7 @@ def api_save_brochure_match():
             'date_modified': datetime.now(timezone.utc),
             'created_date': datetime.now(timezone.utc),
             'user_confirmed': True,
+            'edited_by': _get_user_initials(),
             'game_metadata': {
                 'english_id': data.get('english_id'),
                 'chuukese_ids': data.get('chuukese_ids', []),
@@ -3816,7 +3855,8 @@ def api_save_word_pairs():
                     'confidence_score': 100,
                     'confidence_level': 'verified',
                     'verified': True,
-                    'updated_date': datetime.now(timezone.utc)
+                    'updated_date': datetime.now(timezone.utc),
+                    'edited_by': _get_user_initials(),
                 }
                 # Only update primary translation if field was empty
                 if not existing_translation:
@@ -3833,6 +3873,7 @@ def api_save_word_pairs():
                 skipped.append(chuukese_word)
             else:
                 entry['created_date'] = datetime.now(timezone.utc)
+                entry['edited_by'] = _get_user_initials()
                 dict_db.dictionary_collection.insert_one(entry)
                 saved.append(chuukese_word)
 
@@ -4105,7 +4146,8 @@ def add_dictionary_word():
             'source': 'User Input - Sentence Analysis',
             'created_date': datetime.now(),
             'updated_date': datetime.now(),
-            'added_by': session.get('username', 'unknown')
+            'added_by': session.get('user_email', 'unknown'),
+            'edited_by': _get_user_initials()
         }
         
         # Insert into database

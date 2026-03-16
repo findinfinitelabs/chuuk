@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider, FileInput, ScrollArea } from '@mantine/core'
-import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconEdit, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX, IconDownload, IconUpload } from '@tabler/icons-react'
+import { Card, Title, Text, Button, Group, Stack, Table, TextInput, Badge, Pagination, Alert, Loader, Modal, Textarea, Select, Autocomplete, Progress, Collapse, Box, SimpleGrid, Slider, Checkbox, HoverCard, Divider, FileInput, ScrollArea, ActionIcon } from '@mantine/core'
+import { IconDatabase, IconSearch, IconRefresh, IconAlertCircle, IconPlus, IconTrash, IconBook, IconSortAscending, IconSortDescending, IconArrowsSort, IconChevronDown, IconChevronRight, IconCheck, IconX, IconDownload, IconUpload, IconChevronsLeft, IconChevronsRight } from '@tabler/icons-react'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
@@ -339,6 +339,7 @@ interface DictionaryEntry {
   confidence_score?: number // 0-100
   user_confirmed?: boolean // User confirmed match from translation game
   is_base_word?: boolean // Whether this is a base word (not inflected)
+  edited_by?: string // Initials of the person who last edited (e.g. 'CL', 'AI')
 }
 
 interface DatabaseStats {
@@ -370,6 +371,7 @@ function Database() {
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [pageInput, setPageInput] = useState('')
   const [error, setError] = useState('')
   const [opened, { open, close }] = useDisclosure(false)
   const [editingEntry, setEditingEntry] = useState<DictionaryEntry | null>(null)
@@ -408,10 +410,15 @@ function Database() {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Column order state
-  const defaultColumnOrder = ['chuukese', 'english', 'type', 'grammar', 'grammar_modifier', 'scripture', 'definition', 'examples']
+  const defaultColumnOrder = ['chuukese', 'english', 'type', 'grammar', 'grammar_modifier', 'references', 'definition', 'examples']
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     const saved = localStorage.getItem('databaseColumnOrder')
-    return saved ? JSON.parse(saved) : defaultColumnOrder
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      // Migrate old 'scripture' column to 'references'
+      return parsed.map((c: string) => c === 'scripture' ? 'references' : c)
+    }
+    return defaultColumnOrder
   })
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
 
@@ -636,7 +643,7 @@ function Database() {
       'type': 'Type',
       'grammar': 'Grammar',
       'grammar_modifier': 'Modifier',
-      'scripture': 'Scripture',
+      'references': 'References',
       'definition': 'Definition',
       'examples': 'Examples'
     }
@@ -719,21 +726,13 @@ function Database() {
             )}
           </Table.Td>
         )
-      case 'scripture':
+      case 'references':
         return (
           <Table.Td key={`${column}-${index}`}>
-            {entry.scripture ? (
-              <Button
-                size="xs"
-                variant="subtle"
-                color="blue"
-                onClick={() => {
-                  setSelectedScripture(entry)
-                  openScriptureModal()
-                }}
-              >
-                {entry.scripture}
-              </Button>
+            {entry.references ? (
+              <Text size="sm" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {entry.references}
+              </Text>
             ) : (
               <Text color="dimmed">—</Text>
             )}
@@ -1565,7 +1564,6 @@ function Database() {
                     <Table.Th onClick={() => handleSort('confidence_score')} style={{ cursor: 'pointer' }}>
                       <Group gap={4} wrap="nowrap">Confidence {getSortIcon('confidence_score')}</Group>
                     </Table.Th>
-                    <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1595,7 +1593,7 @@ function Database() {
                     </Table.Tr>
                   ) : (
                     entries.map((entry, index) => (
-                      <Table.Tr key={entry._id || index}>
+                      <Table.Tr key={entry._id || index} onClick={() => openEditModal(entry)} style={{ cursor: 'pointer' }}>
                         {columnOrder.map((column) => renderTableCell(entry, column, index))}
                         <Table.Td>
                           <Group gap="xs">
@@ -1620,27 +1618,20 @@ function Database() {
                                 Verified
                               </Badge>
                             )}
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
-                            <Button 
-                              size="xs" 
-                              variant="outline" 
-                              leftSection={<IconEdit size={12} />}
-                              onClick={() => openEditModal(entry)}
-                            >
-                              Edit
-                            </Button>
-                            <Button 
-                              size="xs" 
-                              variant="subtle" 
-                              color="red"
-                              onClick={() => entry._id && deleteEntry(entry._id)}
-                              p={4}
-                            >
-                              <IconTrash size={16} />
-                            </Button>
+                            {entry.edited_by && (
+                              <div
+                                title={`Edited by ${entry.edited_by}`}
+                                style={{
+                                  width: 26, height: 26, borderRadius: '50%',
+                                  background: entry.edited_by === 'AI' ? 'var(--mantine-color-gray-5)' : 'var(--mantine-color-violet-6)',
+                                  color: 'white', fontSize: 10, fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {entry.edited_by}
+                              </div>
+                            )}
                           </Group>
                         </Table.Td>
                       </Table.Tr>
@@ -1651,12 +1642,46 @@ function Database() {
             </div>
 
             {totalPages > 1 && (
-              <Group justify="center" mt="md">
+              <Group justify="center" mt="md" gap="xs" align="center">
+                <ActionIcon
+                  variant="light"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  title="First page"
+                >
+                  <IconChevronsLeft size={16} />
+                </ActionIcon>
                 <Pagination
                   total={totalPages}
                   value={currentPage}
                   onChange={setCurrentPage}
                   size="sm"
+                />
+                <ActionIcon
+                  variant="light"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  title="Last page"
+                >
+                  <IconChevronsRight size={16} />
+                </ActionIcon>
+                <TextInput
+                  size="xs"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const num = parseInt(pageInput, 10)
+                      if (num >= 1 && num <= totalPages) {
+                        setCurrentPage(num)
+                        setPageInput('')
+                      }
+                    }
+                  }}
+                  style={{ width: 70 }}
+                  placeholder="Page #"
                 />
               </Group>
             )}
@@ -1841,13 +1866,32 @@ function Database() {
             rows={2}
           />
           
-          <Group justify="flex-end" mt="md">
-            <Button variant="outline" onClick={close}>
-              Cancel
-            </Button>
-            <Button onClick={saveEntry}>
-              {isNewEntry ? 'Create Entry' : 'Save Changes'}
-            </Button>
+          <Group justify="space-between" mt="md">
+            {!isNewEntry && editingEntry?._id ? (
+              <Button
+                variant="subtle"
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to delete this entry?')) {
+                    deleteEntry(editingEntry._id!)
+                    close()
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            ) : (
+              <div />
+            )}
+            <Group gap="sm">
+              <Button variant="outline" onClick={close}>
+                Cancel
+              </Button>
+              <Button onClick={saveEntry}>
+                {isNewEntry ? 'Create Entry' : 'Save Changes'}
+              </Button>
+            </Group>
           </Group>
         </Stack>
       </Modal>

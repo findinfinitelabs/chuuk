@@ -623,7 +623,8 @@ class DictionaryDB:
             'reverse_lookup': True,
             'search_direction': 'chk_to_eng',  # Default direction
             'primary_language': 'chuukese',
-            'secondary_language': 'english'
+            'secondary_language': 'english',
+            'edited_by': 'AI'
         }
         
         # Add word tokens for better searching
@@ -1497,7 +1498,8 @@ class DictionaryDB:
                                 'confidence_score': confidence_score,
                                 'citation': f"{filename}:{row_num}",
                                 'created_date': datetime.now(timezone.utc),
-                                'source_type': 'csv_upload'
+                                'source_type': 'csv_upload',
+                                'edited_by': 'AI'
                             }
                             words.append(word_entry)
                         
@@ -1515,7 +1517,8 @@ class DictionaryDB:
                                 'line_number': row_num,
                                 'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
-                                'created_date': datetime.now(timezone.utc)
+                                'created_date': datetime.now(timezone.utc),
+                                'edited_by': 'AI'
                             }
                             phrases.append(phrase_entry)
                         
@@ -1533,7 +1536,8 @@ class DictionaryDB:
                                 'line_number': row_num,
                                 'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
-                                'created_date': datetime.now(timezone.utc)
+                                'created_date': datetime.now(timezone.utc),
+                                'edited_by': 'AI'
                             }
                             sentences.append(sentence_entry)
                         
@@ -1551,7 +1555,8 @@ class DictionaryDB:
                                 'line_number': row_num,
                                 'confidence_score': confidence_score,
                                 'source_type': 'csv_upload',
-                                'created_date': datetime.now(timezone.utc)
+                                'created_date': datetime.now(timezone.utc),
+                                'edited_by': 'AI'
                             }
                             paragraphs.append(paragraph_entry)
                         
@@ -1572,7 +1577,8 @@ class DictionaryDB:
                                 'confidence_score': confidence_score,
                                 'citation': f"{filename}:{row_num}",
                                 'created_date': datetime.now(timezone.utc),
-                                'source_type': 'csv_upload'
+                                'source_type': 'csv_upload',
+                                'edited_by': 'AI'
                             }
                             words.append(word_entry)
                     
@@ -1603,7 +1609,8 @@ class DictionaryDB:
                             'confidence_score': confidence_score,
                             'citation': f"{filename}:{row_num}",
                             'created_date': datetime.now(timezone.utc),
-                            'source_type': 'csv_upload'
+                            'source_type': 'csv_upload',
+                            'edited_by': 'AI'
                         }
                         words.append(entry)
                     
