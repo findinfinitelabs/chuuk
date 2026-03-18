@@ -377,8 +377,8 @@ function Database() {
   const [editingEntry, setEditingEntry] = useState<DictionaryEntry | null>(null)
   const [isNewEntry, setIsNewEntry] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
-  const [scriptureModalOpened, { open: openScriptureModal, close: closeScriptureModal }] = useDisclosure(false)
-  const [selectedScripture, setSelectedScripture] = useState<DictionaryEntry | null>(null)
+  const [scriptureModalOpened, { open: _openScriptureModal, close: closeScriptureModal }] = useDisclosure(false)
+  const [selectedScripture, _setSelectedScripture] = useState<DictionaryEntry | null>(null)
   const [addScriptureModalOpened, { open: openAddScriptureModal, close: closeAddScriptureModal }] = useDisclosure(false)
   const [scriptureRef, setScriptureRef] = useState('')
   const [scripturePreview, setScripturePreview] = useState<{ chuukese: string; english: string; error?: string } | null>(null)
@@ -573,8 +573,6 @@ function Database() {
     setBibleBooksLoading(true)
     try {
       const bibleRes = await axios.get('/api/database/bible-coverage')
-      console.log('Bible coverage response:', bibleRes.data)
-      console.log('Books count:', bibleRes.data.books?.length || 0)
       setBibleBooks(bibleRes.data.books || [])
       if (!bibleRes.data.books || bibleRes.data.books.length === 0) {
         notifications.show({
@@ -2055,7 +2053,6 @@ function Database() {
               <Stack gap="lg">
                 {BIBLE_SECTIONS.map((section) => {
                   const sectionBooks = bibleBooks.filter(book => section.books.includes(book.book))
-                  console.log(`Section: ${section.name}, Books found: ${sectionBooks.length}, Total bibleBooks: ${bibleBooks.length}`)
                   if (sectionBooks.length === 0) return null
                   
                   return (

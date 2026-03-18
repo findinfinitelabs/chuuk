@@ -2542,32 +2542,21 @@ def fetch_scripture_from_jworg(scripture_ref):
         # Old Testament books (1-39)
         old_testament_books = {str(i) for i in range(1, 40)}
 
-        # Parse the reference
-        parts = scripture_ref.strip().split()
-        if len(parts) < 2:
-            return {"chuukese": "", "english": "", "error": "Invalid scripture format"}
+        # Parse the reference using regex to handle multi-word book names (e.g. "Song of Solomon 1:1")
+        m = re.match(r'^(.+?)\s+(\d+):(\d+)$', scripture_ref.strip())
+        if not m:
+            return {"chuukese": "", "english": "", "error": "Invalid scripture format (use 'Book Chapter:Verse')"}
 
-        # Handle books with numbers (e.g., "1 Samuel")
-        if parts[0].isdigit():
-            book_name = f"{parts[0]} {parts[1]}".lower()
-            book_name_for_epub = f"{parts[0]} {parts[1].capitalize()}"
-            verse_part = " ".join(parts[2:])
-        else:
-            book_name = parts[0].lower()
-            book_name_for_epub = parts[0].capitalize()
-            verse_part = " ".join(parts[1:])
+        book_name_raw = m.group(1).strip()   # e.g. "Song of Solomon", "1 Samuel", "Genesis"
+        chapter = int(m.group(2))
+        verse = int(m.group(3))
+
+        book_name = book_name_raw.lower()        # for book_map lookup
+        book_name_for_epub = book_name_raw       # for EPUB lookup (preserve original casing)
 
         book_num = book_map.get(book_name)
         if not book_num:
-            return {"chuukese": "", "english": "", "error": f'Book "{book_name}" not found'}
-
-        # Parse chapter:verse
-        if ":" in verse_part:
-            chapter, verse = verse_part.split(":")
-            chapter = int(chapter.strip())
-            verse = int(verse.strip())
-        else:
-            return {"chuukese": "", "english": "", "error": "Invalid verse format (use Chapter:Verse)"}
+            return {"chuukese": "", "english": "", "error": f'Book "{book_name_raw}" not found'}
 
         chuukese_text = ""
         english_text = ""
