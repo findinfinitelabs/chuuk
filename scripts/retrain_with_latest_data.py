@@ -22,10 +22,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.training.helsinki_trainer import HelsinkiFineTuner
 
-
 # ---------------------------------------------------------------------------
 # Data loading helpers
 # ---------------------------------------------------------------------------
+
 
 def load_chk_to_en_pairs(data_file: Path) -> list:
     """
@@ -45,7 +45,7 @@ def load_chk_to_en_pairs(data_file: Path) -> list:
     SENTENCE_WEIGHT = 5  # repeat sentence/scripture pairs this many times
 
     print(f"📂 Loading Chuukese→English data from: {data_file}")
-    with open(data_file, "r", encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         raw = json.load(f)
 
     word_pairs = []
@@ -54,9 +54,9 @@ def load_chk_to_en_pairs(data_file: Path) -> list:
 
     for entry in raw:
         chuukese = (entry.get("chuukese_word") or "").strip()
-        english  = (entry.get("english_translation") or "").strip()
-        grammar  = (entry.get("grammar") or "").strip()
-        etype    = (entry.get("type") or "word").strip().lower()
+        english = (entry.get("english_translation") or "").strip()
+        (entry.get("grammar") or "").strip()
+        etype = (entry.get("type") or "word").strip().lower()
 
         if not chuukese or not english:
             skipped += 1
@@ -75,10 +75,12 @@ def load_chk_to_en_pairs(data_file: Path) -> list:
             # so the model learns plain 'aramas' -> 'people', not '[noun] aramas' -> 'people'
             meanings = [m.strip() for m in english.split(",") if m.strip()]
             for meaning in meanings:
-                word_pairs.append({
-                    "chuukese": chuukese,
-                    "english": meaning,
-                })
+                word_pairs.append(
+                    {
+                        "chuukese": chuukese,
+                        "english": meaning,
+                    }
+                )
 
     # Weight sentence/scripture/phrase pairs by repeating them
     weighted_sentence_pairs = sentence_pairs * SENTENCE_WEIGHT
@@ -88,8 +90,10 @@ def load_chk_to_en_pairs(data_file: Path) -> list:
     print(f"   Raw entries            : {len(raw):,}")
     print(f"   Skipped                : {skipped:,}  (missing chuukese or english)")
     print(f"   Word pairs             : {len(word_pairs):,}")
-    print(f"   Sentence/scripture/phrase pairs : {len(sentence_pairs):,}  "
-          f"→ {len(weighted_sentence_pairs):,} after {SENTENCE_WEIGHT}× weighting")
+    print(
+        f"   Sentence/scripture/phrase pairs : {len(sentence_pairs):,}  "
+        f"→ {len(weighted_sentence_pairs):,} after {SENTENCE_WEIGHT}× weighting"
+    )
     print(f"   Total training pairs   : {len(all_pairs):,}")
     return all_pairs
 
@@ -107,7 +111,7 @@ def load_en_to_chk_pairs(data_file: Path) -> list:
     SENTENCE_WEIGHT = 5
 
     print(f"📂 Loading English→Chuukese data from: {data_file}")
-    with open(data_file, "r", encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         raw = json.load(f)
 
     if not raw:
@@ -117,8 +121,11 @@ def load_en_to_chk_pairs(data_file: Path) -> list:
     first = raw[0]
     # Pre-processed format — already has 'english'/'chuukese' keys
     if "english" in first and "chuukese" in first:
-        pairs = [{"english": e.get("english", ""), "chuukese": e.get("chuukese", "")}
-                 for e in raw if e.get("english") and e.get("chuukese")]
+        pairs = [
+            {"english": e.get("english", ""), "chuukese": e.get("chuukese", "")}
+            for e in raw
+            if e.get("english") and e.get("chuukese")
+        ]
         print(f"   Final pairs : {len(pairs):,}")
         return pairs
 
@@ -127,9 +134,9 @@ def load_en_to_chk_pairs(data_file: Path) -> list:
     sentence_pairs = []
     for entry in raw:
         chuukese = (entry.get("chuukese_word") or "").strip()
-        english  = (entry.get("english_translation") or "").strip()
-        grammar  = (entry.get("grammar") or "").strip()
-        etype    = (entry.get("type") or "word").strip().lower()
+        english = (entry.get("english_translation") or "").strip()
+        (entry.get("grammar") or "").strip()
+        etype = (entry.get("type") or "word").strip().lower()
 
         if not chuukese or not english:
             continue
@@ -143,7 +150,9 @@ def load_en_to_chk_pairs(data_file: Path) -> list:
 
     all_pairs = word_pairs + sentence_pairs * SENTENCE_WEIGHT
     print(f"   Word pairs             : {len(word_pairs):,}")
-    print(f"   Sentence/phrase pairs  : {len(sentence_pairs):,} → {len(sentence_pairs)*SENTENCE_WEIGHT:,} after {SENTENCE_WEIGHT}× weighting")
+    print(
+        f"   Sentence/phrase pairs  : {len(sentence_pairs):,} → {len(sentence_pairs)*SENTENCE_WEIGHT:,} after {SENTENCE_WEIGHT}× weighting"
+    )
     print(f"   Total training pairs   : {len(all_pairs):,}")
     return all_pairs
 
@@ -152,10 +161,9 @@ def load_en_to_chk_pairs(data_file: Path) -> list:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Retrain Helsinki-NLP models for Chuukese translation"
-    )
+    parser = argparse.ArgumentParser(description="Retrain Helsinki-NLP models for Chuukese translation")
     parser.add_argument(
         "--direction",
         choices=["chk_to_en", "en_to_chk", "both"],

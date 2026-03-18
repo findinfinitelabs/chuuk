@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """Debug script to test CSV parsing"""
+
 import sys
 import os
 import csv
 import io
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Read the TSV file
-with open('chuukese_phrase_book.tsv', 'r', encoding='utf-8') as f:
+with open("chuukese_phrase_book.tsv", encoding="utf-8") as f:
     csv_content = f.read()
 
-print("="*60)
+print("=" * 60)
 print("CSV PARSING DEBUG TEST")
-print("="*60)
+print("=" * 60)
 
 print(f"\n📄 File content length: {len(csv_content)} characters")
 print(f"📄 First 500 chars:\n{csv_content[:500]}")
 
 # Parse as TSV
-csv_reader = csv.reader(io.StringIO(csv_content), delimiter='\t')
+csv_reader = csv.reader(io.StringIO(csv_content), delimiter="\t")
 
 # Read header
 header = next(csv_reader, None)
@@ -40,9 +42,9 @@ for i, row in enumerate(csv_reader):
         break
     print(f"  Row {i+2}: {len(row)} cols - {row[:3]}...")
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("Testing full extraction...")
-print("="*60)
+print("=" * 60)
 
 from src.database.dictionary_db import DictionaryDB
 
