@@ -18,6 +18,7 @@ COSMOS_DB_NAME=${COSMOS_DB_NAME:-chuuk-dictionary-cosmos}
 KEY_VAULT_NAME=${KEY_VAULT_NAME:-chuuk-kv-beta}
 KV_FLASK_SECRET_NAME=${KV_FLASK_SECRET_NAME:-flask-secret-key}
 KV_GOOGLE_API_KEY_NAME=${KV_GOOGLE_API_KEY_NAME:-google-cloud-api-key}
+AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-FindInfinite Labs - Beta}
 
 # Colors
 GREEN='\033[0;32m'
@@ -42,6 +43,9 @@ ensure_login() {
   if ! az account show >/dev/null 2>&1; then
     az login
   fi
+  log "Setting subscription to ${AZURE_SUBSCRIPTION}..."
+  az account set --subscription "$AZURE_SUBSCRIPTION"
+  success "Using subscription: $(az account show --query name -o tsv)"
 }
 
 ensure_resource_group() {

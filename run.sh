@@ -138,7 +138,7 @@ check_service_status() {
     echo -e "\n${PURPLE}=== SERVICE STATUS ===${NC}"
     
     # Azure Cosmos DB status
-    local cosmos_uri=$(grep COSMOS_DB_URI .env | cut -d'=' -f2)
+    local cosmos_uri=$([ -f .env ] && grep COSMOS_DB_URI .env | cut -d'=' -f2 || echo '')
     if [[ "$cosmos_uri" == *"azure.com"* ]]; then
         print_success "Azure Cosmos DB: Connected to $cosmos_uri"
     else
@@ -169,7 +169,7 @@ start_database() {
     print_service "Using Azure Cosmos DB..."
     
     # Check if we can connect to Azure Cosmos DB
-    local cosmos_uri=$(grep COSMOS_DB_URI .env | cut -d'=' -f2)
+    local cosmos_uri=$([ -f .env ] && grep COSMOS_DB_URI .env | cut -d'=' -f2 || echo '')
     if [[ "$cosmos_uri" == *"azure.com"* ]]; then
         print_success "Azure Cosmos DB configured: $cosmos_uri"
         print_status "Database: chuuk-dictionary-cosmos"

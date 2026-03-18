@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import grammarData from '../data/grammarData.json'
 import { 
   Stack, 
   Title, 
@@ -163,26 +164,21 @@ function Verbs() {
 
   // Load grammar data
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const response = await import('../data/grammarData.json')
-        setPronouns(response.pronouns || [])
-        setPronounTenses(response.pronounTenses || [])
-        setVerbCategories(response.verbCategories || [])
-        setDirectionalSuffixes(response.directionalSuffixes || [])
-        setPrepositionalPhrases(response.prepositionalPhrases || [])
-        setArticles(response.articles || [])
-        setObjectCategories(response.objectCategories || {})
-        setReduplicationExamples(response.reduplicationExamples || [])
-        
-        setLoading(false)
-      } catch (err) {
-        console.error('Error loading grammar data:', err)
-        setError('Failed to load grammar data')
-        setLoading(false)
-      }
+    try {
+      setPronouns(grammarData.pronouns || [])
+      setPronounTenses(grammarData.pronounTenses || [])
+      setVerbCategories(grammarData.verbCategories || [])
+      setDirectionalSuffixes(grammarData.directionalSuffixes || [])
+      setPrepositionalPhrases(grammarData.prepositionalPhrases || [])
+      setArticles(grammarData.articles || [])
+      setObjectCategories(grammarData.objectCategories || {})
+      setReduplicationExamples(grammarData.reduplicationExamples || [])
+      setLoading(false)
+    } catch (err) {
+      console.error('Error loading grammar data:', err)
+      setError('Failed to load grammar data')
+      setLoading(false)
     }
-    loadData()
   }, [])
 
   // Get current verb category
