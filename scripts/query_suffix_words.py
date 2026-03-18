@@ -112,11 +112,7 @@ def main() -> int:
         }
 
         words = sorted(
-            {
-                doc.get("chuukese_word")
-                for doc in collection.find(query, projection)
-                if doc.get("chuukese_word")
-            },
+            {doc.get("chuukese_word") for doc in collection.find(query, projection) if doc.get("chuukese_word")},
             key=lambda w: w.lower(),
         )
 

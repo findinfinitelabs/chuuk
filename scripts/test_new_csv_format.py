@@ -2,8 +2,10 @@
 """Debug CSV parsing with the new format:
 chuukese_phrase, english_translation, type, direction, definition_notes
 """
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Test data with new format (tab-separated)
@@ -39,7 +41,7 @@ word_count = db.dictionary_collection.count_documents({})
 phrase_count = db.phrases_collection.count_documents({})
 paragraph_count = db.paragraphs_collection.count_documents({})
 
-print(f"\n📚 Database counts:")
+print("\n📚 Database counts:")
 print(f"  • Words in dictionary_collection: {word_count}")
 print(f"  • Phrases/Sentences in phrases_collection: {phrase_count}")
 print(f"  • Paragraphs in paragraphs_collection: {paragraph_count}")
@@ -47,14 +49,16 @@ print(f"  • Paragraphs in paragraphs_collection: {paragraph_count}")
 # Show sample entries
 print("\n📝 Sample words:")
 for entry in db.dictionary_collection.find().limit(3):
-    print(f"  • {entry.get('chuukese_word')} = {entry.get('english_translation')} (type: {entry.get('type')}, dir: {entry.get('direction')})")
+    print(
+        f"  • {entry.get('chuukese_word')} = {entry.get('english_translation')} (type: {entry.get('type')}, dir: {entry.get('direction')})"
+    )
 
 print("\n💬 Sample phrases/sentences:")
 for phrase in db.phrases_collection.find().limit(3):
-    chk = phrase.get('chuukese_phrase') or phrase.get('chuukese_sentence', '')
+    chk = phrase.get("chuukese_phrase") or phrase.get("chuukese_sentence", "")
     print(f"  • {chk[:50]}... = {phrase.get('english_translation', '')[:50]}... (type: {phrase.get('type')})")
 
 print("\n📄 Sample paragraphs:")
 for para in db.paragraphs_collection.find().limit(2):
-    chk = para.get('chuukese_paragraph', '')
+    chk = para.get("chuukese_paragraph", "")
     print(f"  • {chk[:60]}... (type: {para.get('type')})")
