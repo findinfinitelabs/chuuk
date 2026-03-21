@@ -4154,6 +4154,37 @@ def api_word_suggestions():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/brochures/match/words", methods=["GET"])
+def api_lookup_word_pairs():
+    """Look up existing dictionary entries for a list of Chuukese tokens.
+    Returns matched entries so the frontend can pre-populate linked pairs."""
+    try:
+        tokens_param = request.args.get("chuukese_tokens", "")
+        if not tokens_param:
+            return jsonify({"pairs": []}), 200
+
+        tokens = [t.strip() for t in tokens_param.split(",") if t.strip()]
+        pairs = []
+        for token in tokens:
+            entry = dict_db.dictionary_collection.find_one(
+                {"chuukese_word": {"$regex": f"^{re.escape(token)}$", "$options": "i"}},
+                {"chuukese_word": 1, "english_translation": 1, "grammar": 1, "definition": 1,
+                 "confidence_score": 1, "verified": 1}
+            )
+            if entry:
+                pairs.append({
+                    "chuukese": entry.get("chuukese_word", token),
+                    "english": entry.get("english_translation", ""),
+                    "grammar": entry.get("grammar", "noun") or "noun",
+                    "description": entry.get("definition", "") or "",
+                    "confidence_score": entry.get("confidence_score", 0),
+                    "verified": entry.get("verified", False),
+                })
+        return jsonify({"pairs": pairs}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/brochures/match/words", methods=["POST"])
 def api_save_word_pairs():
     """Save individual word pairs extracted from a validated sentence match.
@@ -4173,6 +4204,7 @@ def api_save_word_pairs():
             chuukese_word = (pair.get("chuukese") or "").strip()
             english_translation = (pair.get("english") or "").strip()
             grammar = (pair.get("grammar") or "noun").strip()
+            description = (pair.get("description") or "").strip()
 
             if not chuukese_word or not english_translation:
                 continue
@@ -4181,9 +4213,11 @@ def api_save_word_pairs():
                 "chuukese_word": chuukese_word,
                 "english_translation": english_translation,
                 "grammar": grammar,
+                "definition": description,
                 "confidence_score": 100,
                 "confidence_level": "verified",
                 "verified": True,
+                "user_confirmed": True,
                 "source": "translation_game_word_pair",
                 "source_sentence_id": source_sentence_id,
                 "updated_date": datetime.now(timezone.utc),
@@ -4202,6 +4236,7 @@ def api_save_word_pairs():
                     "confidence_score": 100,
                     "confidence_level": "verified",
                     "verified": True,
+                    "user_confirmed": True,
                     "updated_date": datetime.now(timezone.utc),
                     "edited_by": _get_user_initials(),
                 }
@@ -4213,6 +4248,9 @@ def api_save_word_pairs():
                     note_line = f"Also: {english_translation} (translation game)"
                     if note_line not in existing_definition:
                         update_fields["definition"] = (existing_definition + "\n" + note_line).strip()
+                # Always write description if provided (overrides existing definition)
+                if description:
+                    update_fields["definition"] = description
                 dict_db.dictionary_collection.update_one({"_id": existing["_id"]}, {"$set": update_fields})
                 skipped.append(chuukese_word)
             else:

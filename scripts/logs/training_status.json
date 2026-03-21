@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-03-18T08:51:05.864113",
+  "results": {
+    "chk_to_en": true,
+    "en_to_chk": true
+  },
+  "success": true,
+  "total_pairs": 12617
+}

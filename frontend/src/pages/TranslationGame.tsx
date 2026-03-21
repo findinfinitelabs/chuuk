@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip, Select, Divider, Loader } from '@mantine/core'
-import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy, IconLink, IconUnlink } from '@tabler/icons-react'
+import { useState, useEffect, useRef } from 'react'
+import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip, Divider, Loader, Tabs } from '@mantine/core'
+import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy, IconLink, IconUnlink, IconPencil, IconEye, IconEdit } from '@tabler/icons-react'
+import MarkdownIt from 'markdown-it'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './TranslationGame.css'
@@ -16,6 +17,7 @@ interface Match {
   englishId: number
   chuukeseIds: number[]  // Changed to array to support multiple Chuukese sentences
   editedEnglishText?: string
+  savedWordPairs?: WordPair[]
 }
 
 interface WordSuggestion {
@@ -35,10 +37,13 @@ interface WordPair {
   chuukeseWords: string[]
   grammar: string
   color: string
+  description: string
+  inDatabase: boolean
 }
 
+const _md = new MarkdownIt()
+
 const PAIR_COLORS = ['green', 'blue', 'orange', 'violet', 'teal', 'red', 'cyan', 'pink', 'grape', 'yellow']
-const GRAMMAR_OPTIONS = ['noun','verb','adjective','adverb','pronoun','preposition','particle','phrase','proper noun','numeral']
 
 function TranslationGame() {
   const [englishSentences, setEnglishSentences] = useState<Sentence[]>([])
@@ -72,6 +77,13 @@ function TranslationGame() {
   const [wordSuggestions, setWordSuggestions] = useState<Record<string, WordSuggestion>>({})
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [showEditTexts, setShowEditTexts] = useState(false)
+
+  // Description editor modal state
+  const [descModalOpen, setDescModalOpen] = useState(false)
+  const [descEditingPairId, setDescEditingPairId] = useState<string | null>(null)
+  const [descContent, setDescContent] = useState('')
+  const [descTab, setDescTab] = useState<string | null>('write')
+  const descTextareaRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     loadStats()
     loadGameStateFromCache()
@@ -207,8 +219,17 @@ function TranslationGame() {
   }
 
   const handleEnglishClick = (id: number) => {
-    // If already matched, ignore
-    if (matches.some(m => m.englishId === id)) return
+    // If already matched, allow re-editing by removing and reopening modal
+    const existingMatch = matches.find(m => m.englishId === id)
+    if (existingMatch) {
+      // Remove from matches so sentence is editable again
+      setMatches(prev => prev.filter(m => m.englishId !== id))
+      setScore(prev => Math.max(0, prev - 10))
+      setCorrectMatches(prev => Math.max(0, prev - 1))
+      // Reopen modal with previously saved word pairs
+      openEditModal(id, existingMatch.chuukeseIds, existingMatch.savedWordPairs)
+      return
+    }
     
     // If this English is already selected, deselect it
     if (selectedEnglish === id) {
@@ -222,7 +243,7 @@ function TranslationGame() {
   }
 
   const handleChuukeseClick = (id: number) => {
-    // If already matched, ignore
+    // If already matched, allow clicking to re-pair via the English sentence
     if (matches.some(m => m.chuukeseIds.includes(id))) return
     
     if (!selectedEnglish) {
@@ -255,7 +276,7 @@ function TranslationGame() {
     openEditModal(selectedEnglish, selectedChuukese)
   }
 
-  const openEditModal = (englishId: number, chuukeseIds: number[]) => {
+  const openEditModal = (englishId: number, chuukeseIds: number[], existingPairs?: WordPair[]) => {
     const englishSentence = englishSentences.find(s => s.id === englishId)
     if (englishSentence) {
       setEditingEnglishId(englishId)
@@ -273,7 +294,7 @@ function TranslationGame() {
       })
       setEditedChuukeseTexts(initialChuukeseTexts)
 
-      // Tokenize both sides (strip punctuation for display but keep original)
+      // Tokenize both sides
       const enTokens = engText.split(/\s+/).filter(Boolean)
       const chkTokens = Object.values(initialChuukeseTexts)
         .join(' ')
@@ -283,29 +304,97 @@ function TranslationGame() {
       setChuukeseTokens(chkTokens)
       setSelEnTokens([])
       setSelChkTokens([])
-      setWordPairs([])
       setWordSuggestions({})
       setShowEditTexts(false)
       setEditModalOpen(true)
 
-      // Fetch Helsinki suggestions for each Chuukese token
+      // Restore previously saved word pairs (re-edit flow), or start fresh
+      if (existingPairs && existingPairs.length > 0) {
+        setWordPairs(existingPairs)
+      } else {
+        setWordPairs([])
+      }
+
+      // Fetch Helsinki suggestions + DB lookup in parallel
       setLoadingSuggestions(true)
-      axios.post('/api/translate/word-suggestions', {
+      const suggestionsReq = axios.post('/api/translate/word-suggestions', {
         chuukese_tokens: chkTokens,
         english_sentence: engText
-      }).then(res => {
+      })
+      const dbLookupReq = axios.get('/api/brochures/match/words', {
+        params: { chuukese_tokens: chkTokens.join(',') }
+      })
+
+      Promise.allSettled([suggestionsReq, dbLookupReq]).then(([suggResult, dbResult]) => {
+        // Build suggestions map
         const map: Record<string, WordSuggestion> = {}
-        res.data.suggestions?.forEach((s: WordSuggestion) => {
-          map[s.chuukese] = s
-        })
+        if (suggResult.status === 'fulfilled') {
+          suggResult.value.data.suggestions?.forEach((s: WordSuggestion) => {
+            map[s.chuukese] = s
+          })
+        }
+
+        // Layer in DB lookup: mark tokens as in_dictionary if found
+        if (dbResult.status === 'fulfilled') {
+          const dbPairs: Array<{chuukese: string; english: string; grammar: string; description: string; verified: boolean}> =
+            dbResult.value.data.pairs || []
+
+          dbPairs.forEach(dbPair => {
+            const existing = map[dbPair.chuukese]
+            if (existing) {
+              map[dbPair.chuukese] = { ...existing, in_dictionary: true }
+            } else {
+              // Word found in DB but Helsinki didn't know it
+              map[dbPair.chuukese] = {
+                chuukese: dbPair.chuukese,
+                helsinki_translation: dbPair.english,
+                matched_english_words: [],
+                grammar_suggestion: dbPair.grammar,
+                in_dictionary: true,
+                confidence: 'high',
+              }
+            }
+          })
+
+          // If no existing pairs were passed in, auto-populate from DB
+          if (!existingPairs || existingPairs.length === 0) {
+            const autoPairs: WordPair[] = []
+            dbPairs.forEach((dbPair, i) => {
+              // Find token index in chkTokens
+              const chkIdx = chkTokens.findIndex(
+                t => t.toLowerCase() === dbPair.chuukese.toLowerCase()
+              )
+              // Find token index in enTokens (any word in english translation)
+              const enWords = dbPair.english.toLowerCase().split(/\s+/)
+              const enIndices = enTokens
+                .map((t, idx) => ({ t: t.replace(/[.,!?;:]+$/, '').toLowerCase(), idx }))
+                .filter(({ t }) => enWords.includes(t))
+                .map(({ idx }) => idx)
+
+              if (chkIdx >= 0) {
+                autoPairs.push({
+                  id: `db_${i}_${chkIdx}`,
+                  englishIndices: enIndices,
+                  chuukeseIndices: [chkIdx],
+                  englishWords: enIndices.map(i => enTokens[i].replace(/[.,!?;:]+$/, '')),
+                  chuukeseWords: [dbPair.chuukese],
+                  grammar: dbPair.grammar,
+                  color: PAIR_COLORS[autoPairs.length % PAIR_COLORS.length],
+                  description: dbPair.description,
+                  inDatabase: true,
+                })
+              }
+            })
+            if (autoPairs.length > 0) setWordPairs(autoPairs)
+          }
+        }
+
         setWordSuggestions(map)
-      }).catch(() => {
-        // suggestions unavailable — proceed without
       }).finally(() => setLoadingSuggestions(false))
     }
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (editingEnglishId !== null && pendingChuukeseIds.length > 0) {
       // Update the English sentence with edited text
       setEnglishSentences(prev => 
@@ -326,20 +415,23 @@ function TranslationGame() {
       )
       
       // Proceed with sentence match
-      attemptMatch(editingEnglishId, pendingChuukeseIds, editedText, editedChuukeseTexts)
+      attemptMatch(editingEnglishId, pendingChuukeseIds, wordPairs, editedText, editedChuukeseTexts)
 
-      // Save word pairs if any were linked
+      // Save word pairs if any were linked (awaited so DB is updated before modal closes)
       if (wordPairs.length > 0) {
-        axios.post('/api/brochures/match/words', {
-          word_pairs: wordPairs.map(p => ({
-            chuukese: p.chuukeseWords.join(' '),
-            english: p.englishWords.join(' '),
-            grammar: p.grammar
-          })),
-          source_sentence_id: `${editingEnglishId}_${pendingChuukeseIds.join('_')}`
-        }).catch(() => {
+        try {
+          await axios.post('/api/brochures/match/words', {
+            word_pairs: wordPairs.map(p => ({
+              chuukese: p.chuukeseWords.join(' '),
+              english: p.englishWords.join(' '),
+              grammar: p.grammar,
+              description: p.description,
+            })),
+            source_sentence_id: `${editingEnglishId}_${pendingChuukeseIds.join('_')}`
+          })
+        } catch {
           // non-critical — sentence match already saved
-        })
+        }
       }
       
       setEditModalOpen(false)
@@ -369,10 +461,11 @@ function TranslationGame() {
     if (selEnTokens.length === 0 || selChkTokens.length === 0) return
     const enWords = selEnTokens.sort((a,b)=>a-b).map(i => englishTokens[i].replace(/[.,!?;:]+$/, ''))
     const chkWords = selChkTokens.sort((a,b)=>a-b).map(i => chuukeseTokens[i])
-    // Suggest grammar: if any Chuukese word has a suggestion, use it; else default noun
+    // AI picks grammar from Helsinki suggestions; fall back to 'noun'
     const primaryChk = chkWords[0]
     const sugg = wordSuggestions[primaryChk]
     const grammar = sugg?.grammar_suggestion || 'noun'
+    const inDatabase = sugg?.in_dictionary ?? false
     const color = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
     setWordPairs(prev => [...prev, {
       id: `${selEnTokens.join('-')}_${selChkTokens.join('-')}`,
@@ -381,18 +474,49 @@ function TranslationGame() {
       englishWords: enWords,
       chuukeseWords: chkWords,
       grammar,
-      color
+      color,
+      description: '',
+      inDatabase,
     }])
     setSelEnTokens([])
     setSelChkTokens([])
   }
 
-  const unlinkPair = (pairId: string) => {
-    setWordPairs(prev => prev.filter(p => p.id !== pairId))
+  const openDescEditor = (pairId: string) => {
+    const pair = wordPairs.find(p => p.id === pairId)
+    if (!pair) return
+    setDescEditingPairId(pairId)
+    setDescContent(pair.description)
+    setDescTab('write')
+    setDescModalOpen(true)
   }
 
-  const updatePairGrammar = (pairId: string, grammar: string) => {
-    setWordPairs(prev => prev.map(p => p.id === pairId ? { ...p, grammar } : p))
+  const saveDescription = () => {
+    if (!descEditingPairId) return
+    setWordPairs(prev => prev.map(p =>
+      p.id === descEditingPairId ? { ...p, description: descContent } : p
+    ))
+    setDescModalOpen(false)
+    setDescEditingPairId(null)
+  }
+
+  const insertFormatting = (before: string, after = '') => {
+    const ta = descTextareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = descContent.slice(start, end)
+    const newText = descContent.slice(0, start) + before + selected + after + descContent.slice(end)
+    setDescContent(newText)
+    // Restore cursor after state update
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start + before.length, start + before.length + selected.length)
+    }, 0)
+  }
+
+  const unlinkPair = (pairId: string) => {
+    setWordPairs(prev => prev.filter(p => p.id !== pairId))
   }
 
   const handleCancelEdit = () => {
@@ -408,7 +532,7 @@ function TranslationGame() {
     setSelectedChuukese([])
   }
 
-  const attemptMatch = async (englishId: number, chuukeseIds: number[], customEnglishText?: string, customChuukeseTexts?: Record<number, string>) => {
+  const attemptMatch = async (englishId: number, chuukeseIds: number[], currentWordPairs: WordPair[], customEnglishText?: string, customChuukeseTexts?: Record<number, string>) => {
     // For now, assume matches are correct
     const isCorrect = true
     
@@ -435,11 +559,12 @@ function TranslationGame() {
         user_id: 'anonymous'
       })
       
-      // Add to matches with edited text if provided
-      setMatches([...matches, { 
+      // Add to matches with edited text and saved word pairs
+      setMatches(prev => [...prev, { 
         englishId, 
         chuukeseIds,
-        editedEnglishText: customEnglishText || englishSentence?.editedText
+        editedEnglishText: customEnglishText || englishSentence?.editedText,
+        savedWordPairs: currentWordPairs,
       }])
       setScore(score + 10)
       setCorrectMatches(correctMatches + 1)
@@ -703,10 +828,10 @@ function TranslationGame() {
                       p="md"
                       withBorder
                       className={`sentence-card ${matched ? 'matched' : ''} ${selected ? 'selected' : ''}`}
-                      onClick={() => !matched && handleEnglishClick(sentence.id)}
+                      onClick={() => handleEnglishClick(sentence.id)}
                       style={{
-                        cursor: matched ? 'not-allowed' : 'pointer',
-                        opacity: matched ? 0.5 : 1,
+                        cursor: 'pointer',
+                        opacity: matched ? 0.75 : 1,
                         backgroundColor: matched ? '#e8f5e9' : selected ? '#e3f2fd' : 'white',
                         border: selected ? '2px solid #2196F3' : matched ? '2px solid #4CAF50' : '1px solid #dee2e6'
                       }}
@@ -719,7 +844,14 @@ function TranslationGame() {
                           {sentence.editedText && (
                             <Badge size="xs" color="orange" variant="dot">Edited</Badge>
                           )}
-                          {matched && <IconCheck size={20} color="green" />}
+                          {matched ? (
+                            <Tooltip label="Click to re-edit this match" withArrow>
+                              <Group gap={4}>
+                                <IconCheck size={16} color="green" />
+                                <IconEdit size={14} color="gray" />
+                              </Group>
+                            </Tooltip>
+                          ) : null}
                         </Group>
                       </Group>
                     </Paper>
@@ -817,9 +949,9 @@ function TranslationGame() {
                     key={idx}
                     size="lg"
                     variant={isPaired || isSelected ? 'filled' : 'outline'}
-                    color={isPaired ? pair.color : isSelected ? pendingColor : 'gray'}
-                    style={{ cursor: isPaired ? 'default' : 'pointer', userSelect: 'none' }}
-                    onClick={() => !isPaired && toggleEnToken(idx)}
+                    color={isSelected ? pendingColor : isPaired ? pair!.color : 'gray'}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => toggleEnToken(idx)}
                   >
                     {token}
                   </Badge>
@@ -837,24 +969,38 @@ function TranslationGame() {
                 const isSelected = selChkTokens.includes(idx)
                 const isPaired = !!pair
                 const sugg = wordSuggestions[token]
+                const inDb = sugg?.in_dictionary ?? false
                 const pendingColor = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
+                const tooltipLabel = sugg
+                  ? `→ "${sugg.helsinki_translation}" (${sugg.confidence})${inDb ? ' · In dictionary ✓' : ''}`
+                  : inDb ? 'In dictionary ✓' : ''
                 return (
                   <Tooltip
                     key={idx}
-                    label={sugg ? `→ "${sugg.helsinki_translation}" (${sugg.confidence})` : ''}
-                    disabled={!sugg}
+                    label={tooltipLabel}
+                    disabled={!tooltipLabel}
                     withArrow
                   >
-                    <Badge
-                      size="lg"
-                      variant={isPaired || isSelected ? 'filled' : 'outline'}
-                      color={isPaired ? pair.color : isSelected ? pendingColor : 'gray'}
-                      style={{ cursor: isPaired ? 'default' : 'pointer', userSelect: 'none',
-                               outline: sugg?.confidence === 'high' && !isPaired && !isSelected ? '2px solid var(--mantine-color-orange-3)' : undefined }}
-                      onClick={() => !isPaired && toggleChkToken(idx)}
-                    >
-                      {token}
-                    </Badge>
+                    <div style={{ position: 'relative', display: 'inline-flex' }}>
+                      <Badge
+                        size="lg"
+                        variant={isPaired || isSelected ? 'filled' : 'outline'}
+                        color={isSelected ? pendingColor : isPaired ? pair!.color : 'gray'}
+                        style={{ cursor: 'pointer', userSelect: 'none',
+                                 outline: sugg?.confidence === 'high' && !isPaired && !isSelected ? '2px solid var(--mantine-color-orange-3)' : undefined }}
+                        onClick={() => toggleChkToken(idx)}
+                      >
+                        {token}
+                      </Badge>
+                      {inDb && !isPaired && (
+                        <span style={{
+                          position: 'absolute', top: -3, right: -3,
+                          background: 'var(--mantine-color-teal-5)',
+                          borderRadius: '50%', width: 8, height: 8,
+                          pointerEvents: 'none',
+                        }} />
+                      )}
+                    </div>
                   </Tooltip>
                 )
               })}
@@ -888,26 +1034,42 @@ function TranslationGame() {
               <Stack gap="xs">
                 {wordPairs.map(pair => (
                   <Paper key={pair.id} withBorder p="xs" style={{ borderLeft: `4px solid var(--mantine-color-${pair.color}-5)` }}>
-                    <Group justify="space-between" wrap="nowrap">
+                    <Group justify="space-between" wrap="nowrap" mb={4}>
                       <Group gap="xs" wrap="wrap">
                         <Badge color={pair.color} variant="filled">{pair.englishWords.join(' ')}</Badge>
                         <Text size="sm" c="dimmed">↔</Text>
                         <Badge color={pair.color} variant="light">{pair.chuukeseWords.join(' ')}</Badge>
+                        <Badge size="xs" variant="outline" color="gray">{pair.grammar}</Badge>
+                        {pair.inDatabase && (
+                          <Tooltip label="Already in database" withArrow>
+                            <span style={{
+                              display: 'inline-block',
+                              width: 8, height: 8,
+                              borderRadius: '50%',
+                              background: 'var(--mantine-color-teal-5)',
+                              flexShrink: 0,
+                            }} />
+                          </Tooltip>
+                        )}
                       </Group>
-                      <Group gap="xs" wrap="nowrap">
-                        <Select
-                          size="xs"
-                          value={pair.grammar}
-                          data={GRAMMAR_OPTIONS}
-                          onChange={val => val && updatePairGrammar(pair.id, val)}
-                          w={130}
-                          styles={{ input: { fontSize: '12px' } }}
-                        />
-                        <ActionIcon size="sm" color="red" variant="subtle" onClick={() => unlinkPair(pair.id)}>
-                          <IconUnlink size={14} />
-                        </ActionIcon>
-                      </Group>
+                      <ActionIcon size="sm" color="red" variant="subtle" onClick={() => unlinkPair(pair.id)}>
+                        <IconUnlink size={14} />
+                      </ActionIcon>
                     </Group>
+                    {/* Clickable description */}
+                    <Text
+                      size="xs"
+                      c={pair.description ? 'dark' : 'dimmed'}
+                      style={{ cursor: 'pointer', fontStyle: pair.description ? 'normal' : 'italic',
+                               padding: '4px 6px', borderRadius: 4,
+                               background: 'var(--mantine-color-gray-0)',
+                               border: '1px dashed var(--mantine-color-gray-3)' }}
+                      onClick={() => openDescEditor(pair.id)}
+                    >
+                      {pair.description
+                        ? pair.description.length > 80 ? pair.description.slice(0, 80) + '…' : pair.description
+                        : '+ Add description…'}
+                    </Text>
                   </Paper>
                 ))}
               </Stack>
@@ -956,6 +1118,83 @@ function TranslationGame() {
             <Button variant="subtle" onClick={handleCancelEdit}>Cancel</Button>
             <Button leftSection={<IconCheck size={16} />} onClick={handleSaveEdit}>
               Confirm Match{wordPairs.length > 0 ? ` & Save ${wordPairs.length} Word Pair${wordPairs.length > 1 ? 's' : ''}` : ''}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Description Editor Modal */}
+      <Modal
+        opened={descModalOpen}
+        onClose={() => setDescModalOpen(false)}
+        title={(() => {
+          const pair = wordPairs.find(p => p.id === descEditingPairId)
+          return pair ? `Description — ${pair.chuukeseWords.join(' ')} ↔ ${pair.englishWords.join(' ')}` : 'Description'
+        })()}
+        size="lg"
+        zIndex={300}
+      >
+        <Stack gap="sm">
+          <Tabs value={descTab} onChange={setDescTab}>
+            <Tabs.List>
+              <Tabs.Tab value="write" leftSection={<IconPencil size={14} />}>Write</Tabs.Tab>
+              <Tabs.Tab value="preview" leftSection={<IconEye size={14} />}>Preview</Tabs.Tab>
+            </Tabs.List>
+
+            <Tabs.Panel value="write" pt="sm">
+              {/* Formatting toolbar */}
+              <Group gap={4} mb={6}>
+                {([
+                  { label: 'B', title: 'Bold', before: '**', after: '**' },
+                  { label: 'I', title: 'Italic', before: '_', after: '_' },
+                  { label: 'H', title: 'Heading', before: '## ', after: '' },
+                ] as { label: string; title: string; before: string; after: string }[]).map(btn => (
+                  <Button
+                    key={btn.label}
+                    size="xs"
+                    variant="default"
+                    title={btn.title}
+                    onClick={() => insertFormatting(btn.before, btn.after)}
+                    style={{ fontWeight: btn.label === 'B' ? 700 : btn.label === 'I' ? 400 : undefined,
+                             fontStyle: btn.label === 'I' ? 'italic' : undefined, minWidth: 32 }}
+                  >
+                    {btn.label}
+                  </Button>
+                ))}
+                <Button size="xs" variant="default" title="Bullet list"
+                  onClick={() => insertFormatting('\n- ', '')}>• List</Button>
+                <Button size="xs" variant="default" title="Numbered list"
+                  onClick={() => insertFormatting('\n1. ', '')}>1. List</Button>
+              </Group>
+              <Textarea
+                ref={descTextareaRef}
+                value={descContent}
+                onChange={e => setDescContent(e.currentTarget.value)}
+                minRows={8}
+                autosize
+                placeholder="Write a description using Markdown…"
+                styles={{ input: { fontFamily: 'monospace', fontSize: 13 } }}
+              />
+            </Tabs.Panel>
+
+            <Tabs.Panel value="preview" pt="sm">
+              {descContent.trim() ? (
+                <Paper withBorder p="md" style={{ minHeight: 160 }}>
+                  <div
+                    style={{ lineHeight: 1.6 }}
+                    dangerouslySetInnerHTML={{ __html: _md.render(descContent) }}
+                  />
+                </Paper>
+              ) : (
+                <Text c="dimmed" size="sm" p="md">Nothing to preview yet.</Text>
+              )}
+            </Tabs.Panel>
+          </Tabs>
+
+          <Group justify="flex-end" mt="sm">
+            <Button variant="subtle" onClick={() => setDescModalOpen(false)}>Cancel</Button>
+            <Button leftSection={<IconCheck size={16} />} onClick={saveDescription}>
+              Save Description
             </Button>
           </Group>
         </Stack>
