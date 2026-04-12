@@ -4489,6 +4489,405 @@ def analyze_sentence():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/sentences/analyze-url", methods=["POST"])
+@login_required
+def analyze_article_url():
+    """
+    Fetch a Chuukese article and stream word-by-word analysis paragraph-by-paragraph.
+    Optionally fetches the parallel English article for real-sentence alignment.
+
+    Response is newline-delimited JSON (NDJSON):
+      {"type":"meta",  "title":"...", "url":"...", "english_url":"...", "paragraph_count": N}
+      {"type":"paragraph", "index": N, "sentences":[{..., "english_text":"...", "english_tokens":[...]}], ...}
+      {"type":"done", "total_sentences": N}
+      {"type":"error", "message":"..."}
+    """
+    from flask import stream_with_context
+    import json as _json
+
+    data = request.get_json(silent=True) or {}
+    url = data.get("url", "").strip()
+    english_url_param = data.get("english_url", "").strip()
+
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "URL must start with http:// or https://"}), 400
+
+    _dict_db = dict_db
+
+    def derive_english_url(chk_url):
+        """Auto-derive English wol.jw.org URL from a Chuukese one."""
+        m = re.search(r"/(\d{5,})(?:\?|$|/)", chk_url)
+        if m:
+            return f"https://wol.jw.org/en/wol/d/r1/lp-e/{m.group(1)}"
+        return None
+
+    def generate():
+        from src.utils.scripture_parser import get_scripture_reference_pattern
+
+        def emit(obj):
+            return _json.dumps(obj, ensure_ascii=False) + "\n"
+
+        fetch_headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        def safe_fetch(target_url):
+            try:
+                r = requests.get(target_url, headers=fetch_headers, timeout=30)
+                r.raise_for_status()
+                return r.text, None
+            except requests.exceptions.Timeout:
+                return None, "Request timed out"
+            except requests.exceptions.ConnectionError:
+                return None, "Could not connect"
+            except requests.exceptions.HTTPError as e:
+                return None, f"HTTP {e.response.status_code}"
+            except Exception as e:
+                return None, str(e)
+
+        def parse_paragraphs(html):
+            """Return list of (tag, cleaned_text) for meaningful elements."""
+            soup = BeautifulSoup(html, "html.parser")
+            article = (
+                soup.find("article")
+                or soup.find("div", class_="bodyTxt")
+                or soup.find("main")
+                or soup.find("body")
+            )
+            if not article:
+                return [], soup
+            result = []
+            for elem in article.find_all(["h2", "h3", "p", "li"]):
+                raw = elem.get_text(separator=" ", strip=True)
+                raw = re.sub(r"[\u200b\u200c\u200d\u00ad\ufeff\u2060]", "", raw)
+                raw = re.sub(r"\s+", " ", raw).strip()
+                if len(raw) >= 10:
+                    result.append((elem.name, raw))
+            return result, soup
+
+        def split_sentences(raw_text, scripture_pattern):
+            """Split a paragraph into sentence strings, protecting scripture refs."""
+            protected_refs = []
+
+            def protect(m, _r=protected_refs):
+                ph = f"<<<S{len(_r)}>>>"
+                _r.append(m.group(0))
+                return ph
+
+            protected = re.sub(scripture_pattern, protect, raw_text)
+            parts = re.split(r"(?<=[.!?])\s+(?![<])", protected)
+            out = []
+            for part in parts:
+                for i, ref in enumerate(protected_refs):
+                    part = part.replace(f"<<<S{i}>>>", ref)
+                part = part.strip()
+                if len(part) >= 10:
+                    out.append(part)
+            return out
+
+        def analyze_words(sentence_text, eng_tokens=None):
+            """Look up each word in the dictionary; optionally compute token alignment."""
+            words = re.findall(r"\b[\w\u00C0-\u024F]+\b", sentence_text)
+            analyses = []
+            english_parts = []
+            for word in words:
+                result = _dict_db.dictionary_collection.find_one(
+                    {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
+                )
+                if not result:
+                    result = _dict_db.dictionary_collection.find_one(
+                        {"chuukese_word": {"$regex": f"^{re.escape(word)}", "$options": "i"}}
+                    )
+                if result:
+                    english = result.get("english_translation", "")
+                    # Token alignment: which English tokens does this translation cover?
+                    token_indices = []
+                    if eng_tokens:
+                        trans_words = set(re.sub(r"[^\w\s]", "", english.lower()).split())
+                        token_indices = [
+                            i for i, tok in enumerate(eng_tokens)
+                            if re.sub(r"[^\w]", "", tok.lower()) in trans_words
+                        ]
+                    analyses.append({
+                        "original": word,
+                        "english": english,
+                        "grammar": result.get("grammar", ""),
+                        "grammar_modifier": result.get("grammar_modifier"),
+                        "definition": result.get("definition", ""),
+                        "found": True,
+                        "entry_id": str(result["_id"]),
+                        "english_token_indices": token_indices,
+                    })
+                    english_parts.append(english)
+                else:
+                    analyses.append({
+                        "original": word,
+                        "english": word,
+                        "grammar": "",
+                        "found": False,
+                        "entry_id": None,
+                        "english_token_indices": [],
+                    })
+                    english_parts.append(word)
+            return analyses, " ".join(english_parts)
+
+        try:
+            # ── Fetch Chuukese article ───────────────────────────────────────
+            chk_html, err = safe_fetch(url)
+            if err:
+                yield emit({"type": "error", "message": err})
+                return
+
+            chk_paragraphs, chk_soup = parse_paragraphs(chk_html)
+            if not chk_paragraphs:
+                yield emit({"type": "error", "message": "No readable content found in the article"})
+                return
+
+            title_elem = chk_soup.find("h1")
+            title = title_elem.get_text(strip=True) if title_elem else "Untitled"
+
+            breadcrumb_parts = []
+            for bc in chk_soup.select(".breadcrumbs a, nav[aria-label] a, .nav-breadcrumb a"):
+                t = bc.get_text(strip=True)
+                if t:
+                    breadcrumb_parts.append(t)
+            source_label = " › ".join(breadcrumb_parts) if breadcrumb_parts else ""
+
+            # ── Fetch English article (optional) ────────────────────────────
+            resolved_english_url = english_url_param or derive_english_url(url)
+            english_para_sentences: dict[int, list[str]] = {}
+            english_title = None
+
+            if resolved_english_url:
+                eng_html, eng_err = safe_fetch(resolved_english_url)
+                if eng_html:
+                    eng_paragraphs, eng_soup = parse_paragraphs(eng_html)
+                    eng_title_elem = eng_soup.find("h1")
+                    english_title = eng_title_elem.get_text(strip=True) if eng_title_elem else None
+                    scripture_pattern_en = get_scripture_reference_pattern()
+                    for i, (tag, raw) in enumerate(eng_paragraphs):
+                        english_para_sentences[i] = split_sentences(raw, scripture_pattern_en)
+                else:
+                    resolved_english_url = None  # couldn't fetch — treat as unavailable
+
+            # ── Emit meta ────────────────────────────────────────────────────
+            yield emit({
+                "type": "meta",
+                "title": title,
+                "url": url,
+                "source_label": source_label,
+                "paragraph_count": len(chk_paragraphs),
+                "english_url": resolved_english_url,
+                "english_title": english_title,
+                "has_english": bool(english_para_sentences),
+            })
+
+            # ── Stream one paragraph at a time ───────────────────────────────
+            scripture_pattern = get_scripture_reference_pattern()
+            total_sentences = 0
+
+            for idx, (tag, raw_text) in enumerate(chk_paragraphs):
+                is_heading = tag in ("h2", "h3")
+                chk_sent_texts = split_sentences(raw_text, scripture_pattern)
+                eng_sent_texts = english_para_sentences.get(idx, [])
+
+                sentences = []
+                for si, part in enumerate(chk_sent_texts):
+                    inline_refs = re.findall(scripture_pattern, part)
+                    text_only = re.sub(scripture_pattern, "", part)
+                    text_only = re.sub(r"[\u2014\u2013—–-]\s*$", "", text_only).strip()
+
+                    # Aligned English sentence (positional)
+                    english_text = eng_sent_texts[si] if si < len(eng_sent_texts) else None
+                    # Tokenize English for word-level highlighting (split on whitespace)
+                    english_tokens = english_text.split() if english_text else None
+
+                    word_analyses, english_assembled = analyze_words(text_only, english_tokens)
+                    sentences.append({
+                        "chuukese": part,
+                        "text_only": text_only,
+                        "words": word_analyses,
+                        "english_assembled": english_assembled,
+                        "english_text": english_text,
+                        "english_tokens": english_tokens,
+                        "scriptures": inline_refs,
+                    })
+
+                total_sentences += len(sentences)
+                yield emit({
+                    "type": "paragraph",
+                    "index": idx,
+                    "is_heading": is_heading,
+                    "raw_text": raw_text,
+                    "sentences": sentences,
+                    "sentence_count": len(sentences),
+                })
+
+            yield emit({"type": "done", "total_sentences": total_sentences})
+
+        except Exception as e:
+            print(f"Error in analyze_article_url stream: {e}")
+            yield emit({"type": "error", "message": str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+# =============================================================================
+# Article Analysis persistence  (/api/article-analyses)
+# =============================================================================
+
+def _get_article_analyses_collection():
+    """Return (or lazily create) the article_analyses collection."""
+    if dict_db.db is None:
+        return None
+    return dict_db.db["article_analyses"]
+
+
+@app.route("/api/article-analyses", methods=["GET"])
+@login_required
+def list_article_analyses():
+    """List all saved article analyses (metadata only, no paragraph data)."""
+    try:
+        col = _get_article_analyses_collection()
+        if col is None:
+            return jsonify([])
+        docs = list(
+            col.find(
+                {},
+                {
+                    "_id": 1,
+                    "chuukese_title": 1,
+                    "english_title": 1,
+                    "url": 1,
+                    "english_url": 1,
+                    "source_label": 1,
+                    "paragraph_count": 1,
+                    "sentence_count": 1,
+                    "created_at": 1,
+                    "has_english": 1,
+                },
+            ).sort("created_at", -1).limit(100)
+        )
+        for d in docs:
+            d["_id"] = str(d["_id"])
+            if "created_at" in d and d["created_at"]:
+                d["created_at"] = d["created_at"].isoformat()
+        return jsonify(docs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/article-analyses/<analysis_id>", methods=["GET"])
+@login_required
+def get_article_analysis(analysis_id):
+    """Retrieve a full saved analysis by ID."""
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        col = _get_article_analyses_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        try:
+            oid = ObjectId(analysis_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid ID"}), 400
+
+        doc = col.find_one({"_id": oid})
+        if not doc:
+            return jsonify({"error": "Analysis not found"}), 404
+
+        doc["_id"] = str(doc["_id"])
+        if "created_at" in doc and doc["created_at"]:
+            doc["created_at"] = doc["created_at"].isoformat()
+        return jsonify(doc)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/article-analyses", methods=["POST"])
+@login_required
+def save_article_analysis():
+    """
+    Upsert a completed article analysis.
+    Keyed on `url` — re-analysing the same article overwrites the previous record.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        url = data.get("url", "").strip()
+        if not url:
+            return jsonify({"error": "url is required"}), 400
+
+        col = _get_article_analyses_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        doc = {
+            "url": url,
+            "chuukese_title": data.get("chuukese_title", ""),
+            "english_title": data.get("english_title", ""),
+            "english_url": data.get("english_url", ""),
+            "source_label": data.get("source_label", ""),
+            "has_english": data.get("has_english", False),
+            "paragraph_count": data.get("paragraph_count", 0),
+            "sentence_count": data.get("sentence_count", 0),
+            "paragraphs": data.get("paragraphs", []),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        result = col.update_one(
+            {"url": url},
+            {"$set": doc, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+
+        inserted_id = str(result.upserted_id) if result.upserted_id else None
+        if not inserted_id:
+            existing = col.find_one({"url": url}, {"_id": 1})
+            inserted_id = str(existing["_id"]) if existing else None
+
+        return jsonify({"success": True, "id": inserted_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/article-analyses/<analysis_id>", methods=["DELETE"])
+@login_required
+def delete_article_analysis(analysis_id):
+    """Delete a saved analysis (admin only)."""
+    try:
+        if session.get("user_role") != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        col = _get_article_analyses_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        try:
+            oid = ObjectId(analysis_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid ID"}), 400
+
+        result = col.delete_one({"_id": oid})
+        if result.deleted_count == 0:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/dictionary/add", methods=["POST"])
 @login_required
 def add_dictionary_word():
