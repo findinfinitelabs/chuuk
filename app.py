@@ -66,7 +66,7 @@ from src.core.jworg_lookup import JWOrgLookup
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
 from scripts.processing_logger import processing_logger
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 import requests
 from bs4 import BeautifulSoup
 
@@ -4751,6 +4751,17 @@ def _get_article_analyses_collection():
     return dict_db.db["article_analyses"]
 
 
+def _serialize_article_analysis_metadata(docs):
+    serialized = []
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+        created_at = doc.get("created_at")
+        if created_at:
+            doc["created_at"] = created_at.isoformat()
+        serialized.append(doc)
+    return serialized
+
+
 @app.route("/api/article-analyses", methods=["GET"])
 @login_required
 def list_article_analyses():
@@ -4759,28 +4770,30 @@ def list_article_analyses():
         col = _get_article_analyses_collection()
         if col is None:
             return jsonify([])
-        docs = list(
-            col.find(
-                {},
-                {
-                    "_id": 1,
-                    "chuukese_title": 1,
-                    "english_title": 1,
-                    "url": 1,
-                    "english_url": 1,
-                    "source_label": 1,
-                    "paragraph_count": 1,
-                    "sentence_count": 1,
-                    "created_at": 1,
-                    "has_english": 1,
-                },
-            ).sort("created_at", -1).limit(100)
-        )
-        for d in docs:
-            d["_id"] = str(d["_id"])
-            if "created_at" in d and d["created_at"]:
-                d["created_at"] = d["created_at"].isoformat()
-        return jsonify(docs)
+        projection = {
+            "_id": 1,
+            "chuukese_title": 1,
+            "english_title": 1,
+            "url": 1,
+            "english_url": 1,
+            "source_label": 1,
+            "paragraph_count": 1,
+            "sentence_count": 1,
+            "created_at": 1,
+            "has_english": 1,
+        }
+
+        try:
+            docs = list(col.find({}, projection).sort("created_at", -1).limit(100))
+        except OperationFailure as exc:
+            if "order-by item is excluded" not in str(exc).lower():
+                raise
+            # Cosmos Mongo can reject order-by on excluded index paths; fall back to
+            # an unsorted query and order the small result set in memory.
+            docs = list(col.find({}, projection).limit(100))
+            docs.sort(key=lambda doc: doc.get("created_at") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+        return jsonify(_serialize_article_analysis_metadata(docs))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
