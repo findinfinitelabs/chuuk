@@ -31,6 +31,11 @@ interface User {
   role: string
 }
 
+interface LoginSuccessPayload {
+  user: User
+  permissions: string[]
+}
+
 // Access denied component
 function AccessDenied() {
   return (
@@ -115,8 +120,10 @@ function App() {
   
   const hasPermission = (permission: string) => permissions.includes(permission)
   
-  const handleLoginSuccess = () => {
-    checkAuthStatus()
+  const handleLoginSuccess = ({ user: nextUser, permissions: nextPermissions }: LoginSuccessPayload) => {
+    setIsAuthenticated(true)
+    setUser(nextUser)
+    setPermissions(nextPermissions)
     navigate('/')
   }
   

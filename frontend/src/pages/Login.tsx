@@ -24,7 +24,14 @@ import axios from 'axios'
 import './Login.css'
 
 interface LoginProps {
-  onLoginSuccess: () => void
+  onLoginSuccess: (payload: {
+    user: {
+      email: string
+      name: string
+      role: string
+    }
+    permissions: string[]
+  }) => void
 }
 
 export default function Login({ onLoginSuccess }: LoginProps) {
@@ -86,7 +93,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       })
 
       if (response.data.success) {
-        onLoginSuccess()
+        onLoginSuccess({
+          user: response.data.user,
+          permissions: response.data.permissions || []
+        })
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.')
