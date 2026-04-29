@@ -4751,15 +4751,56 @@ def _get_article_analyses_collection():
     return dict_db.db["article_analyses"]
 
 
+def _get_article_analysis_paragraphs_collection():
+    """Return the collection that stores paragraph payloads per analysis."""
+    if dict_db.db is None:
+        return None
+    return dict_db.db["article_analysis_paragraphs"]
+
+
 def _serialize_article_analysis_metadata(docs):
     serialized = []
     for doc in docs:
         doc["_id"] = str(doc["_id"])
         created_at = doc.get("created_at")
-        if created_at:
+        if isinstance(created_at, datetime):
             doc["created_at"] = created_at.isoformat()
         serialized.append(doc)
     return serialized
+
+
+def _is_cosmos_excluded_order_by_error(exc):
+    message = str(exc).lower()
+    return (
+        "order-by item is excluded" in message
+        or "index path corresponding to the specified order-by item is excluded" in message
+    )
+
+
+def _article_analysis_created_at_sort_key(doc):
+    created_at = doc.get("created_at")
+    if isinstance(created_at, str):
+        try:
+            return datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+    if created_at:
+        return created_at
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _load_article_analysis_paragraphs(analysis_id, fallback_doc=None):
+    """Load paragraph payloads from the split collection, falling back to embedded docs."""
+    paragraphs_col = _get_article_analysis_paragraphs_collection()
+    if paragraphs_col is None:
+        return (fallback_doc or {}).get("paragraphs", [])
+
+    paragraph_docs = list(paragraphs_col.find({"analysis_id": analysis_id}))
+    if not paragraph_docs:
+        return (fallback_doc or {}).get("paragraphs", [])
+
+    paragraph_docs.sort(key=lambda doc: doc.get("paragraph_index", 0))
+    return [doc.get("paragraph", {}) for doc in paragraph_docs]
 
 
 @app.route("/api/article-analyses", methods=["GET"])
@@ -4785,13 +4826,13 @@ def list_article_analyses():
 
         try:
             docs = list(col.find({}, projection).sort("created_at", -1).limit(100))
-        except OperationFailure as exc:
-            if "order-by item is excluded" not in str(exc).lower():
+        except Exception as exc:
+            if not _is_cosmos_excluded_order_by_error(exc):
                 raise
             # Cosmos Mongo can reject order-by on excluded index paths; fall back to
             # an unsorted query and order the small result set in memory.
             docs = list(col.find({}, projection).limit(100))
-            docs.sort(key=lambda doc: doc.get("created_at") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+            docs.sort(key=_article_analysis_created_at_sort_key, reverse=True)
 
         return jsonify(_serialize_article_analysis_metadata(docs))
     except Exception as e:
@@ -4819,8 +4860,9 @@ def get_article_analysis(analysis_id):
         if not doc:
             return jsonify({"error": "Analysis not found"}), 404
 
+        doc["paragraphs"] = _load_article_analysis_paragraphs(oid, fallback_doc=doc)
         doc["_id"] = str(doc["_id"])
-        if "created_at" in doc and doc["created_at"]:
+        if isinstance(doc.get("created_at"), datetime):
             doc["created_at"] = doc["created_at"].isoformat()
         return jsonify(doc)
     except Exception as e:
@@ -4844,6 +4886,13 @@ def save_article_analysis():
         if col is None:
             return jsonify({"error": "Database unavailable"}), 503
 
+        paragraphs_col = _get_article_analysis_paragraphs_collection()
+        if paragraphs_col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        now = datetime.now(timezone.utc)
+        paragraphs = data.get("paragraphs", [])
+
         doc = {
             "url": url,
             "chuukese_title": data.get("chuukese_title", ""),
@@ -4853,22 +4902,38 @@ def save_article_analysis():
             "has_english": data.get("has_english", False),
             "paragraph_count": data.get("paragraph_count", 0),
             "sentence_count": data.get("sentence_count", 0),
-            "paragraphs": data.get("paragraphs", []),
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": now,
         }
 
         result = col.update_one(
             {"url": url},
-            {"$set": doc, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+            {"$set": doc, "$setOnInsert": {"created_at": now}},
             upsert=True,
         )
 
-        inserted_id = str(result.upserted_id) if result.upserted_id else None
-        if not inserted_id:
+        analysis_oid = result.upserted_id
+        if analysis_oid is None:
             existing = col.find_one({"url": url}, {"_id": 1})
-            inserted_id = str(existing["_id"]) if existing else None
+            analysis_oid = existing["_id"] if existing else None
 
-        return jsonify({"success": True, "id": inserted_id})
+        if analysis_oid is None:
+            return jsonify({"error": "Failed to resolve saved analysis ID"}), 500
+
+        paragraphs_col.delete_many({"analysis_id": analysis_oid})
+        if paragraphs:
+            paragraphs_col.insert_many(
+                [
+                    {
+                        "analysis_id": analysis_oid,
+                        "paragraph_index": index,
+                        "paragraph": paragraph,
+                        "updated_at": now,
+                    }
+                    for index, paragraph in enumerate(paragraphs)
+                ]
+            )
+
+        return jsonify({"success": True, "id": str(analysis_oid)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4892,6 +4957,10 @@ def delete_article_analysis(analysis_id):
             oid = ObjectId(analysis_id)
         except InvalidId:
             return jsonify({"error": "Invalid ID"}), 400
+
+        paragraphs_col = _get_article_analysis_paragraphs_collection()
+        if paragraphs_col is not None:
+            paragraphs_col.delete_many({"analysis_id": oid})
 
         result = col.delete_one({"_id": oid})
         if result.deleted_count == 0:
