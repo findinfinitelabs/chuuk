@@ -14,10 +14,8 @@ import {
   Alert,
   Loader,
   Divider,
-  Box,
   Table,
   ScrollArea,
-  Timeline,
   ThemeIcon,
   Code,
   Tooltip,
@@ -26,16 +24,13 @@ import {
 import {
   IconBrain,
   IconBolt,
-  IconCheck,
-  IconX,
-  IconAlertCircle,
   IconRefresh,
   IconPlayerPlay,
   IconArrowsLeftRight,
   IconDatabase,
   IconClock,
   IconActivity,
-  IconMerge,
+  IconGitMerge,
 } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
@@ -343,7 +338,7 @@ export default function AITraining() {
         >
           <Stack gap={4}>
             <Text size="sm">{currentRun.message || 'Initialising…'}</Text>
-            <Progress value={undefined} animated size="sm" />
+            <Progress value={100} animated size="sm" striped />
             <Text size="xs" c="dimmed">Run ID: {currentRun.run_id.slice(0, 8)}… · Started: {formatTime(currentRun.started_at)}</Text>
           </Stack>
         </Alert>
@@ -372,9 +367,9 @@ export default function AITraining() {
               value={loraPercent}
               color={loraPercent >= 100 ? 'orange' : 'teal'}
               size="sm"
-              label={`${loraPercent}%`}
               mt={4}
             />
+            <Text size="xs" c="dimmed" ta="right">{loraPercent}%</Text>
             <Group justify="space-between" mt="xs">
               <Button
                 leftSection={<IconPlayerPlay size={14} />}
@@ -386,7 +381,7 @@ export default function AITraining() {
                 Train Now
               </Button>
               <Button
-                leftSection={<IconMerge size={14} />}
+                leftSection={<IconGitMerge size={14} />}
                 variant="light"
                 color="orange"
                 onClick={handleMergeLora}
