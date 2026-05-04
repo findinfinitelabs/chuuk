@@ -1,0 +1,30 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.pageTitle {
+  color: var(--mantine-color-white);
+}
+
+.engineCard {
+  min-height: 90px;
+}
+
+.logBox {
+  background: var(--mantine-color-dark-8);
+  border-radius: var(--mantine-radius-sm);
+  padding: 0.5rem;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.logLine {
+  background: transparent !important;
+  padding: 2px 0 !important;
+  font-size: 0.72rem !important;
+  line-height: 1.4;
+  color: var(--mantine-color-green-4) !important;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
