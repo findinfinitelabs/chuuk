@@ -1,5 +1,6 @@
 # Multi-stage build for Chuuk Dictionary App
-FROM node:18-slim AS frontend-builder
+# Node 22 LTS required by Vite 7 and React Router 7
+FROM node:22-slim AS frontend-builder
 
 # Build React frontend  
 WORKDIR /app/frontend
