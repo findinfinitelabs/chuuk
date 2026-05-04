@@ -19,6 +19,14 @@ KEY_VAULT_NAME=${KEY_VAULT_NAME:-chuuk-kv-beta}
 KV_FLASK_SECRET_NAME=${KV_FLASK_SECRET_NAME:-flask-secret-key}
 KV_GOOGLE_API_KEY_NAME=${KV_GOOGLE_API_KEY_NAME:-google-cloud-api-key}
 AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-FindInfinite Labs - Beta}
+# Storage account for persisting fine-tuned model weights across container restarts.
+# The share is mounted at /app/models inside the main container so that any models
+# trained or updated at runtime survive redeploys and scale-to-zero events.
+MODEL_STORAGE_ACCOUNT=${MODEL_STORAGE_ACCOUNT:-chuukmodelstore}
+MODEL_SHARE_NAME=${MODEL_SHARE_NAME:-chuuk-models}
+# Mount at a SEPARATE directory so the baked-in /app/models/ in the image is
+# never hidden.  Fine-tuned weights are written here and loaded preferentially.
+MODEL_MOUNT_PATH=${MODEL_MOUNT_PATH:-/app/model_store}
 
 # Colors
 GREEN='\033[0;32m'
@@ -111,6 +119,64 @@ ensure_env() {
   else
     success "Container Apps environment exists"
   fi
+}
+
+ensure_model_storage() {
+  # Provision an Azure Storage account + File Share and attach it to the
+  # Container Apps environment so that fine-tuned Helsinki model weights
+  # survive container restarts, scale-to-zero events, and redeploys.
+  #
+  # The share is mounted at MODEL_MOUNT_PATH (/app/models) inside the main
+  # container; this directory shadows the baked-in models in the image while
+  # preserving them as the initial fallback (the storage is populated from the
+  # image layer the very first time the container writes there).
+  log "Ensuring model storage account ${MODEL_STORAGE_ACCOUNT}..."
+
+  # Storage account names must be globally unique, 3-24 lower-case alphanumeric
+  if ! az storage account show --name "$MODEL_STORAGE_ACCOUNT" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    az storage account create \
+      --name "$MODEL_STORAGE_ACCOUNT" \
+      --resource-group "$RESOURCE_GROUP" \
+      --location "$LOCATION" \
+      --sku Standard_LRS \
+      --kind StorageV2 \
+      --allow-blob-public-access false \
+      --min-tls-version TLS1_2 >/dev/null
+    success "Storage account created: ${MODEL_STORAGE_ACCOUNT}"
+  else
+    success "Storage account exists: ${MODEL_STORAGE_ACCOUNT}"
+  fi
+
+  MODEL_STORAGE_KEY=$(az storage account keys list \
+    --account-name "$MODEL_STORAGE_ACCOUNT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "[0].value" -o tsv)
+
+  # Create the file share if missing
+  if ! az storage share show \
+      --name "$MODEL_SHARE_NAME" \
+      --account-name "$MODEL_STORAGE_ACCOUNT" \
+      --account-key "$MODEL_STORAGE_KEY" >/dev/null 2>&1; then
+    az storage share create \
+      --name "$MODEL_SHARE_NAME" \
+      --account-name "$MODEL_STORAGE_ACCOUNT" \
+      --account-key "$MODEL_STORAGE_KEY" \
+      --quota 32 >/dev/null   # 32 GiB — plenty for Helsinki Marian weights
+    success "File share created: ${MODEL_SHARE_NAME}"
+  else
+    success "File share exists: ${MODEL_SHARE_NAME}"
+  fi
+
+  # Register the storage with the Container Apps environment (idempotent)
+  az containerapp env storage set \
+    --name "$CONTAINER_APP_ENV" \
+    --resource-group "$RESOURCE_GROUP" \
+    --storage-name "chuuk-models" \
+    --azure-file-account-name "$MODEL_STORAGE_ACCOUNT" \
+    --azure-file-account-key "$MODEL_STORAGE_KEY" \
+    --azure-file-share-name "$MODEL_SHARE_NAME" \
+    --access-mode ReadWrite >/dev/null
+  success "Model storage registered with Container Apps environment"
 }
 
 build_images() {
@@ -244,6 +310,9 @@ deploy_main() {
     "FLASK_ENV=production"
     "FLASK_DEBUG=0"
     "FLASK_SECRET_KEY=${flask_secret}"
+    # Fine-tuned model weights are written here (Azure File Share mount).
+    # Baked-in base weights remain in /app/models/ as fallback.
+    "MODEL_STORE_PATH=${MODEL_MOUNT_PATH}"
   )
   if [ -n "$google_key" ]; then
     ENV_ARGS+=("GOOGLE_CLOUD_API_KEY=${google_key}")
@@ -266,6 +335,14 @@ deploy_main() {
       --resource-group "$RESOURCE_GROUP" \
       --image "$image_ref" \
       --set-env-vars "${ENV_ARGS[@]}"
+
+    # Ensure the model volume is mounted (idempotent via az containerapp update --volume)
+    az containerapp update \
+      --name "$MAIN_APP_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --volume "name=models-vol,storage-type=AzureFile,storage-name=chuuk-models" \
+      --mount "name=models-vol,mount-path=${MODEL_MOUNT_PATH}" 2>/dev/null || \
+        warn "Volume mount update skipped (may require revision; check portal if models do not persist)"
     success "Main app updated"
   else
     az containerapp create \
@@ -282,7 +359,9 @@ deploy_main() {
       --memory 4.0Gi \
       --min-replicas 0 \
       --max-replicas 2 \
-      --env-vars "${ENV_ARGS[@]}"
+      --env-vars "${ENV_ARGS[@]}" \
+      --volume "name=models-vol,storage-type=AzureFile,storage-name=chuuk-models" \
+      --mount "name=models-vol,mount-path=${MODEL_MOUNT_PATH}"
     success "Main app created"
   fi
   APP_FQDN=$(az containerapp show --name "$MAIN_APP_NAME" --resource-group "$RESOURCE_GROUP" --query "properties.configuration.ingress.fqdn" -o tsv)
@@ -298,6 +377,7 @@ main() {
   register_providers
   ensure_acr
   ensure_env
+  ensure_model_storage
   build_images
   fetch_cosmos
   deploy_ollama

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText, IconLetterV, IconMessage, IconWorld } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText, IconLetterV, IconMessage, IconWorld, IconBrain } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -19,6 +19,7 @@ import ArticleAnalysis from './pages/ArticleAnalysis'
 import Verbs from './pages/Verbs'
 import Compose from './pages/Compose'
 import AdminUsers from './pages/AdminUsers'
+import AITraining from './pages/AITraining'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import { chuukTheme } from './theme'
@@ -330,6 +331,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('ai_training') && (
+              <NavLink 
+                label="AI Training" 
+                leftSection={<IconBrain size="1.2rem" />} 
+                component={Link}
+                to="/ai-training"
+                active={location.pathname === '/ai-training'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
           </AppShell.Section>
         </AppShell.Navbar>
 
@@ -409,6 +421,7 @@ function App() {
               <Route path="/grammar" element={hasPermission('grammar') ? <Grammar /> : <AccessDenied />} />
               <Route path="/compose" element={hasPermission('grammar') ? <Compose /> : <AccessDenied />} />
               <Route path="/admin/users" element={hasPermission('admin_users') ? <AdminUsers /> : <AccessDenied />} />
+              <Route path="/ai-training" element={hasPermission('ai_training') ? <AITraining /> : <AccessDenied />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </UserContext.Provider>

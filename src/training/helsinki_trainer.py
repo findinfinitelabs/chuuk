@@ -101,23 +101,48 @@ class HelsinkiFineTuner:
 
             # Enable cuDNN auto-tuner for optimal performance
             torch.backends.cudnn.benchmark = True
+            # BF16 is more numerically stable than FP16 on Ampere+ (3000/4000/A100)
+            self.use_bf16 = torch.cuda.is_bf16_supported()
+            if self.use_bf16:
+                print("🧮 BF16 precision enabled (Ampere+ GPU detected)")
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             # Apple Silicon GPU (Metal Performance Shaders)
             self.device = "mps"
             self.num_gpus = 1
+            self.use_bf16 = False
             print("🍎 Using Apple Silicon GPU (MPS) for acceleration")
             print("⚡ Metal Performance Shaders enabled")
         else:
             self.device = "cpu"
             self.num_gpus = 0
+            self.use_bf16 = False
             # Limit CPU threads to prevent overload
             torch.set_num_threads(min(8, os.cpu_count() or 4))
             print(f"🖥️  Using CPU with {torch.get_num_threads()} threads")
             print("⚠️  Warning: Training on CPU will be slow. GPU recommended for production.")
 
-        # Model paths
-        self.chk_to_en_model_path = "models/helsinki-chuukese_chuukese_to_english"
-        self.en_to_chk_model_path = "models/helsinki-chuukese_english_to_chuukese"
+        # Model paths — use MODEL_STORE_PATH (persistent Azure File Share) when
+        # set, so that fine-tuned weights survive container restarts/redeploys.
+        # The base models in models/ remain as fallback for loading if the store
+        # is empty on first boot.
+        _store = os.getenv("MODEL_STORE_PATH", "").strip().rstrip("/")
+        if _store:
+            os.makedirs(_store, exist_ok=True)
+            self.chk_to_en_model_path = f"{_store}/helsinki-chuukese_chuukese_to_english"
+            self.en_to_chk_model_path = f"{_store}/helsinki-chuukese_english_to_chuukese"
+            # Seed the store from the baked-in image weights on first boot
+            for src_dir, dst_dir in [
+                ("models/helsinki-chuukese_chuukese_to_english", self.chk_to_en_model_path),
+                ("models/helsinki-chuukese_english_to_chuukese", self.en_to_chk_model_path),
+            ]:
+                if os.path.isdir(src_dir) and not os.path.exists(os.path.join(dst_dir, "config.json")):
+                    import shutil as _shutil
+                    _shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+                    print(f"📂 Seeded model store: {src_dir} → {dst_dir}")
+            print(f"📦 Using persistent model store: {_store}")
+        else:
+            self.chk_to_en_model_path = "models/helsinki-chuukese_chuukese_to_english"
+            self.en_to_chk_model_path = "models/helsinki-chuukese_english_to_chuukese"
 
         # Base model names (for fallback if local models don't exist)
         self.chk_to_en_base = "Helsinki-NLP/opus-mt-mul-en"
@@ -379,6 +404,152 @@ class HelsinkiFineTuner:
             print(f"❌ Fine-tuning error: {e}")
             import traceback
 
+            traceback.print_exc()
+            return False
+
+    def fine_tune_model_lora(
+        self,
+        direction: str,
+        training_pairs: list[dict[str, str]],
+        num_epochs: int = 3,
+        batch_size: int = 1,
+        learning_rate: float = 1e-4,
+        adapter_output_dir: str | None = None,
+    ) -> bool:
+        """
+        Apply a LoRA adapter update on top of the existing fine-tuned model.
+        Much faster than a full fine-tune — suitable for teaching a single pair.
+
+        Requires: ``peft>=0.10.0`` in the environment.
+
+        Args:
+            direction: 'chk_to_en' or 'en_to_chk'
+            training_pairs: List of {'chuukese': str, 'english': str} dicts
+            num_epochs: Epochs for the quick adapter update (2-5 recommended)
+            batch_size: Batch size (1 for single-pair teaching)
+            learning_rate: LoRA-specific learning rate (higher than full fine-tune)
+            adapter_output_dir: Where to save the LoRA adapter checkpoint.
+                                 Defaults to models/{direction}/lora_adapters/
+        """
+        try:
+            from peft import LoraConfig, TaskType, get_peft_model  # type: ignore
+        except ImportError:
+            print("⚠️  peft not installed — falling back to full fine-tune for LoRA teach")
+            return self.fine_tune_model(
+                direction=direction,
+                training_pairs=training_pairs,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+                learning_rate=learning_rate,
+            )
+
+        try:
+            if direction == "chk_to_en":
+                model_path = self.chk_to_en_model_path
+                stage_name = "Chuukese→English (LoRA)"
+            else:
+                model_path = self.en_to_chk_model_path
+                stage_name = "English→Chuukese (LoRA)"
+
+            finetuned_path = f"{model_path}/finetuned"
+            load_path = finetuned_path if os.path.exists(finetuned_path) else model_path
+
+            if adapter_output_dir is None:
+                adapter_output_dir = f"{model_path}/lora_adapters"
+            os.makedirs(adapter_output_dir, exist_ok=True)
+
+            print(f"\n⚡ LoRA quick-teach: {stage_name} ({len(training_pairs)} pairs)")
+            self._update_progress(f"LoRA loading {stage_name}", 10)
+
+            force_cpu = os.environ.get("FORCE_CPU", "0") == "1"
+            train_device = "cpu" if force_cpu else self.device
+
+            # Load directly in half-precision so it never lands on CPU in float32
+            if train_device == "cuda":
+                load_dtype = torch.bfloat16 if self.use_bf16 else torch.float16
+            elif train_device == "mps":
+                load_dtype = torch.float16
+            else:
+                load_dtype = torch.float32
+            print(f"🔢 Loading model with dtype={load_dtype}, device={train_device}")
+
+            model = MarianMTModel.from_pretrained(load_path, torch_dtype=load_dtype)
+            tokenizer = MarianTokenizer.from_pretrained(load_path)
+
+            # LoRA targets the attention projection matrices
+            lora_cfg = LoraConfig(
+                task_type=TaskType.SEQ_2_SEQ_LM,
+                r=8,
+                lora_alpha=16,
+                target_modules=["q_proj", "v_proj"],
+                lora_dropout=0.05,
+                bias="none",
+            )
+            model = get_peft_model(model, lora_cfg)
+            model.print_trainable_parameters()
+            model = model.to(train_device)
+
+            dataset = self.prepare_dataset(training_pairs, direction)
+            tokenized = self.tokenize_dataset(dataset, tokenizer, max_length=self.max_length)
+
+            # Use BF16 on Ampere+, FP16 on older CUDA, or native half on MPS
+            use_bf16 = self.use_bf16 and train_device == "cuda"
+            use_fp16 = (not use_bf16) and train_device == "cuda"
+
+            training_args = Seq2SeqTrainingArguments(
+                output_dir=adapter_output_dir,
+                num_train_epochs=num_epochs,
+                per_device_train_batch_size=batch_size,
+                learning_rate=learning_rate,
+                logging_steps=5,
+                save_strategy="no",
+                predict_with_generate=False,
+                bf16=use_bf16,
+                fp16=use_fp16,
+                use_cpu=force_cpu,
+                use_mps_device=(self.device == "mps" and not force_cpu),
+                dataloader_num_workers=0,
+                max_grad_norm=1.0,
+                push_to_hub=False,
+                eval_strategy="no",
+            )
+
+            data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
+            epoch_cb = EpochProgressCallback(
+                progress_callback=self.progress_callback,
+                num_epochs=num_epochs,
+                stage_name=stage_name,
+            )
+
+            trainer = Seq2SeqTrainer(
+                model=model,
+                args=training_args,
+                train_dataset=tokenized,
+                data_collator=data_collator,
+                tokenizer=tokenizer,
+                callbacks=[epoch_cb],
+            )
+
+            self._update_progress(f"LoRA training {stage_name}", 30)
+            trainer.train()
+
+            # Save only the LoRA adapter weights (tiny)
+            model.save_pretrained(adapter_output_dir)
+            tokenizer.save_pretrained(adapter_output_dir)
+
+            print(f"✅ LoRA adapter saved to {adapter_output_dir}")
+            self._update_progress(f"LoRA saved {stage_name}", 90)
+
+            if self.device == "cuda":
+                del model
+                del trainer
+                torch.cuda.empty_cache()
+
+            return True
+
+        except Exception as e:
+            print(f"❌ LoRA fine-tuning error: {e}")
+            import traceback
             traceback.print_exc()
             return False
 

@@ -78,6 +78,10 @@ except ImportError as e:
     print(f"⚠️ Helsinki translator not available: {e}")
     HELSINKI_AVAILABLE = False
 
+# Feature flag: set OLLAMA_ENABLED=true in env to re-enable Ollama integration.
+# Default is false — Ollama is resource-heavy and optional.
+OLLAMA_ENABLED = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
+
 app = Flask(__name__)
 secret_key = os.getenv("FLASK_SECRET_KEY")
 if not secret_key:
@@ -243,6 +247,16 @@ if HELSINKI_AVAILABLE:
     except Exception as e:
         print(f"⚠️ Helsinki translator initialization failed: {e}")
         helsinki_translator = None
+
+# Start continuous training engine in background
+_continuous_trainer = None
+try:
+    from src.training.continuous_trainer import ContinuousTrainer
+    _continuous_trainer = ContinuousTrainer.get_instance()
+    _continuous_trainer.start_scheduler()
+    print("🔄 Continuous training engine started")
+except Exception as _ct_err:
+    print(f"⚠️ Continuous trainer init failed: {_ct_err}")
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "pdf", "docx"}
@@ -486,7 +500,7 @@ def role_required(*allowed_roles):
 # Role permissions mapping
 ROLE_PERMISSIONS = {
     "user": ["home", "lookup", "sentences", "translate", "grammar"],
-    "translator": ["home", "lookup", "sentences", "translate", "database", "game", "grammar"],
+    "translator": ["home", "lookup", "sentences", "translate", "database", "game", "grammar", "ai_training"],
     "admin": [
         "home",
         "lookup",
@@ -498,6 +512,7 @@ ROLE_PERMISSIONS = {
         "new_publication",
         "grammar",
         "admin_users",
+        "ai_training",
     ],
 }
 
@@ -1604,19 +1619,22 @@ def api_translate():
         except Exception as e:
             results["translations"]["helsinki"] = f"Error: {str(e)}"
 
-        # Ollama LLM
-        try:
-            from src.translation.llm_trainer import ChuukeseLLMTrainer
+        # Ollama LLM (disabled by default; set OLLAMA_ENABLED=true to activate)
+        if not OLLAMA_ENABLED:
+            results["translations"]["ollama"] = {"available": False, "reason": "Ollama disabled (OLLAMA_ENABLED=false)"}
+        else:
+            try:
+                from src.translation.llm_trainer import ChuukeseLLMTrainer
 
-            ollama_trainer = ChuukeseLLMTrainer()
+                ollama_trainer = ChuukeseLLMTrainer()
 
-            if ollama_trainer.check_ollama_installation():
-                ollama_result = ollama_trainer.translate_text(text, direction)
-                results["translations"]["ollama"] = ollama_result
-            else:
-                results["translations"]["ollama"] = "Ollama is not running. Start Ollama to use this translator."
-        except Exception as e:
-            results["translations"]["ollama"] = f"Error: {str(e)}"
+                if ollama_trainer.check_ollama_installation():
+                    ollama_result = ollama_trainer.translate_text(text, direction)
+                    results["translations"]["ollama"] = ollama_result
+                else:
+                    results["translations"]["ollama"] = "Ollama is not running. Start Ollama to use this translator."
+            except Exception as e:
+                results["translations"]["ollama"] = f"Error: {str(e)}"
 
         return jsonify(results)
 
@@ -1761,15 +1779,19 @@ def api_translate_correction():
                     training_status["epoch_total"] = None
                     training_status["current_direction"] = None
 
-                    # Step 3: Retrain Ollama
-                    from src.translation.llm_trainer import ChuukeseLLMTrainer
+                    # Step 3: Retrain Ollama (skipped when OLLAMA_ENABLED=false)
+                    if OLLAMA_ENABLED:
+                        from src.translation.llm_trainer import ChuukeseLLMTrainer
 
-                    trainer = ChuukeseLLMTrainer()
-                    if trainer.check_ollama_installation():
-                        print("🔄 Retraining Ollama model...")
-                        training_status["message"] = "Training Ollama AI model..."
+                        trainer = ChuukeseLLMTrainer()
+                        if trainer.check_ollama_installation():
+                            print("\ud83d\udd04 Retraining Ollama model...")
+                            training_status["message"] = "Training Ollama AI model..."
+                            training_status["progress"] = 75
+                            trainer.train_full_pipeline()
+                    else:
+                        print("\u23ed\ufe0f  Ollama retraining skipped (OLLAMA_ENABLED=false)")
                         training_status["progress"] = 75
-                        trainer.train_full_pipeline()
 
                     training_status["progress"] = 100
                     training_status["message"] = "Training complete!"
@@ -1804,6 +1826,163 @@ def api_training_status():
     """Get current training status"""
     global training_status
     return jsonify(training_status)
+
+
+# ============================================================================
+# AI Training Routes  (/api/ai-training/*)
+# ============================================================================
+
+def _get_trainer():
+    """Return the global ContinuousTrainer instance, or None if unavailable."""
+    return _continuous_trainer
+
+
+@app.route("/api/ai-training/status", methods=["GET"])
+def api_ai_training_status():
+    """Return live training status from the ContinuousTrainer."""
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+    return jsonify(trainer.get_status())
+
+
+@app.route("/api/ai-training/start", methods=["POST"])
+def api_ai_training_start():
+    """Manually trigger a full fine-tune run (both directions)."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    user_role = session.get("user_role", "user")
+    if "ai_training" not in ROLE_PERMISSIONS.get(user_role, []):
+        return jsonify({"error": "Forbidden"}), 403
+
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+    if trainer.is_training:
+        return jsonify({"success": False, "message": "Training already in progress",
+                        "run_id": trainer._current_run.run_id if trainer._current_run else None})
+
+    data = request.get_json(silent=True) or {}
+    num_epochs = int(data.get("num_epochs", 3))
+    batch_size = int(data.get("batch_size", 2))
+    run_id = trainer.run_full_training_async(
+        trigger="manual", num_epochs=num_epochs, batch_size=batch_size
+    )
+    return jsonify({"success": True, "run_id": run_id, "message": "Training started"})
+
+
+@app.route("/api/ai-training/lora-teach", methods=["POST"])
+def api_ai_training_lora_teach():
+    """Quick LoRA update to teach one translation pair immediately."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    user_role = session.get("user_role", "user")
+    if "ai_training" not in ROLE_PERMISSIONS.get(user_role, []):
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    chuukese = (data.get("chuukese") or "").strip()
+    english = (data.get("english") or "").strip()
+    direction = data.get("direction", "both")
+
+    if not chuukese or not english:
+        return jsonify({"error": "chuukese and english are required"}), 400
+    if direction not in ("both", "chk_to_en", "en_to_chk"):
+        return jsonify({"error": "direction must be both|chk_to_en|en_to_chk"}), 400
+
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+
+    # Run synchronously in a thread and wait briefly, then return
+    result_holder = {}
+    def _teach():
+        result_holder["result"] = trainer.teach_pair_lora(chuukese, english, direction)
+    t = threading.Thread(target=_teach, daemon=True)
+    t.start()
+    # Return immediately — the caller can poll /status for completion
+    return jsonify({"success": True,
+                    "message": f"LoRA teach queued for '{chuukese}' ↔ '{english}'"})
+
+
+@app.route("/api/ai-training/history", methods=["GET"])
+def api_ai_training_history():
+    """Return recent training run history."""
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+    limit = min(int(request.args.get("limit", 20)), 50)
+    return jsonify({"runs": trainer.get_run_history(limit=limit)})
+
+
+@app.route("/api/ai-training/sources", methods=["GET"])
+def api_ai_training_sources():
+    """Return pair-count breakdown per training data source."""
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+    return jsonify(trainer.get_training_data_stats())
+
+
+@app.route("/api/ai-training/merge-lora", methods=["POST"])
+def api_ai_training_merge_lora():
+    """Trigger a full fine-tune to merge pending LoRA adapters into the base weights."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    user_role = session.get("user_role", "user")
+    if "ai_training" not in ROLE_PERMISSIONS.get(user_role, []):
+        return jsonify({"error": "Forbidden"}), 403
+
+    trainer = _get_trainer()
+    if not trainer:
+        return jsonify({"error": "Training engine not available"}), 503
+    if trainer.is_training:
+        return jsonify({"success": False, "message": "Training already in progress"})
+    run_id = trainer.run_full_training_async(trigger="lora_merge")
+    return jsonify({"success": True, "run_id": run_id,
+                    "message": "LoRA merge triggered — running full fine-tune"})
+
+
+@app.route("/api/ai-training/stream", methods=["GET"])
+def api_ai_training_stream():
+    """
+    SSE endpoint: streams training progress events as they happen.
+    Connect with EventSource('/api/ai-training/stream').
+    """
+    import queue as _queue
+
+    q: _queue.Queue = _queue.Queue(maxsize=100)
+
+    def _on_event(event: dict):
+        try:
+            q.put_nowait(event)
+        except _queue.Full:
+            pass
+
+    trainer = _get_trainer()
+    if trainer:
+        trainer.register_progress_callback(_on_event)
+
+    def _generate():
+        import json as _json
+        import time as _time
+        # Send initial status immediately
+        if trainer:
+            yield f"data: {_json.dumps({'type': 'status', **trainer.get_status()})}\n\n"
+        heartbeat_interval = 15
+        last_heartbeat = _time.monotonic()
+        while True:
+            try:
+                event = q.get(timeout=1.0)
+                yield f"data: {_json.dumps(event)}\n\n"
+                last_heartbeat = _time.monotonic()
+            except _queue.Empty:
+                if _time.monotonic() - last_heartbeat >= heartbeat_interval:
+                    yield ": heartbeat\n\n"
+                    last_heartbeat = _time.monotonic()
+
+    return Response(stream_with_context(_generate()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/translate_helsinki", methods=["POST"])
