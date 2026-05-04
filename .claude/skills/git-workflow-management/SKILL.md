@@ -5,6 +5,17 @@ description: Automate frequent Git operations including adding changes, committi
 
 # Git Workflow Management
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> This skill describes a generic git-helper CLI that **does not exist in this repo**. There is no `git_workflow.py`. Use plain `git` commands.
+>
+> Repo-specific guardrails:
+> - Default branch: `main`. Deploys are triggered by [`deploy-chuuk.sh`](../../../deploy-chuuk.sh) (manual) and the workflow under [`.github/workflows/`](../../../.github/workflows/).
+> - **Never** force-push to `main`. Use `--force-with-lease` only on personal branches.
+> - Run `pytest -m "not slow and not translation and not integration"` before pushing changes that touch `app.py`, `src/`, or `tests/` ([pytest.ini](../../../pytest.ini)).
+> - Useful commit-message scopes: `app.py`, `frontend`, `db`, `scripts`, `docs`, `skills`, `deploy`.
+> - The agent should follow the project's standing operational-safety rule: ask before any destructive git action (`reset --hard`, `push --force`, branch deletes, amending published commits).
+
 ## Overview
 
 A comprehensive skill for automating and streamlining Git version control operations, focusing on frequent commits with meaningful messages, proper staging practices, and efficient push workflows. Designed to maintain clean commit history and regular backup of development progress.

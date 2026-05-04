@@ -1,159 +1,119 @@
 ---
 name: document-ocr-processing
-description: Process scanned documents and images containing Chuukese text using OCR with specialized post-processing for accent characters and traditional formatting. Use when working with scanned books, documents, or images that contain Chuukese text that needs to be digitized.
+description: OCR pipeline for the Chuuk Dictionary — Tesseract + Google Vision via `OCRProcessor`, large-document handling via `EnhancedOCRProcessor`, structure-aware parsing via `AdvancedDocumentParser`. Use when ingesting scanned dictionary pages, PDFs, or DOCX files, or debugging extraction quality.
 ---
 
 # Document OCR Processing
 
-## Overview
+The OCR layer is three coordinating classes, all under [`src/ocr/`](../../../src/ocr/). Pick the right one for the document type — they are not interchangeable.
 
-Specialized OCR processing for documents containing Chuukese text, with enhanced accuracy for accented characters, traditional formatting patterns, and multilingual content. Designed to handle the unique challenges of digitizing historical and contemporary Chuukese documents.
+## Components
 
-## Capabilities
+### 1. [`OCRProcessor`](../../../src/ocr/ocr_processor.py#L42)
 
-- **Chuukese-Aware OCR**: Enhanced recognition of accented characters (á, é, í, ó, ú, ā, ē, ī, ō, ū)
-- **Traditional Format Recognition**: Handle traditional document layouts and formatting
-- **Multilingual Processing**: Process documents with both Chuukese and English text
-- **Quality Enhancement**: Post-processing to improve OCR accuracy
-- **Batch Processing**: Efficiently process multiple documents
-- **Format Preservation**: Maintain original document structure and layout
+The default processor for individual pages. Handles:
+- **Images** (PNG, JPG, TIFF) via Tesseract (`pytesseract`) and optionally Google Vision.
+- **PDF** by rasterizing pages with `pdf2image` then routing to image OCR.
+- **DOCX** by direct text extraction via `python-docx` (no OCR — text is already there).
 
-## Core Components
+Authentication for Google Vision uses **either**:
+- `GOOGLE_APPLICATION_CREDENTIALS` (path to service-account JSON), or
+- `GOOGLE_CLOUD_API_KEY` (REST key — preferred in production).
 
-### 1. OCR Engine Setup
+The app prefers the API key when both are set (see [app.py](../../../app.py#L184), [app.py](../../../app.py#L1480)).
 
-```python
-import pytesseract
-from PIL import Image
-import cv2
-import numpy as np
+### 2. [`EnhancedOCRProcessor`](../../../src/ocr/enhanced_ocr_processor.py#L34)
 
-class ChuukeseOCRProcessor:
-    def __init__(self):
-        # Configure Tesseract for multi-language support
-        self.tesseract_config = {
-            'chuukese_optimized': '--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzáéíóúāēīōū0123456789.,!?;:()-"\' ',
-            'multilingual': '--oem 3 --psm 6',
-            'preserve_structure': '--oem 3 --psm 1'
-        }
-        
-        # Chuukese character mappings for OCR corrections
-        self.ocr_corrections = {
-            # Common OCR mistakes for accented characters
-            'a´': 'á', 'a`': 'à', 'a¯': 'ā',
-            'e´': 'é', 'e`': 'è', 'e¯': 'ē',
-            'i´': 'í', 'i`': 'ì', 'i¯': 'ī',
-            'o´': 'ó', 'o`': 'ò', 'o¯': 'ō',
-            'u´': 'ú', 'u`': 'ù', 'u¯': 'ū',
-            
-            # Common character confusions
-            '0': 'o', '1': 'l', '5': 's',
-            'rn': 'm', 'cl': 'd', 'ck': 'ch'
-        }
-    
-    def preprocess_image(self, image_path):
-        """Preprocess image for better OCR accuracy"""
-        # Load image
-        image = cv2.imread(image_path)
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # Noise removal
-        denoised = cv2.medianBlur(gray, 3)
-        
-        # Contrast enhancement
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(denoised)
-        
-        # Binarization
-        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        return binary
-```
+For large multi-page documents. Wraps `OCRProcessor` and adds:
+- Streaming page-by-page processing with progress callbacks (used by the SSE channel).
+- Integration with the [`IntelligentTextChunker`](../../../src/utils/intelligent_chunker.py#L47) for downstream chunking. See [`enhanced_ocr_processor.py`](../../../src/ocr/enhanced_ocr_processor.py#L102).
+- Memory-bounded processing (one page in memory at a time).
 
-### 2. Post-Processing for Chuukese Text
+Use this when total page count > ~20 or the file is > ~50 MB.
+
+### 3. [`AdvancedDocumentParser`](../../../src/ocr/advanced_document_parser.py#L66)
+
+Structure-aware parser for dictionary-style documents. Detects:
+- Two-column layouts.
+- Headword/definition pairs.
+- Pronunciation parentheticals.
+- Section headings.
+
+Output is a `ParsedDocument` consumed by [`AITrainingDataGenerator`](../../../src/training/ai_training_generator.py#L73) — that's the path from raw scan → training pairs.
+
+## Pipeline integration
 
 ```python
-class ChuukeseOCRPostProcessor:
-    def __init__(self, dictionary_path=None):
-        self.dictionary = {}
-        if dictionary_path:
-            self.load_chuukese_dictionary(dictionary_path)
-        
-        # Common OCR error patterns for Chuukese
-        self.error_patterns = {
-            # Accent corrections
-            r'a[\'\`\´]': 'á',
-            r'e[\'\`\´]': 'é',
-            r'i[\'\`\´]': 'í',
-            r'o[\'\`\´]': 'ó',
-            r'u[\'\`\´]': 'ú',
-            
-            # Common character substitutions
-            r'\b0(?=[aeiou])': 'o',  # 0 at start of word -> o
-            r'(?<=[aeiou])0\b': 'o',  # 0 at end after vowel -> o
-            r'\brn(?=[aeiou])': 'm',   # rn -> m
-        }
-    
-    def correct_ocr_errors(self, text):
-        """Apply OCR error corrections specific to Chuukese"""
-        corrected = text
-        
-        # Apply pattern-based corrections
-        for pattern, replacement in self.error_patterns.items():
-            corrected = re.sub(pattern, replacement, corrected)
-        
-        return corrected
+from src.ocr.ocr_processor import OCRProcessor
+from src.ocr.enhanced_ocr_processor import EnhancedOCRProcessor
+from src.ocr.advanced_document_parser import AdvancedDocumentParser
+
+# Single image
+text, conf = OCRProcessor().process_image(path, language="chk+eng")
+
+# Large PDF with progress streaming
+def on_progress(stage, pct, **kw): push_sse(stage, pct, **kw)
+processor = EnhancedOCRProcessor(progress_callback=on_progress)
+result = processor.process_document(path)
+
+# Dictionary-style structure extraction
+parsed = AdvancedDocumentParser().parse(path)
 ```
 
-## Usage Examples
+The Flask layer at [app.py](../../../app.py#L1180) decides which processor to invoke based on file size and the `?process_now` flag.
 
-### Process Single Document
+## Tesseract languages
 
+Required Tesseract data packs:
+- `eng` (always)
+- `chk` if available locally — Chuukese is not a packaged Tesseract language. The Dockerfile installs only `tesseract-ocr-eng` (see [Dockerfile](../../../Dockerfile#L18)). Chuukese-specific accents are recovered in **post-processing**, not at the Tesseract layer.
+
+When you call into Tesseract for Chuukese pages, pass `lang="eng"` — better than `lang="chk"` which will warn-and-fallback.
+
+## Post-processing for accented characters
+
+Common OCR confusions on Chuukese text:
+
+| Tesseract output | Likely correction |
+|---|---|
+| `a` after consonant | `á` |
+| `e` in stressed position | `é` |
+| `o` followed by `n`/`s` | `ó` |
+| `u` with macron-like glyph | `ū` |
+| `1` between letters | `l` |
+| `0` between letters | `o` |
+
+`OCRProcessor` applies a conservative pass; aggressive correction lives in [`scripts/identify_base_words.py`](../../../scripts/identify_base_words.py) and [`scripts/check_hyphens.py`](../../../scripts/check_hyphens.py) for batch cleanup.
+
+## Confidence scoring
+
+Each extracted word/entry carries a `confidence_score` (0.0–1.0). Sources:
+- Tesseract per-word confidence (averaged).
+- Google Vision page-level confidence (when used).
+- Heuristic boosts when the word matches an existing dictionary entry exactly.
+
+The [`PublicationDetail`](../../../frontend/src/pages/PublicationDetail.tsx) page surfaces these scores so editors can review low-confidence rows. Updates land via `POST /api/dictionary/entries`.
+
+## Common workflows
+
+### Reprocess a single page
 ```python
-# Initialize processor
-processor = BatchOCRProcessor("output/ocr_results")
-
-# Process single document
-result = processor.process_document("scanned_chuukese_dictionary.jpg")
-
-# Access extracted text
-extracted_text = result['extracted_text']
-dictionary_entries = result['document_structure']['dictionary_entries']
+proc = OCRProcessor()
+text, conf = proc.process_image(f"uploads/{pub_id}/{page_filename}", language="eng")
 ```
 
-### Batch Process Directory
-
-```python
-# Process all images in a directory
-batch_results = processor.process_batch(
-    "scanned_documents/",
-    file_patterns=['*.jpg', '*.png']
-)
-
-print(f"Processed {batch_results['successfully_processed']} documents")
+### Process a new publication end-to-end
+Use the upload endpoint with `process_now=true`:
 ```
+POST /api/publications/<id>/upload
+form-data: file=<page>, process_now=true
+```
+The SSE stream surfaces per-page progress.
 
-## Best Practices
+## Pitfalls
 
-### Image Preprocessing
-
-1. **Quality assessment**: Check image quality before processing
-2. **Resolution optimization**: Ensure minimum 300 DPI for OCR
-3. **Noise reduction**: Apply appropriate filtering for cleaner text
-4. **Orientation correction**: Detect and correct page rotation
-
-### OCR Accuracy
-
-1. **Language-specific tuning**: Optimize for Chuukese character set
-2. **Confidence thresholds**: Filter low-confidence results
-3. **Multiple engine comparison**: Use different OCR engines for comparison
-4. **Human validation**: Sample-based quality checking
-
-## Dependencies
-
-- `pytesseract`: OCR engine interface
-- `opencv-python`: Image preprocessing
-- `Pillow`: Image handling and manipulation
-- `numpy`: Numerical operations for image processing
+- The repo previously had classes named `ChuukeseOCRProcessor` / `BatchOCRProcessor`. They are gone — use the three classes above.
+- `pdf2image` requires `poppler-utils` (installed in [Dockerfile](../../../Dockerfile#L17)). Local devs without poppler will get a confusing `pdftoppm` error.
+- DOCX extraction does **not** go through OCR — if a DOCX contains scanned page images you'll get empty text. Convert to PDF first.
+- Google Vision quotas are billed per-page — guard expensive calls behind `if not text or conf < 0.5`.
+- The chunker integrated by `EnhancedOCRProcessor` does **not** protect scripture references; for Bible/brochure inputs wrap the call with `protect_scripture_references` (see the [scripture-reference-parsing](../scripture-reference-parsing/SKILL.md) skill).

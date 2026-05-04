@@ -5,6 +5,18 @@ description: Specialized processing for Chuukese language text including tokeniz
 
 # Chuukese Language Processing
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> There is **no** central `ChuukeseProcessor` / `ChuukeseTokenizer` class in this repo — language handling is dispersed across several modules. The conceptual classes shown later in this skill are illustrative, not real APIs.
+>
+> Where actual Chuukese-aware logic lives:
+> - **Translation prompt building / direction detection:** [`src/translation/llm_trainer.py`](../../../src/translation/llm_trainer.py#L274) and the `/api/translate` route at [app.py](../../../app.py#L1538).
+> - **Scripture-safe parsing across CHK + EN:** [`src/utils/scripture_parser.py`](../../../src/utils/scripture_parser.py#L77). See the [scripture-reference-parsing](../scripture-reference-parsing/SKILL.md) skill.
+> - **Multi-language sentence boundaries:** [`IntelligentTextChunker`](../../../src/utils/intelligent_chunker.py#L47) carries language-specific punctuation tables. See [intelligent-text-chunking](../intelligent-text-chunking/SKILL.md).
+> - **Accent-rich corpus sources:** [`config/data/brochure_sentences.json`](../../../config/data/) and [`config/data/bible/`](../../../config/data/).
+>
+> Always NFC-normalise Chuukese text before comparison: `unicodedata.normalize("NFC", text)`.
+
 ## Overview
 
 A specialized skill for processing Chuukese language text, focusing on proper handling of accented characters, cultural context preservation, and language-specific linguistic patterns. Essential for building accurate translation systems and language models for this low-resource Micronesian language.

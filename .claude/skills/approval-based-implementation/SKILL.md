@@ -6,9 +6,25 @@ description: Structured problem-solving workflow requiring investigation, propos
 
 # Approval-Based Implementation
 
-## Core Principle
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> The default agent posture in this workspace is **"implement, don't just suggest"** (see the project standing instructions). This skill describes an **opt-in** workflow for situations where a proposal+approval gate is genuinely useful.
+>
+> **Use this skill when:**
+> - The change is broadly destructive or hard to reverse (DB migration, force-push, dropping tables, deleting users).
+> - The change touches shared infrastructure or production secrets.
+> - The user has explicitly asked you to plan first.
+> - The change spans many files and you're uncertain about scope.
+>
+> **Do NOT use this skill when:**
+> - The change is local, reversible, and the intent is clear (the default — just do it).
+> - You're answering a question or doing read-only research.
+>
+> The `manage_todo_list` tool referenced below **is** available in this VS Code agent environment. Use it for multi-step work; skip it for single-step tasks.
 
-**NEVER implement changes without first presenting a detailed proposal and receiving explicit approval.**
+## Core Principle (when this skill applies)
+
+**Present a detailed proposal and receive explicit approval before executing irreversible or high-risk changes.**
 
 ## Workflow Steps
 

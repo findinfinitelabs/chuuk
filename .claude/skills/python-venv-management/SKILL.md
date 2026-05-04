@@ -5,6 +5,16 @@ description: Automatically manage Python virtual environments (.venv) in termina
 
 # Python Virtual Environment Management
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> The repo's startup scripts are inconsistent:
+> - [`dev-start.sh`](../../../dev-start.sh#L20) activates `.venv/bin/activate` (the canonical name).
+> - [`run.sh`](../../../run.sh#L21) activates `venv/bin/activate` (legacy).
+>
+> **Standardise on `.venv/`.** When invoking Python or pip in this workspace, prefix with `.venv/bin/python` / `.venv/bin/pip` (or activate first). Tests are run via `.venv/bin/python -m pytest` ([pytest.ini](../../../pytest.ini)).
+>
+> Local Python should be 3.11+ to match the [Dockerfile](../../../Dockerfile#L11) runtime; some `transformers` / `torch` deprecation filters in `pytest.ini` assume modern versions.
+
 ## Core Principle
 
 **ALWAYS use the project's .venv when running Python commands in the terminal.**

@@ -1,351 +1,115 @@
 ---
 name: azure-container-deployment
-description: Deploy containerized applications to Azure Container Apps with Cosmos DB, Key Vault, ACR integration, and multi-container orchestration. Use when deploying the Chuuk Dictionary app, managing Azure infrastructure, or setting up production environments.
+description: Deploy the Chuuk Dictionary stack (main app + Ollama sidecar) to Azure Container Apps. Covers ACR remote builds via `az acr build`, Key Vault prerequisites, Cosmos DB credential injection, and the env-var contract. Use when running a deploy, debugging a failed deploy, or modifying Azure infrastructure.
 ---
 
 # Azure Container Deployment
 
-## Overview
+The deploy is one script: [`deploy-chuuk.sh`](../../../deploy-chuuk.sh). It deploys two Container Apps to a single Container Apps environment, sourcing secrets from Key Vault and Cosmos credentials at deploy time. **No** `docker build` is run locally — images are built remotely in ACR.
 
-Deploy and manage the Chuuk Dictionary application on Azure using Container Apps, Azure Container Registry (ACR), Cosmos DB, and Key Vault. Supports multi-container deployments including the main Flask application and Ollama for LLM-based translation.
+## Resources (defaults; override via env)
 
-## Architecture
+| Var | Default |
+|---|---|
+| `RESOURCE_GROUP` | `rg-chuuk-beta-eastus2` |
+| `LOCATION` | `eastus2` |
+| `CONTAINER_APP_ENV` | `chuuk-dictionary-env` |
+| `ACR_NAME` | `chuukdictregistry` |
+| `MAIN_APP_NAME` / `MAIN_IMAGE` | `chuuk-dictionary` / `chuuk-dictionary-app` |
+| `OLLAMA_APP_NAME` / `OLLAMA_IMAGE` | `chuuk-ollama` / `chuuk-ollama` |
+| `COSMOS_DB_NAME` | `chuuk-dictionary-cosmos` |
+| `KEY_VAULT_NAME` | `chuuk-kv-beta` |
+| `KV_FLASK_SECRET_NAME` | `flask-secret-key` |
+| `KV_GOOGLE_API_KEY_NAME` | `google-cloud-api-key` |
+| `AZURE_SUBSCRIPTION` | `FindInfinite Labs - Beta` |
 
-```text
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Azure Static  │────▶│   Azure Container │────▶│   Azure Cosmos  │
-│   Web Apps      │     │   Apps            │     │   DB            │
-│   (React)       │     │   (Flask + Ollama)│     │   (MongoDB API) │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                │
-                                ▼
-                        ┌──────────────────┐
-                        │   Azure Key      │
-                        │   Vault          │
-                        └──────────────────┘
-```
+The script `set`s the subscription explicitly ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L47)), so accidentally being on the wrong subscription is not a failure mode.
 
-## Configuration
+## Prerequisites (failure-fast)
 
-### Environment Variables
+`ensure_keyvault_and_secrets` ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L66)) requires:
 
-```bash
-# Resource configuration
-RESOURCE_GROUP=rg-chuuk-beta-eastus2
-LOCATION=eastus2
-CONTAINER_APP_ENV=chuuk-dictionary-env
-ACR_NAME=chuukdictregistry
-MAIN_APP_NAME=chuuk-dictionary
-OLLAMA_APP_NAME=chuuk-ollama
-COSMOS_DB_NAME=chuuk-dictionary-cosmos
-KEY_VAULT_NAME=chuuk-kv-beta
-```
+- The Key Vault exists and you have read access.
+- Both `flask-secret-key` and `google-cloud-api-key` secrets exist in it.
 
-## Deployment Script Reference
-
-### deploy-chuuk.sh Structure
+If either is missing the script aborts before doing any work. Provision them once via:
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-
-# Configuration
-RESOURCE_GROUP=${RESOURCE_GROUP:-rg-chuuk-beta-eastus2}
-LOCATION=${LOCATION:-eastus2}
-ACR_NAME=${ACR_NAME:-chuukdictregistry}
-MAIN_APP_NAME=${MAIN_APP_NAME:-chuuk-dictionary}
-
-# Logging helpers
-log() { printf "${BLUE}%s${NC}\n" "$1"; }
-success() { printf "${GREEN}%s${NC}\n" "$1"; }
-warn() { printf "${YELLOW}%s${NC}\n" "$1"; }
-die() { echo "$1" >&2; exit 1; }
-
-# Ensure Azure CLI logged in
-ensure_login() {
-  if ! az account show >/dev/null 2>&1; then
-    az login
-  fi
-}
+az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name flask-secret-key --value "$(openssl rand -hex 32)"
+az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name google-cloud-api-key --value "<your-key>"
 ```
 
-## Core Operations
+Cosmos DB credentials are fetched at deploy time via `az cosmosdb keys list` and passed in directly — no Key Vault entry needed for them.
 
-### 1. Resource Group Setup
+## Build flow (no local docker)
+
+`build_images` ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L116)) runs:
 
 ```bash
-# Create resource group
-az group create \
-  --name "$RESOURCE_GROUP" \
-  --location "$LOCATION"
+az acr build --registry chuukdictregistry --image chuuk-dictionary-app:latest \
+  --file Dockerfile --platform linux/amd64 .
+az acr build --registry chuukdictregistry --image chuuk-ollama:latest \
+  --file Dockerfile.ollama --platform linux/amd64 .
 ```
 
-### 2. Azure Container Registry
+This pushes the build context up to ACR and builds inside Azure — works on M-series Macs where local `linux/amd64` builds would otherwise be cross-arch.
+
+`PREPULL_LLM` is **not** set by default — the Ollama image starts lean and pulls `llama3.2:3b` on first boot (~30s warm-up). Add `--build-arg PREPULL_LLM=true` (and a much larger image) if cold starts are a problem.
+
+## Container Apps configuration (current)
+
+Main app ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L282)):
+- `--cpu 2.0 --memory 4.0Gi`
+- `--min-replicas 0 --max-replicas 2`
+- `--target-port 8000 --ingress external` (public HTTPS)
+
+Ollama sidecar ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L220)):
+- `--cpu 2.0 --memory 4Gi`
+- `--min-replicas 1 --max-replicas 1` (always on; keeps the model loaded)
+- `--target-port 11434 --ingress internal` (private FQDN, reachable only inside the env)
+
+The internal Ollama FQDN is captured into `OLLAMA_BASE_URL` and injected into the main app's env ([deploy-chuuk.sh](../../../deploy-chuuk.sh#L227)).
+
+## Env vars passed to the main app
+
+From [deploy-chuuk.sh](../../../deploy-chuuk.sh#L242):
+
+```
+DB_TYPE=cosmos
+COSMOS_DB_URI=<from az cosmosdb>
+COSMOS_DB_KEY=<from az cosmosdb keys list>
+FLASK_ENV=production
+FLASK_DEBUG=0
+FLASK_SECRET_KEY=<from KV>
+GOOGLE_CLOUD_API_KEY=<from KV>             # if present
+OLLAMA_BASE_URL=https://<internal-fqdn>    # if Ollama deployed
+```
+
+Important: secrets are passed as **plain env values** in the current script, **not** via `secretRef`. If you want to switch to secretRef, update `deploy_main` to first `az containerapp secret set` and then reference `secretref:<name>` in `--env-vars` — and remember to refresh secrets on every key rotation.
+
+## Architecture facts (don't forget)
+
+- The frontend is **bundled into the Flask image** (`COPY --from=frontend-builder /app/frontend/dist ./frontend/dist` in [Dockerfile](../../../Dockerfile#L33)). There is **no** Static Web App, no separate CDN, no Cloudflare. Same-origin everything.
+- One Container Apps environment hosts both apps. Splitting them across environments breaks the internal FQDN-based connectivity to Ollama.
+- Models are baked into the image (`COPY models/ ./models/` in [Dockerfile](../../../Dockerfile#L25)) — image size is ~2 GiB. Retraining requires a new image build + deploy. See [production-retraining-orchestration](../production-retraining-orchestration/SKILL.md).
+
+## Operational commands
 
 ```bash
-# Create ACR
-az acr create \
-  --name "$ACR_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --sku Basic \
-  --admin-enabled true
+# Tail logs
+az containerapp logs show -n chuuk-dictionary -g rg-chuuk-beta-eastus2 --follow
 
-# Get ACR credentials
-ACR_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
-ACR_USERNAME=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
-ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+# Open a shell in the running container
+az containerapp exec -n chuuk-dictionary -g rg-chuuk-beta-eastus2 --command /bin/bash
 
-# Login to ACR
-az acr login --name "$ACR_NAME"
-
-# Build and push main app image
-docker build -t "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}" .
-docker push "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}"
-
-# Build and push Ollama image
-docker build -f Dockerfile.ollama -t "${ACR_SERVER}/${OLLAMA_IMAGE}:${IMAGE_TAG}" .
-docker push "${ACR_SERVER}/${OLLAMA_IMAGE}:${IMAGE_TAG}"
+# Force a restart by bumping the revision
+az containerapp update -n chuuk-dictionary -g rg-chuuk-beta-eastus2 --image <same-tag>
 ```
 
-### 3. Cosmos DB Setup
+## Pitfalls
 
-```bash
-# Create Cosmos DB with MongoDB API
-az cosmosdb create \
-  --name "$COSMOS_DB_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --kind MongoDB \
-  --capabilities EnableServerless \
-  --locations regionName="$LOCATION" \
-  --default-consistency-level Session
-
-# Get connection string
-COSMOS_CONNECTION_STRING=$(az cosmosdb keys list \
-  --name "$COSMOS_DB_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --type connection-strings \
-  --query "connectionStrings[0].connectionString" -o tsv)
-```
-
-### 4. Key Vault Setup
-
-```bash
-# Create Key Vault
-az keyvault create \
-  --name "$KEY_VAULT_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION" \
-  --enable-rbac-authorization true
-
-# Store secrets
-az keyvault secret set \
-  --vault-name "$KEY_VAULT_NAME" \
-  --name "cosmos-connection-string" \
-  --value "$COSMOS_CONNECTION_STRING"
-
-az keyvault secret set \
-  --vault-name "$KEY_VAULT_NAME" \
-  --name "flask-secret-key" \
-  --value "$(openssl rand -hex 32)"
-```
-
-### 5. Container Apps Environment
-
-```bash
-# Create Container Apps environment
-az containerapp env create \
-  --name "$CONTAINER_APP_ENV" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION"
-
-# Get environment ID
-ENV_ID=$(az containerapp env show \
-  --name "$CONTAINER_APP_ENV" \
-  --resource-group "$RESOURCE_GROUP" \
-  --query id -o tsv)
-```
-
-### 6. Deploy Main Application
-
-```bash
-# Deploy main Flask app
-az containerapp create \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --environment "$CONTAINER_APP_ENV" \
-  --image "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}" \
-  --registry-server "$ACR_SERVER" \
-  --registry-username "$ACR_USERNAME" \
-  --registry-password "$ACR_PASSWORD" \
-  --target-port 8000 \
-  --ingress external \
-  --min-replicas 1 \
-  --max-replicas 3 \
-  --cpu 1.0 \
-  --memory 2Gi \
-  --env-vars \
-    "DB_TYPE=cosmos" \
-    "COSMOS_DB_URI=secretref:cosmos-connection-string" \
-    "FLASK_ENV=production"
-```
-
-### 7. Deploy Ollama Service
-
-```bash
-# Deploy Ollama container (internal only)
-az containerapp create \
-  --name "$OLLAMA_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --environment "$CONTAINER_APP_ENV" \
-  --image "${ACR_SERVER}/${OLLAMA_IMAGE}:${IMAGE_TAG}" \
-  --registry-server "$ACR_SERVER" \
-  --registry-username "$ACR_USERNAME" \
-  --registry-password "$ACR_PASSWORD" \
-  --target-port 11434 \
-  --ingress internal \
-  --min-replicas 0 \
-  --max-replicas 1 \
-  --cpu 2.0 \
-  --memory 4Gi
-```
-
-## Update Operations
-
-### Update Container Image
-
-```bash
-# Build new image
-docker build -t "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}" .
-docker push "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}"
-
-# Update container app
-az containerapp update \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --image "${ACR_SERVER}/${MAIN_IMAGE}:${IMAGE_TAG}"
-```
-
-### Scale Application
-
-```bash
-# Scale up
-az containerapp update \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --min-replicas 2 \
-  --max-replicas 5
-
-# Scale down (cost saving)
-az containerapp update \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --min-replicas 0 \
-  --max-replicas 1
-```
-
-### Update Environment Variables
-
-```bash
-az containerapp update \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --set-env-vars "NEW_VAR=value"
-```
-
-## Monitoring & Logs
-
-### View Logs
-
-```bash
-# Stream logs
-az containerapp logs show \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --follow
-
-# View recent logs
-az containerapp logs show \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --tail 100
-```
-
-### Check Status
-
-```bash
-# Get app URL
-az containerapp show \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --query "properties.configuration.ingress.fqdn" -o tsv
-
-# Check replicas
-az containerapp revision list \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --query "[].{name:name, replicas:replicas, active:active}"
-```
-
-## Cost Optimization
-
-### Serverless Cosmos DB
-
-```bash
-# Use serverless tier for development
-az cosmosdb create \
-  --name "$COSMOS_DB_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --capabilities EnableServerless
-```
-
-### Container Apps Scaling
-
-```bash
-# Scale to zero when not in use
-az containerapp update \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --min-replicas 0
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Container won't start**: Check logs and ensure all env vars are set
-2. **Database connection failed**: Verify Cosmos DB connection string
-3. **Image pull failed**: Check ACR credentials
-4. **Memory issues**: Increase container memory allocation
-
-### Debug Commands
-
-```bash
-# Check container app details
-az containerapp show \
-  --name "$MAIN_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP"
-
-# Check environment
-az containerapp env show \
-  --name "$CONTAINER_APP_ENV" \
-  --resource-group "$RESOURCE_GROUP"
-
-# Check secrets
-az keyvault secret list --vault-name "$KEY_VAULT_NAME"
-```
-
-## Best Practices
-
-1. **Use managed identity** for Azure resource authentication
-2. **Store secrets in Key Vault**, never in environment variables
-3. **Enable auto-scaling** based on HTTP traffic
-4. **Use staging slots** for zero-downtime deployments
-5. **Monitor costs** with Azure Cost Management
-6. **Enable logging** to Log Analytics workspace
-
-## Dependencies
-
-- Azure CLI (`az`)
-- Docker
-- Azure subscription with appropriate permissions
-- ACR, Cosmos DB, Key Vault, Container Apps resource providers enabled
+- The script auto-generates `FLASK_SECRET_KEY` and writes it to `.env` if missing — that's a *local-only* fallback. In CI/CD, ensure the Key Vault secret exists; otherwise users get logged out on every redeploy because the cookie signature changes.
+- `min-replicas=0` on the main app means cold starts. The first request after idle takes 5–15s. Don't set this to 1 without budget consideration.
+- `min-replicas=1` on Ollama is required — at 0, the model unloads and every translate request pays the model-load cost.
+- If you change `MAIN_APP_NAME`/`OLLAMA_APP_NAME`, the deploy will create new resources rather than update existing ones. Always check `az containerapp list -g $RESOURCE_GROUP -o table` before re-running.
+- Key Vault access: the deploy runs as the user invoking it, not as a managed identity — that user needs `Key Vault Secrets User` (or higher) on the vault.

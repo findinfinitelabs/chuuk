@@ -5,6 +5,17 @@ description: Assess and validate translation quality between Chuukese and Englis
 
 # Translation Quality Assessment
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> The actual quality-assessment surface in this repo is small:
+> - **In-process evaluation:** [`HelsinkiTranslator.evaluate_translation_quality(references, hypotheses)`](../../../src/translation/helsinki_translator_v2.py#L460) — BLEU only. **chrF and ROUGE are not wired up.** If you need them, add them inside that method.
+> - **Runtime engine comparison:** the `/api/translate` endpoint ([app.py](../../../app.py#L1538)) returns Google + Helsinki + Ollama side by side so users can pick the best.
+> - **Correction-driven improvement:** `/api/translate/correction` ([app.py](../../../app.py#L1627)) writes high-confidence pairs to the dictionary and may schedule a retrain. Status at `/api/translate/training-status` ([app.py](../../../app.py#L1802)).
+>
+> Older sections below describe `TranslationQualityAssessor` / `CulturalContextValidator` classes — those do not exist in the repo. Treat them as design ideas, not APIs.
+>
+> For the orchestration story see the [translation-orchestration-and-feedback](../translation-orchestration-and-feedback/SKILL.md) skill.
+
 ## Overview
 
 A specialized skill for assessing translation quality between Chuukese and English, incorporating cultural context validation, linguistic accuracy checking, and automated quality metrics. Designed to ensure high-quality translations that preserve both linguistic meaning and cultural nuances.

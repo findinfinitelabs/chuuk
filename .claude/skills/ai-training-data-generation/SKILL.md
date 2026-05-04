@@ -5,6 +5,21 @@ description: Generate high-quality training datasets from documents, text corpor
 
 # AI Training Data Generation
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> The actual generator is [`AITrainingDataGenerator`](../../../src/training/ai_training_generator.py#L39).
+> Real entry points:
+> - [`generate_comprehensive_training_data(parsed_doc, target_count)`](../../../src/training/ai_training_generator.py#L73)
+> - [`export_training_data(training_data, output_dir, format_type)`](../../../src/training/ai_training_generator.py#L527)
+>
+> Supported `format_type` values are `"jsonl"`, `"huggingface"`, `"ollama"`. **OpenAI format is not supported** — older sections of this skill claim otherwise.
+>
+> Bible/brochure data lives under [`config/data/`](../../../config/data/), **not** a top-level `data/`.
+>
+> The NWT EPUB parser only exposes `get_verse(book_num, chapter, verse)` ([nwt_epub_parser.py](../../../src/utils/nwt_epub_parser.py#L63)) and `book_chapter_map`. There is no `get_book_list` / `get_chapters` / `ParallelCorpusBuilder`. See the [bible-epub-processing](../bible-epub-processing/SKILL.md) skill.
+>
+> Production retraining wiring (data assembly, hashing, scheduling, model reload) is documented in [production-retraining-orchestration](../production-retraining-orchestration/SKILL.md).
+
 ## Overview
 
 A comprehensive skill for automatically generating high-quality training datasets from documents, text corpora, and structured content. Optimized for low-resource languages, dictionary content, and domain-specific knowledge extraction.

@@ -5,6 +5,22 @@ description: Process large documents (200+ pages) with structure preservation, i
 
 # Large Document Processing & Intelligent Text Chunking
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> The real components are:
+> - **Top-level pipeline:** [`LargeDocumentProcessor`](../../../src/pipeline/large_document_processor.py#L43)
+> - **Structure-aware parser:** [`AdvancedDocumentParser`](../../../src/ocr/advanced_document_parser.py#L66)
+> - **Streaming OCR with progress:** [`EnhancedOCRProcessor`](../../../src/ocr/enhanced_ocr_processor.py#L34)
+> - **Chunker:** [`IntelligentTextChunker`](../../../src/utils/intelligent_chunker.py#L47) — see the [intelligent-text-chunking](../intelligent-text-chunking/SKILL.md) skill.
+> - **Training data generation:** [`AITrainingDataGenerator`](../../../src/training/ai_training_generator.py#L39)
+> - **Setup helper:** [`scripts/setup_large_document_processing.py`](../../../scripts/setup_large_document_processing.py)
+>
+> The NWT EPUB parser exposes only `get_verse(book_num, chapter, verse)` ([nwt_epub_parser.py](../../../src/utils/nwt_epub_parser.py#L63)) — there is no `get_chapter` / `get_book`. See the [bible-epub-processing](../bible-epub-processing/SKILL.md) skill.
+>
+> Source data lives under [`config/data/`](../../../config/data/) (NOT a top-level `data/`).
+>
+> Always wrap chunking calls with `protect_scripture_references` / `restore_scripture_references` from [`src/utils/scripture_parser.py`](../../../src/utils/scripture_parser.py#L77) when input may contain Bible references.
+
 ## Overview
 
 Two tightly related concerns combined here:

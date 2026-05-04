@@ -5,6 +5,16 @@ description: Comprehensive code documentation standards and guidelines for maint
 
 # Code Documentation Standards
 
+> ## ⚠️ Repo Reality Check (read this first)
+>
+> This skill's later examples are domain-generic and don't always match what the Chuuk Dictionary repo actually does. Concrete things to know:
+>
+> - The backend is a **single-file monolith** ([app.py](../../../app.py)). New documentation should be section comments inside `app.py`, not new module READMEs. See the [flask-api-development](../flask-api-development/SKILL.md) skill for the route surface.
+> - The frontend uses CSS Modules per page (e.g. [`Compose.module.css`](../../../frontend/src/pages/Compose.module.css)) — document component contracts inline with TypeScript types, not external markdown.
+> - Database contracts live as JSON shapes in [`DictionaryDB`](../../../src/database/dictionary_db.py#L93), [`UserDB`](../../../src/database/user_db.py#L11), and [`PublicationManager`](../../../src/database/publication_manager.py#L10) — when adding a field, update the docstring on the writing method, not just the schema.
+> - There is **no markdownlint setup** in the repo. Don't invoke `markdownlint` in any tooling.
+> - Per the project's standing instructions: do **not** create new markdown docs to describe code changes unless explicitly asked. Update existing docs/code comments instead.
+
 ## Core Principle
 
 **ALWAYS maintain up-to-date documentation when creating or modifying code.**
