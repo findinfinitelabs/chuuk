@@ -200,6 +200,17 @@ class TrainingPairCollector:
                 self.db.phrases_collection.count_documents({}) +
                 self.db.paragraphs_collection.count_documents({})
             )
+            # Count individual sentences inside article_analysis_paragraphs,
+            # not paragraph documents — each sentence is one training pair.
+            try:
+                col = self.db.client["chuuk_dictionary"]["article_analysis_paragraphs"]
+                result = list(col.aggregate([
+                    {"$project": {"sentence_count": {"$size": {"$ifNull": ["$paragraph.sentences", []]}}}},
+                    {"$group": {"_id": None, "total": {"$sum": "$sentence_count"}}},
+                ]))
+                total += result[0]["total"] if result else 0
+            except Exception:
+                pass
             return max(0, total - since_pairs_count)
         except Exception:
             return 0
@@ -620,18 +631,22 @@ class ContinuousTrainer:
             dict_count = db.dictionary_collection.count_documents({})
             phrase_count = db.phrases_collection.count_documents({})
             para_count = db.paragraphs_collection.count_documents({})
+            # Count individual sentences (each = one training pair), not paragraph docs
             try:
-                client = db.client
-                db2 = client["chuuk_dictionary"]
-                article_count = db2["article_analysis_paragraphs"].count_documents({})
+                col = db.client["chuuk_dictionary"]["article_analysis_paragraphs"]
+                result = list(col.aggregate([
+                    {"$project": {"sentence_count": {"$size": {"$ifNull": ["$paragraph.sentences", []]}}}},
+                    {"$group": {"_id": None, "total": {"$sum": "$sentence_count"}}},
+                ]))
+                article_sentence_count = result[0]["total"] if result else 0
             except Exception:
-                article_count = 0
-            total = dict_count + phrase_count + para_count + article_count
+                article_sentence_count = 0
+            total = dict_count + phrase_count + para_count + article_sentence_count
             return {
                 "dictionary_entries": dict_count,
                 "phrase_pairs": phrase_count,
                 "paragraph_pairs": para_count,
-                "article_sentences": article_count,
+                "article_sentences": article_sentence_count,
                 "total_pairs": total,
                 "lora_update_count": self._lora_update_count,
             }
