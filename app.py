@@ -405,6 +405,24 @@ def update_user_terms_acceptance(email, terms_accepted_at):
 _initials_cache = {}
 
 
+def _cosmos_retry(fn, *args, max_retries: int = 5, **kwargs):
+    """Call fn(*args, **kwargs), retrying up to max_retries times on Cosmos 429s."""
+    import re as _re_mod
+    for attempt in range(max_retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            err = str(exc)
+            if "16500" not in err and "RetryAfterMs" not in err:
+                raise
+            if attempt == max_retries - 1:
+                raise
+            match = _re_mod.search(r"RetryAfterMs=(\d+)", err)
+            wait = max(int(match.group(1)) / 1000.0 if match else 1.0,
+                       0.2 * (2 ** attempt))
+            time.sleep(min(wait, 10.0))
+
+
 def _get_user_initials(email: str | None = None) -> str:
     """Return 2-letter initials for the logged-in user or given email.
     Falls back to 'AI' for system/upload actions."""
@@ -4784,8 +4802,9 @@ def analyze_article_url():
         def _find_dict_entry(word: str):
             """Return best-matching dictionary entry for a Chuukese word."""
             # 1. Exact case-insensitive match
-            result = _dict_db.dictionary_collection.find_one(
-                {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
+            result = _cosmos_retry(
+                _dict_db.dictionary_collection.find_one,
+                {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}},
             )
             if result:
                 return result
@@ -4795,11 +4814,15 @@ def analyze_article_url():
                 from difflib import SequenceMatcher
                 prefix = word[:4]
                 candidates = list(
-                    _dict_db.dictionary_collection.find(
-                        {"chuukese_word": {"$regex": f"^{re.escape(prefix)}", "$options": "i"}},
-                        {"chuukese_word": 1, "english_translation": 1, "grammar": 1,
-                         "grammar_modifier": 1, "definition": 1},
-                    ).limit(30)
+                    _cosmos_retry(
+                        lambda: list(
+                            _dict_db.dictionary_collection.find(
+                                {"chuukese_word": {"$regex": f"^{re.escape(prefix)}", "$options": "i"}},
+                                {"chuukese_word": 1, "english_translation": 1, "grammar": 1,
+                                 "grammar_modifier": 1, "definition": 1},
+                            ).limit(30)
+                        )
+                    )
                 )
                 if candidates:
                     best = max(
@@ -5203,8 +5226,9 @@ def add_dictionary_word():
             return jsonify({"error": "Chuukese word, English translation, and grammar type are required"}), 400
 
         # Check if word already exists
-        existing = dict_db.dictionary_collection.find_one(
-            {"chuukese_word": {"$regex": f"^{re.escape(chuukese_word)}$", "$options": "i"}}
+        existing = _cosmos_retry(
+            dict_db.dictionary_collection.find_one,
+            {"chuukese_word": {"$regex": f"^{re.escape(chuukese_word)}$", "$options": "i"}},
         )
 
         if existing:
@@ -5216,8 +5240,9 @@ def add_dictionary_word():
                 "updated_date": datetime.now(),
                 "edited_by": _get_user_initials(),
             }
-            dict_db.dictionary_collection.update_one(
-                {"_id": existing["_id"]}, {"$set": update_fields}
+            _cosmos_retry(
+                dict_db.dictionary_collection.update_one,
+                {"_id": existing["_id"]}, {"$set": update_fields},
             )
             return jsonify({"success": True, "message": "Word updated successfully", "entry_id": str(existing["_id"])}), 200
 
@@ -5246,7 +5271,7 @@ def add_dictionary_word():
         }
 
         # Insert into database
-        result = dict_db.dictionary_collection.insert_one(new_entry)
+        result = _cosmos_retry(dict_db.dictionary_collection.insert_one, new_entry)
 
         if result.inserted_id:
             return (
@@ -5305,7 +5330,10 @@ def update_dictionary_word():
         update_fields["updated_date"] = datetime.now()
         update_fields["updated_by"] = session.get("username", "unknown")
 
-        result = dict_db.dictionary_collection.update_one({"_id": object_id}, {"$set": update_fields})
+        result = _cosmos_retry(
+            dict_db.dictionary_collection.update_one,
+            {"_id": object_id}, {"$set": update_fields},
+        )
 
         if result.matched_count == 0:
             return jsonify({"error": "Entry not found"}), 404
