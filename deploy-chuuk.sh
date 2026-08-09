@@ -18,7 +18,7 @@ COSMOS_DB_NAME=${COSMOS_DB_NAME:-chuuk-dictionary-cosmos}
 KEY_VAULT_NAME=${KEY_VAULT_NAME:-chuuk-kv-beta}
 KV_FLASK_SECRET_NAME=${KV_FLASK_SECRET_NAME:-flask-secret-key}
 KV_GOOGLE_API_KEY_NAME=${KV_GOOGLE_API_KEY_NAME:-google-cloud-api-key}
-AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-FindInfinite Labs - Beta}
+AZURE_SUBSCRIPTION=${AZURE_SUBSCRIPTION:-3aa4f5ef-02e6-469a-9de4-b3b1e4389ca5}
 # Storage account for persisting fine-tuned model weights across container restarts.
 # The share is mounted at /app/models inside the main container so that any models
 # trained or updated at runtime survive redeploys and scale-to-zero events.
