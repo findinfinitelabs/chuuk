@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Module for managing dictionary publications and their pages
 """

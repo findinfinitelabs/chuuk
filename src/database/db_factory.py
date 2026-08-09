@@ -6,6 +6,7 @@ Supports both connection string and managed identity authentication.
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 # Load environment variables from .env file if it exists (local development)
 # In production (Azure), environment variables are set directly
@@ -80,22 +81,38 @@ def get_cosmos_client():
 
         # Check if managed identity is enabled
         use_managed_identity = os.getenv("USE_MANAGED_IDENTITY", "false").lower() == "true"
-        account_name = os.getenv("COSMOS_ACCOUNT_NAME", "chuuk-dictionary-cosmos")
+        endpoint = os.getenv("COSMOS_DB_URI", "https://localhost:8081")
+        key = os.getenv("COSMOS_DB_KEY")
+
+        parsed_endpoint = urlparse(endpoint)
+        endpoint_host = parsed_endpoint.netloc or parsed_endpoint.path
+
+        account_name = os.getenv("COSMOS_ACCOUNT_NAME")
+        if not account_name and endpoint_host.endswith(".documents.azure.com:443"):
+            account_name = endpoint_host.removesuffix(".documents.azure.com:443")
+        elif not account_name and endpoint_host.endswith(".documents.azure.com"):
+            account_name = endpoint_host.removesuffix(".documents.azure.com")
+        elif not account_name and endpoint_host.endswith(".mongo.cosmos.azure.com:10255"):
+            account_name = endpoint_host.removesuffix(".mongo.cosmos.azure.com:10255")
+        elif not account_name and endpoint_host.endswith(".mongo.cosmos.azure.com"):
+            account_name = endpoint_host.removesuffix(".mongo.cosmos.azure.com")
+        elif not account_name:
+            account_name = "chuuk-dictionary-cosmos"
 
         if use_managed_identity:
             return _get_client_with_managed_identity(account_name)
 
-        # Get Azure Cosmos DB details (connection string auth)
-        endpoint = os.getenv("COSMOS_DB_URI", "https://localhost:8081")
-        key = os.getenv("COSMOS_DB_KEY")
-
         print("🔍 DB Connection Debug:")
         print(f"  - endpoint: {endpoint}")
+        print(f"  - account_name: {account_name}")
         print(f"  - key exists: {bool(key)}")
-        print(f"  - 'chuuk-dictionary-cosmos' in endpoint: {'chuuk-dictionary-cosmos' in endpoint}")
-        print(f"  - 'cosmos.azure.com' in endpoint: {'cosmos.azure.com' in endpoint}")
+        print(f"  - endpoint host: {endpoint_host}")
+        print(f"  - 'documents.azure.com' in endpoint: {'documents.azure.com' in endpoint_host}")
+        print(f"  - 'cosmos.azure.com' in endpoint: {'cosmos.azure.com' in endpoint_host}")
 
-        if key and ("chuuk-dictionary-cosmos" in endpoint or "cosmos.azure.com" in endpoint):
+        if key and (
+            "documents.azure.com" in endpoint_host or "cosmos.azure.com" in endpoint_host
+        ):
             # Azure Cosmos DB MongoDB connection string
             # URL-encode the key to handle special characters
             encoded_key = urllib.parse.quote_plus(key)

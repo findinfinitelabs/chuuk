@@ -21,10 +21,14 @@ FLASK_PORT=5002
 REACT_PORT=5173
 PROJECT_DIR="$(pwd)"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
-VENV_DIR="$PROJECT_DIR/venv"
+DEFAULT_VENV_DIR="$PROJECT_DIR/.venv"
+LEGACY_VENV_DIR="$PROJECT_DIR/venv"
 
-# Database type - using Cosmos DB only
-DB_TYPE="cosmos"
+# Database type - loaded from .env when present
+DB_TYPE=""
+ENV_FILE="$PROJECT_DIR/.env"
+RUNTIME_REQUIREMENTS_FILE="$PROJECT_DIR/requirements.runtime.txt"
+FULL_REQUIREMENTS_FILE="$PROJECT_DIR/requirements.txt"
 
 # PID files for background processes
 COSMOS_PID_FILE="/tmp/chuuk_cosmos.pid"
@@ -50,6 +54,57 @@ print_error() {
 
 print_service() {
     echo -e "${CYAN}[SERVICE]${NC} $1"
+}
+
+print_info() {
+    echo -e "${PURPLE}[INFO]${NC} $1"
+}
+
+get_env_value() {
+    local key=$1
+
+    if [ ! -f "$ENV_FILE" ]; then
+        return 1
+    fi
+
+    awk -F'=' -v target="$key" '
+        /^[[:space:]]*#/ { next }
+        $1 == target {
+            sub(/^[[:space:]]+/, "", $2)
+            sub(/[[:space:]]+$/, "", $2)
+            print $2
+            exit
+        }
+    ' "$ENV_FILE"
+}
+
+resolve_venv_dir() {
+    if [ -d "$DEFAULT_VENV_DIR" ]; then
+        echo "$DEFAULT_VENV_DIR"
+    elif [ -d "$LEGACY_VENV_DIR" ]; then
+        echo "$LEGACY_VENV_DIR"
+    else
+        echo "$DEFAULT_VENV_DIR"
+    fi
+}
+
+ensure_virtualenv() {
+    VENV_DIR="$(resolve_venv_dir)"
+    local requirements_file="$FULL_REQUIREMENTS_FILE"
+
+    if [ -f "$RUNTIME_REQUIREMENTS_FILE" ]; then
+        requirements_file="$RUNTIME_REQUIREMENTS_FILE"
+    fi
+
+    if [ ! -x "$VENV_DIR/bin/python" ]; then
+        print_status "Creating Python virtual environment at $VENV_DIR"
+        python3 -m venv "$VENV_DIR" || return 1
+    fi
+
+    if ! "$VENV_DIR/bin/python" -c "import flask" >/dev/null 2>&1; then
+        print_status "Installing Python dependencies from $requirements_file"
+        "$VENV_DIR/bin/python" -m pip install -r "$requirements_file" || return 1
+    fi
 }
 
 # Function to check if a port is in use
@@ -166,20 +221,39 @@ check_service_status() {
 
 # Function to connect to Azure Cosmos DB
 start_database() {
-    print_service "Using Azure Cosmos DB..."
-    
-    # Check if we can connect to Azure Cosmos DB
-    local cosmos_uri=$([ -f .env ] && grep COSMOS_DB_URI .env | cut -d'=' -f2 || echo '')
-    if [[ "$cosmos_uri" == *"azure.com"* ]]; then
-        print_success "Azure Cosmos DB configured: $cosmos_uri"
-        print_status "Database: chuuk-dictionary-cosmos"
-        print_status "Resource Group: rg-chuuk-beta-eastus2"
-        print_status "Region: East US 2"
-        return 0
-    else
-        print_error "Azure Cosmos DB not configured in .env file"
-        return 1
+    DB_TYPE="$(get_env_value DB_TYPE)"
+
+    if [ -z "$DB_TYPE" ]; then
+        DB_TYPE="mongodb"
     fi
+
+    case "$DB_TYPE" in
+        mongodb)
+            local mongo_uri
+            mongo_uri="$(get_env_value MONGODB_URI)"
+            if [ -z "$mongo_uri" ]; then
+                mongo_uri="mongodb://localhost:27017/"
+            fi
+            print_service "Using local MongoDB configuration"
+            print_status "MongoDB URI: $mongo_uri"
+            return 0
+            ;;
+        cosmos)
+            local cosmos_uri
+            cosmos_uri="$(get_env_value COSMOS_DB_URI)"
+            if [ -z "$cosmos_uri" ]; then
+                print_error "DB_TYPE is set to cosmos, but COSMOS_DB_URI is missing from .env"
+                return 1
+            fi
+            print_service "Using Cosmos DB configuration"
+            print_status "Cosmos URI: $cosmos_uri"
+            return 0
+            ;;
+        *)
+            print_error "Unsupported DB_TYPE: $DB_TYPE"
+            return 1
+            ;;
+    esac
 }
 
 # Function to start Cosmos DB Emulator
@@ -286,18 +360,12 @@ start_flask() {
         return 0
     fi
     
-    # Check if virtual environment exists
-    if [ ! -d "$VENV_DIR" ]; then
-        print_error "Virtual environment not found at $VENV_DIR"
-        print_status "Please run setup first or create virtual environment"
+    ensure_virtualenv
+    if [ $? -ne 0 ]; then
+        print_error "Failed to prepare virtual environment at $VENV_DIR"
         return 1
     fi
-    
-    # Set Cosmos DB environment variables
-    export DB_TYPE="cosmos"
-    export COSMOS_DB_URI="https://localhost:$COSMOS_PORT"
-    export COSMOS_DB_KEY="C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
-    
+
     # Start Flask in background
     cd "$PROJECT_DIR"
     

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Module for looking up words and phrases from JW.org Chuukese sources and local publications
 """

@@ -29,7 +29,7 @@ accelerate>=0.20.0
 bitsandbytes>=0.41.0
 peft>=0.10.0
 apscheduler>=3.10.0
-mcp>=1.0.0
+# Optional: install the MCP SDK separately when running mcp_server/
 numpy>=1.21.0
 pandas>=1.3.0
 scikit-learn>=1.0.0

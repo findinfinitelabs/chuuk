@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 User Database Manager for Chuuk Dictionary
 Handles user authentication and management using Azure Cosmos DB with MongoDB API

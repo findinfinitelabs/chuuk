@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Processing Logger for real-time UI feedback
 Handles logging of OCR and dictionary indexing progress

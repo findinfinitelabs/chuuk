@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Dictionary Database Manager for Chuuk Dictionary OCR
 Handles indexing and searching of OCR'd dictionary content using MongoDB
