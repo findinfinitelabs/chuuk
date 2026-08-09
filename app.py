@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Flask application for Chuuk Dictionary OCR and Lookup
 """
@@ -4768,29 +4770,65 @@ def analyze_article_url():
                     out.append(part)
             return out
 
+        def _fuzzy_token_match(tok_clean: str, trans_word: str) -> bool:
+            """True if tok_clean and trans_word are close enough to count as aligned."""
+            if tok_clean == trans_word:
+                return True
+            # stem prefix: share at least 4 leading chars (handles go/going, run/running)
+            stem_len = min(len(tok_clean), len(trans_word), 5)
+            if stem_len >= 4 and tok_clean[:stem_len] == trans_word[:stem_len]:
+                return True
+            from difflib import SequenceMatcher
+            return SequenceMatcher(None, tok_clean, trans_word).ratio() >= 0.82
+
+        def _find_dict_entry(word: str):
+            """Return best-matching dictionary entry for a Chuukese word."""
+            # 1. Exact case-insensitive match
+            result = _dict_db.dictionary_collection.find_one(
+                {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
+            )
+            if result:
+                return result
+
+            # 2. Fuzzy fallback: fetch candidates sharing the first 4 chars, score with difflib
+            if len(word) >= 4:
+                from difflib import SequenceMatcher
+                prefix = word[:4]
+                candidates = list(
+                    _dict_db.dictionary_collection.find(
+                        {"chuukese_word": {"$regex": f"^{re.escape(prefix)}", "$options": "i"}},
+                        {"chuukese_word": 1, "english_translation": 1, "grammar": 1,
+                         "grammar_modifier": 1, "definition": 1},
+                    ).limit(30)
+                )
+                if candidates:
+                    best = max(
+                        candidates,
+                        key=lambda c: SequenceMatcher(None, word.lower(), c["chuukese_word"].lower()).ratio(),
+                    )
+                    if SequenceMatcher(None, word.lower(), best["chuukese_word"].lower()).ratio() >= 0.75:
+                        return best
+            return None
+
         def analyze_words(sentence_text, eng_tokens=None):
             """Look up each word in the dictionary; optionally compute token alignment."""
             words = re.findall(r"\b[\w\u00C0-\u024F]+\b", sentence_text)
             analyses = []
             english_parts = []
+            # Pre-clean English tokens once for alignment
+            clean_eng = [re.sub(r"[^\w]", "", t.lower()) for t in (eng_tokens or [])]
+
             for word in words:
-                result = _dict_db.dictionary_collection.find_one(
-                    {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
-                )
-                if not result:
-                    result = _dict_db.dictionary_collection.find_one(
-                        {"chuukese_word": {"$regex": f"^{re.escape(word)}", "$options": "i"}}
-                    )
+                result = _find_dict_entry(word)
                 if result:
                     english = result.get("english_translation", "")
-                    # Token alignment: which English tokens does this translation cover?
+                    # Token alignment: fuzzy-match each translation word against English tokens
                     token_indices = []
-                    if eng_tokens:
-                        trans_words = set(re.sub(r"[^\w\s]", "", english.lower()).split())
-                        token_indices = [
-                            i for i, tok in enumerate(eng_tokens)
-                            if re.sub(r"[^\w]", "", tok.lower()) in trans_words
-                        ]
+                    if clean_eng:
+                        trans_words = re.sub(r"[^\w\s]", "", english.lower()).split()
+                        for i, tok_clean in enumerate(clean_eng):
+                            if tok_clean and any(_fuzzy_token_match(tok_clean, tw) for tw in trans_words if tw):
+                                token_indices.append(i)
                     analyses.append({
                         "original": word,
                         "english": english,
@@ -5170,7 +5208,18 @@ def add_dictionary_word():
         )
 
         if existing:
-            return jsonify({"error": "Word already exists in dictionary"}), 400
+            # Word exists — update it instead of rejecting
+            update_fields = {
+                "english_translation": english_translation,
+                "definition": definition,
+                "grammar": grammar,
+                "updated_date": datetime.now(),
+                "edited_by": _get_user_initials(),
+            }
+            dict_db.dictionary_collection.update_one(
+                {"_id": existing["_id"]}, {"$set": update_fields}
+            )
+            return jsonify({"success": True, "message": "Word updated successfully", "entry_id": str(existing["_id"])}), 200
 
         # Prepare the new entry
         confidence_score = data.get("confidence", 100)

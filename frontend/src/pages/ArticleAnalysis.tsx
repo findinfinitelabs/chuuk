@@ -581,6 +581,7 @@ export default function ArticleAnalysis() {
     setEditLoading(true)
     setEditError('')
     try {
+      let updatedEntryId = editWord.entry_id
       if (editWord.found && editWord.entry_id) {
         const res = await fetch('/api/dictionary/update', {
           method: 'PUT',
@@ -599,19 +600,26 @@ export default function ArticleAnalysis() {
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Add failed')
+        updatedEntryId = json.entry_id ?? updatedEntryId
       }
-      setParagraphs(prev => prev.map(para => ({
+      const updatedParagraphs = paragraphs.map(para => ({
         ...para,
         sentences: para.sentences.map(s => ({
           ...s,
           words: s.words.map(w =>
             w.original === editWord.original
-              ? { ...w, english: editEnglish, grammar: editGrammar, definition: editDefinition, found: true }
+              ? { ...w, english: editEnglish, grammar: editGrammar, definition: editDefinition, found: true, entry_id: updatedEntryId }
               : w
           ),
         })),
-      })))
+      }))
+      setParagraphs(updatedParagraphs)
       setEditWord(null)
+      // Re-persist so changes survive navigation
+      if (meta) {
+        const sc = updatedParagraphs.reduce((sum, p) => sum + (p.sentence_count ?? p.sentences.length), 0)
+        await saveAnalysis(meta, updatedParagraphs, sc)
+      }
     } catch (err: any) {
       setEditError(err.message || 'Save failed')
     } finally {
