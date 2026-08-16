@@ -5145,7 +5145,8 @@ def save_article_analysis():
             "updated_at": now,
         }
 
-        result = col.update_one(
+        result = _cosmos_retry(
+            col.update_one,
             {"url": url},
             {"$set": doc, "$setOnInsert": {"created_at": now}},
             upsert=True,
@@ -5153,25 +5154,27 @@ def save_article_analysis():
 
         analysis_oid = result.upserted_id
         if analysis_oid is None:
-            existing = col.find_one({"url": url}, {"_id": 1})
+            existing = _cosmos_retry(col.find_one, {"url": url}, {"_id": 1})
             analysis_oid = existing["_id"] if existing else None
 
         if analysis_oid is None:
             return jsonify({"error": "Failed to resolve saved analysis ID"}), 500
 
-        paragraphs_col.delete_many({"analysis_id": analysis_oid})
+        _cosmos_retry(paragraphs_col.delete_many, {"analysis_id": analysis_oid})
         if paragraphs:
-            paragraphs_col.insert_many(
-                [
-                    {
-                        "analysis_id": analysis_oid,
-                        "paragraph_index": index,
-                        "paragraph": paragraph,
-                        "updated_at": now,
-                    }
-                    for index, paragraph in enumerate(paragraphs)
-                ]
-            )
+            docs = [
+                {
+                    "analysis_id": analysis_oid,
+                    "paragraph_index": index,
+                    "paragraph": paragraph,
+                    "updated_at": now,
+                }
+                for index, paragraph in enumerate(paragraphs)
+            ]
+            # insert in small batches so a single 429 doesn't abort the whole set
+            batch_size = 10
+            for i in range(0, len(docs), batch_size):
+                _cosmos_retry(paragraphs_col.insert_many, docs[i:i + batch_size])
 
         return jsonify({"success": True, "id": str(analysis_oid)})
     except Exception as e:
