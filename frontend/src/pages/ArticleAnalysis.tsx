@@ -114,15 +114,15 @@ function WordChip({ word, isHighlighted, isAdmin, onHoverEnter, onHoverLeave, on
         borderRadius: 4,
         cursor: isAdmin ? 'pointer' : word.found ? 'help' : 'default',
         background: isHighlighted
-          ? 'rgba(91,33,182,0.18)'
+          ? 'rgba(47,158,68,0.18)'
           : word.found
-            ? 'rgba(91,33,182,0.08)'
+            ? 'rgba(47,158,68,0.08)'
             : 'rgba(250,82,82,0.10)',
         border: `1px solid ${
           isHighlighted
-            ? 'rgba(91,33,182,0.5)'
+            ? 'rgba(47,158,68,0.5)'
             : word.found
-              ? 'rgba(91,33,182,0.25)'
+              ? 'rgba(47,158,68,0.25)'
               : 'rgba(250,82,82,0.35)'
         }`,
         transition: 'all 0.15s',
@@ -133,7 +133,7 @@ function WordChip({ word, isHighlighted, isAdmin, onHoverEnter, onHoverLeave, on
       <span style={{
         fontSize: 15,
         fontWeight: 700,
-        color: isHighlighted ? '#3b1898' : word.found ? '#5f30d8' : '#c0392b',
+        color: isHighlighted ? '#1b5e20' : word.found ? '#2f9e44' : '#c0392b',
         lineHeight: 1.4,
         display: 'flex',
         alignItems: 'center',
@@ -146,7 +146,7 @@ function WordChip({ word, isHighlighted, isAdmin, onHoverEnter, onHoverLeave, on
       {word.found && word.english && (
         <span style={{
           fontSize: 10,
-          color: isHighlighted ? '#5b21b6' : '#7c55de',
+          color: isHighlighted ? '#1b5e20' : '#2f9e44',
           lineHeight: 1.2,
           fontWeight: 500,
           maxWidth: 90,
@@ -192,6 +192,8 @@ function EnglishSentence({ sentence, highlightIndices }: {
   sentence: AnalyzedSentence
   highlightIndices: number[]
 }) {
+  // Only ever show the real English text fetched from the source article — never
+  // the dictionary-assembled gloss, which is not an actual translation of the sentence.
   if (sentence.english_tokens && sentence.english_tokens.length > 0) {
     return (
       <Text size="md" fw={600} c="teal.8" style={{ lineHeight: 1.9 }}>
@@ -199,11 +201,11 @@ function EnglishSentence({ sentence, highlightIndices }: {
           const hl = highlightIndices.includes(ti)
           return (
             <span key={ti} style={{
-              background: hl ? 'rgba(91,33,182,0.15)' : 'transparent',
+              background: hl ? 'rgba(47,158,68,0.15)' : 'transparent',
               borderRadius: 3,
               padding: '1px 3px',
               fontWeight: hl ? 700 : 600,
-              color: hl ? '#3b1898' : undefined,
+              color: hl ? '#1b5e20' : undefined,
               transition: 'background 0.12s',
             }}>
               {tok}{' '}
@@ -213,13 +215,15 @@ function EnglishSentence({ sentence, highlightIndices }: {
       </Text>
     )
   }
-  return (
-    <Stack gap={4}>
-      <Text size="xs" c="dimmed" fs="italic">Assembled from dictionary:</Text>
-      <Text size="sm" fw={500} c="teal.8" style={{ lineHeight: 1.7 }}>
-        {sentence.english_assembled || <Text component="span" c="dimmed" fs="italic">No matches</Text>}
+  if (sentence.english_text) {
+    return (
+      <Text size="md" fw={600} c="teal.8" style={{ lineHeight: 1.9 }}>
+        {sentence.english_text}
       </Text>
-    </Stack>
+    )
+  }
+  return (
+    <Text size="sm" c="dimmed" fs="italic">No matching English source sentence found</Text>
   )
 }
 
@@ -283,7 +287,7 @@ function SentenceRow({ sentence, index, isAdmin, onEditWord }: {
 
         {/* English side */}
         <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
-          <Text size="xs" c="dimmed">{sentence.english_text ? 'English' : 'English (assembled)'}</Text>
+          <Text size="xs" c="dimmed">English</Text>
           <EnglishSentence sentence={sentence} highlightIndices={highlightIndices} />
           {hoveredWordIdx !== null && sentence.words[hoveredWordIdx]?.found && (
             <Box p={6} style={{
@@ -878,8 +882,8 @@ export default function ArticleAnalysis() {
               <Group gap="lg" wrap="wrap">
                 <Text size="sm" fw={600} c="dimmed">Legend:</Text>
                 <Group gap={6}>
-                  <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, background: 'rgba(91,33,182,0.1)', border: '1px solid rgba(91,33,182,0.3)' }} />
-                  <Text size="sm">Found — shows English gloss + hover to highlight</Text>
+                  <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, background: 'rgba(47,158,68,0.1)', border: '1px solid rgba(47,158,68,0.3)' }} />
+                  <Text size="sm">Found in dictionary — hover to highlight matching English</Text>
                 </Group>
                 <Group gap={6}>
                   <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 2, background: 'rgba(250,82,82,0.12)', border: '1px solid rgba(250,82,82,0.4)' }} />
