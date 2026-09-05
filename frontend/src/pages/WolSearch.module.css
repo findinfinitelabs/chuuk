@@ -1,0 +1,171 @@
+/*
+ * Watchtower Library Search Page Styles
+ * Purpose: WOL sentence results with the searched term highlighted, plus
+ *          verb examples annotated with their subject.
+ */
+
+/* Result card — subtle lift so a long list stays scannable */
+.result {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.result:hover {
+  border-color: #228be6;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Sentence body. Chuukese uses accented characters throughout, so keep the
+   Noto Sans stack the rest of the app relies on and give lines room to breathe. */
+.sentence {
+  font-size: 1.02rem;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+/* The searched term. Uses <mark>, so it is announced by screen readers and
+   stays legible if colours are overridden. The dictionary tint below supplies
+   the background, so the search hit is marked with weight and an underline
+   instead — the two signals then read independently. */
+.hit {
+  background-color: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: #f08c00;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* A word with no search hit and no dictionary tint still needs the same
+   padding so the line does not jitter as tints appear. */
+.word {
+  padding: 1px 2px;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* In the dictionary, with an English translation. */
+.translated {
+  background-color: #d3f9d8;
+  cursor: help;
+}
+
+.translated:hover {
+  background-color: #b2f2bb;
+}
+
+/* In the dictionary, but no English translation recorded yet. */
+.untranslated {
+  background-color: #ffdeeb;
+  cursor: help;
+}
+
+.untranslated:hover {
+  background-color: #fcc2d7;
+}
+
+/* Not in the dictionary, but we hold words that look related. */
+.similar {
+  background-color: #fff3bf;
+  cursor: help;
+}
+
+.similar:hover {
+  background-color: #ffec99;
+}
+
+/* Floating gloss shown on hover. One node for the whole page, positioned
+   against the cursor, rather than a tooltip per word — a page of results runs
+   to well over a thousand words. */
+.gloss {
+  position: fixed;
+  z-index: 400;
+  max-width: 280px;
+  pointer-events: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1a1b1e;
+  color: #f1f3f5;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.glossWord {
+  font-weight: 700;
+  color: #ffd43b;
+}
+
+.glossEnglish {
+  color: #8ce99a;
+}
+
+.glossMeta {
+  color: #adb5bd;
+  font-size: 0.74rem;
+}
+
+/* Alphabetical list of related words we do hold */
+.glossList {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.glossList li {
+  padding: 1px 0;
+  color: #ffe066;
+  font-size: 0.8rem;
+}
+
+.glossList li span {
+  color: #ced4da;
+  font-size: 0.74rem;
+}
+
+/* Legend under the search bar */
+.swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+/* Article title above each sentence */
+.title {
+  color: #1971c2;
+}
+
+/* Raw WOL citation — secondary to the parsed badges beside it */
+.citation {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+@media (max-width: 640px) {
+  .sentence {
+    font-size: 0.96rem;
+  }
+
+  .citation {
+    display: none;
+  }
+}
+
+/* Sidebar sits beside the results on desktop and stacks above them on
+   narrow screens, where a 250px column would squeeze the sentences. */
+@media (max-width: 900px) {
+  .layout {
+    flex-wrap: wrap !important;
+  }
+
+  .layout > *:first-child {
+    width: 100% !important;
+  }
+}
