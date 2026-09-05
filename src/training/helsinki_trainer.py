@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Helsinki-NLP Model Fine-tuning System for Chuukese
 Implements real fine-tuning of OPUS-MT models with dictionary corrections
 """
+
+# `from __future__ import annotations` keeps the `X | None` annotations below as
+# strings. Without it this module raises TypeError on import under Python 3.9,
+# which is what the local .venv runs — that broke every scheduled training run.
 
 import os
 import torch

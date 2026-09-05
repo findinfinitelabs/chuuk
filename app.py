@@ -4592,6 +4592,534 @@ def lookup_verb_examples():
 
 
 # =============================================================================
+# Watchtower Online Library (WOL) search
+# =============================================================================
+# Live lookups against wol.jw.org. Each request hits an external site, so pages
+# is capped to keep response times and load on WOL reasonable.
+_MAX_WOL_PAGES = 4
+_wol_search = None
+
+
+def _get_wol_search():
+    """Lazily build the WOL client, reusing its HTTP session across requests."""
+    global _wol_search
+    if _wol_search is None:
+        from src.core.wol_search import WOLSearch  # noqa: PLC0415
+
+        _wol_search = WOLSearch()
+    return _wol_search
+
+
+# Letters only, so the split matches the one the frontend uses for rendering.
+_WOL_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def _wol_entry_rank(doc: dict) -> tuple:
+    """Rank duplicate entries for the same word so the best one wins.
+
+    The dictionary holds several rows for common words ("ewe" appears three
+    times). Prefer a row that actually has a translation, then the more
+    confident one, then one carrying a definition.
+    """
+    has_english = bool((doc.get("english_translation") or "").strip())
+    try:
+        confidence = float(doc.get("confidence_score") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return (has_english, confidence, bool((doc.get("definition") or "").strip()))
+
+
+def _dictionary_sources() -> list[tuple]:
+    """The collections holding Chuukese headwords, and the field each uses.
+
+    Single words are spread across three collections — notably 1,226 of the
+    `phrases` rows are a single word ("kilisou" lives there, not in
+    `dictionary_entries`) — so a lookup that reads only `dictionary_entries`
+    reports plenty of known words as missing.
+    """
+    if dict_db is None:
+        return []
+    sources = []
+    for collection, field in (
+        (getattr(dict_db, "dictionary_collection", None), "chuukese_word"),
+        (getattr(dict_db, "phrases_collection", None), "chuukese_phrase"),
+        (getattr(dict_db, "words_collection", None), "chuukese"),
+    ):
+        if collection is not None:
+            sources.append((collection, field))
+    return sources
+
+
+def _lookup_words_bulk(words: set[str]) -> dict:
+    """Look up many Chuukese words at once, keyed by lowercase form.
+
+    One indexed ``$in`` query per collection rather than a query per word: a page
+    of WOL results runs to several hundred distinct words, and per-word regex
+    lookups scan the collection and quickly earn a Cosmos 429.
+
+    Returns ``{lowercase_word: {english, grammar, definition, status}}`` where
+    status is "translated" or "untranslated". Words absent from every collection
+    are simply missing from the map.
+    """
+    sources = _dictionary_sources()
+    if not words or not sources:
+        return {}
+
+    # The indexes are exact and case-sensitive, so send the casings worth
+    # checking rather than falling back to a regex.
+    variants: set[str] = set()
+    for word in words:
+        variants.update({word, word.lower(), word.capitalize()})
+    if not variants:
+        return {}
+    variant_list = list(variants)
+
+    best: dict[str, dict] = {}
+    for collection, field in sources:
+        try:
+            docs = _cosmos_retry(
+                lambda c=collection, f=field: list(
+                    c.find(
+                        {f: {"$in": variant_list}},
+                        {
+                            "_id": 0,
+                            f: 1,
+                            "english_translation": 1,
+                            "grammar": 1,
+                            "grammar_modifier": 1,
+                            "definition": 1,
+                        },
+                    )
+                )
+            )
+        except Exception as e:  # a dictionary outage must not break the search
+            print(f"⚠️ WOL dictionary lookup failed on {field}: {e}")
+            continue
+
+        for doc in docs:
+            key = (doc.get(field) or "").strip().lower()
+            if not key:
+                continue
+            if key not in best or _wol_entry_rank(doc) > _wol_entry_rank(best[key]):
+                best[key] = doc
+
+    out = {}
+    for key, doc in best.items():
+        english = (doc.get("english_translation") or "").strip()
+        out[key] = {
+            "english": english,
+            "grammar": (doc.get("grammar") or "").strip(),
+            "grammar_modifier": doc.get("grammar_modifier") or None,
+            "definition": (doc.get("definition") or "").strip(),
+            "status": "translated" if english else "untranslated",
+        }
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Near-match suggestions for words the dictionary does not hold
+# ---------------------------------------------------------------------------
+# Chuukese builds words as [tense] + [root] + [pronoun suffix] + [directional],
+# so an unknown surface form very often shares a stem with something we do have.
+# Matching is done against an in-memory index of the whole word list: pulling
+# 9,945 words costs one second and ~78 KB, where per-word regex queries would
+# scan the collection and earn a Cosmos 429.
+_similar_index_cache: dict = {"index": None, "timestamp": None}
+_SIMILAR_MIN_STEM = 4  # shorter shared stems are noise
+_SIMILAR_LIMIT = 12
+
+
+def _norm_word(word: str) -> str:
+    """Lowercase and strip diacritics, so 'pwáseló' and 'pwaselo' compare equal."""
+    import unicodedata  # noqa: PLC0415
+
+    decomposed = unicodedata.normalize("NFD", (word or "").lower())
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
+def _get_similarity_index() -> dict:
+    """Build (or reuse) the in-memory word index, refreshed on the usual TTL."""
+    cached = _similar_index_cache
+    if cached["index"] is not None and cached["timestamp"] is not None:
+        age = (datetime.now(timezone.utc) - cached["timestamp"]).total_seconds()
+        if age < CACHE_EXPIRY_SECONDS:
+            return cached["index"]
+
+    index = {"by_norm": {}, "by_prefix": {}, "english": {}}
+    sources = _dictionary_sources()
+    if not sources:
+        return index
+
+    for collection, field in sources:
+        try:
+            docs = _cosmos_retry(
+                lambda c=collection, f=field: list(
+                    c.find({}, {"_id": 0, f: 1, "english_translation": 1})
+                )
+            )
+        except Exception as e:
+            print(f"⚠️ Could not index {field} for similar-word matching: {e}")
+            continue
+
+        for doc in docs:
+            word = (doc.get(field) or "").strip()
+            # Single words only. Both collections carry whole example sentences,
+            # and offering one as a "similar word" would be noise.
+            if not word or " " in word:
+                continue
+            english = (doc.get("english_translation") or "").strip()
+            # Keep the most informative gloss when a word appears more than once.
+            if english and len(english) > len(index["english"].get(word, "")):
+                index["english"][word] = english
+            index["english"].setdefault(word, english)
+
+            norm = _norm_word(word)
+            if not norm:
+                continue
+            index["by_norm"].setdefault(norm, set()).add(word)
+            index["by_prefix"].setdefault(norm[:3], []).append((norm, word))
+
+    _similar_index_cache["index"] = index
+    _similar_index_cache["timestamp"] = datetime.now(timezone.utc)
+    return index
+
+
+def _within_one_edit(a: str, b: str) -> bool:
+    """True when `a` and `b` differ by at most one insert, delete or substitution."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if a == b:
+        return True
+    if len(a) > len(b):
+        a, b = b, a
+    # a is now the shorter (or equal) string.
+    i = j = 0
+    edited = False
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        if edited:
+            return False
+        edited = True
+        if len(a) == len(b):
+            i += 1
+        j += 1
+    return True
+
+
+def _similar_words(word: str, index: dict, limit: int = _SIMILAR_LIMIT) -> list[dict]:
+    """Find dictionary words related to an unknown surface form.
+
+    Looks for, in order of usefulness: the same word spelled with different
+    accents, a shared stem in either direction, and a single-character
+    difference. Returns them alphabetically, as asked for in the UI.
+    """
+    norm = _norm_word(word)
+    if not norm or len(norm) < 3:
+        return []
+
+    matches: set[str] = set()
+
+    # 1. Same word, different diacritics or casing.
+    matches.update(index["by_norm"].get(norm, set()))
+
+    # 2 & 3. Stem relations and near-misses share the opening characters, so one
+    # bucket covers both without scanning the full list.
+    for bucket_key in {norm[:3], norm[:2]}:
+        for cand_norm, cand_word in index["by_prefix"].get(bucket_key, ()):
+            if cand_norm == norm:
+                matches.add(cand_word)
+                continue
+            shorter = min(len(cand_norm), len(norm))
+            if shorter >= _SIMILAR_MIN_STEM and (
+                cand_norm.startswith(norm) or norm.startswith(cand_norm)
+            ):
+                matches.add(cand_word)
+            elif len(norm) >= 4 and _within_one_edit(cand_norm, norm):
+                matches.add(cand_word)
+
+    if not matches:
+        return []
+
+    ordered = sorted(matches, key=lambda w: (_norm_word(w), w))[:limit]
+    return [{"word": w, "english": index["english"].get(w, "")} for w in ordered]
+
+
+def _attach_dictionary(payload: dict) -> dict:
+    """Add a `dictionary` map covering every word in the result sentences, plus a
+    `similar` map suggesting related entries for the words we do not hold."""
+    words: set[str] = set()
+    for result in payload.get("results", []):
+        for match in _WOL_WORD_RE.finditer(result.get("text", "")):
+            words.add(match.group(0).lower())
+
+    found = _lookup_words_bulk(words)
+    payload["dictionary"] = found
+
+    unknown = [w for w in words if w not in found]
+    similar: dict[str, list] = {}
+    if unknown:
+        index = _get_similarity_index()
+        if index["by_prefix"]:
+            for word in unknown:
+                hits = _similar_words(word, index)
+                if hits:
+                    similar[word] = hits
+    payload["similar"] = similar
+    return payload
+
+
+@app.route("/api/wol/search", methods=["POST"])
+@login_required
+def api_wol_search():
+    """Find sentences on wol.jw.org containing a word or phrase.
+
+    Returns each sentence split into segments so the caller can highlight the
+    match without rendering raw HTML, plus a citation, parsed publication date
+    and a deep link to the source paragraph.
+    """
+    try:
+        data = request.get_json() or {}
+        query = (data.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "Query is required"}), 400
+        if len(query) > 200:
+            return jsonify({"error": "Query is too long (200 characters max)"}), 400
+
+        sort = data.get("sort", "newest")
+        if sort not in ("newest", "oldest", "relevance"):
+            sort = "newest"
+        pages = max(1, min(int(data.get("pages", 2) or 2), _MAX_WOL_PAGES))
+        limit = max(1, min(int(data.get("limit", 60) or 60), 200))
+
+        result = _get_wol_search().search(query, pages=pages, sort=sort, limit=limit)
+        if data.get("dictionary", True):
+            _attach_dictionary(result)
+        return jsonify(result), 200
+
+    except requests.RequestException as e:
+        return jsonify({"error": f"Could not reach wol.jw.org: {e}"}), 502
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/wol/verb-examples", methods=["POST"])
+@login_required
+def api_wol_verb_examples():
+    """Find examples of a verb on wol.jw.org, with the subject of each use.
+
+    Chuukese marks the subject with a proclitic before the verb, so the word in
+    front of each hit identifies the subject (and often the tense). Possessives
+    are reported as such, since "ach tongei" is "our love" rather than "we love".
+    """
+    try:
+        data = request.get_json() or {}
+        verb = (data.get("verb") or "").strip()
+        if not verb:
+            return jsonify({"error": "Verb is required"}), 400
+        if len(verb) > 100:
+            return jsonify({"error": "Verb is too long (100 characters max)"}), 400
+
+        pages = max(1, min(int(data.get("pages", 2) or 2), _MAX_WOL_PAGES))
+        limit = max(1, min(int(data.get("limit", 60) or 60), 200))
+
+        result = _get_wol_search().verb_examples(verb, pages=pages, limit=limit)
+        if data.get("dictionary", True):
+            _attach_dictionary(result)
+        return jsonify(result), 200
+
+    except requests.RequestException as e:
+        return jsonify({"error": f"Could not reach wol.jw.org: {e}"}), 502
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Saved WOL searches
+# ---------------------------------------------------------------------------
+# A search costs a live round trip to wol.jw.org plus a dictionary pass, so
+# completed searches are kept and can be reopened from the sidebar without
+# going back out to WOL. One document per search — a two-page search with its
+# dictionary and suggestions is ~100 KB, well inside the Cosmos limit.
+
+
+def _get_wol_searches_collection():
+    """Return (or lazily create) the wol_searches collection."""
+    if dict_db is None or dict_db.db is None:
+        return None
+    return dict_db.db["wol_searches"]
+
+
+_WOL_SEARCH_META = {
+    "_id": 1,
+    "query": 1,
+    "mode": 1,
+    "sort": 1,
+    "pages": 1,
+    "result_count": 1,
+    "dictionary_count": 1,
+    "similar_count": 1,
+    "created_at": 1,
+    "updated_at": 1,
+    "created_by": 1,
+}
+
+
+def _serialize_wol_search(doc: dict) -> dict:
+    """Make one saved-search record JSON-safe."""
+    out = dict(doc)
+    out["id"] = str(out.pop("_id", ""))
+    for field in ("created_at", "updated_at"):
+        value = out.get(field)
+        if hasattr(value, "isoformat"):
+            out[field] = value.isoformat()
+    return out
+
+
+@app.route("/api/wol/searches", methods=["GET"])
+@login_required
+def api_wol_list_searches():
+    """List saved searches, newest first (metadata only)."""
+    try:
+        col = _get_wol_searches_collection()
+        if col is None:
+            return jsonify([])
+        try:
+            docs = list(col.find({}, _WOL_SEARCH_META).sort("updated_at", -1).limit(100))
+        except Exception as exc:
+            if not _is_cosmos_excluded_order_by_error(exc):
+                raise
+            # Cosmos can reject order-by on excluded index paths; sort the small
+            # result set in memory instead.
+            docs = list(col.find({}, _WOL_SEARCH_META).limit(100))
+            docs.sort(key=lambda d: str(d.get("updated_at") or ""), reverse=True)
+        return jsonify([_serialize_wol_search(d) for d in docs])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/wol/searches/<search_id>", methods=["GET"])
+@login_required
+def api_wol_get_search(search_id):
+    """Reopen a saved search in full, without touching wol.jw.org."""
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        col = _get_wol_searches_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        try:
+            oid = ObjectId(search_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid ID"}), 400
+
+        doc = col.find_one({"_id": oid})
+        if not doc:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(_serialize_wol_search(doc))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/wol/searches", methods=["POST"])
+@login_required
+def api_wol_save_search():
+    """Save a completed search. Re-running the same query and mode replaces it."""
+    try:
+        data = request.get_json(silent=True) or {}
+        query = (data.get("query") or "").strip()
+        mode = data.get("mode") if data.get("mode") in ("sentences", "verbs") else "sentences"
+        if not query:
+            return jsonify({"error": "query is required"}), 400
+
+        results = data.get("results") or []
+        if not results:
+            return jsonify({"error": "Nothing to save"}), 400
+
+        col = _get_wol_searches_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        now = datetime.now(timezone.utc)
+        dictionary = data.get("dictionary") or {}
+        similar = data.get("similar") or {}
+        payload = {
+            "query": query,
+            "mode": mode,
+            "sort": data.get("sort") or "newest",
+            "pages": data.get("pages") or 1,
+            "results": results,
+            "dictionary": dictionary,
+            "similar": similar,
+            "subjectCounts": data.get("subjectCounts") or [],
+            "result_count": len(results),
+            "dictionary_count": len(dictionary),
+            "similar_count": len(similar),
+            "updated_at": now,
+            "created_by": session.get("user_email", ""),
+        }
+
+        result = _cosmos_retry(
+            lambda: col.update_one(
+                {"query_key": query.lower(), "mode": mode},
+                {"$set": payload, "$setOnInsert": {"created_at": now, "query_key": query.lower()}},
+                upsert=True,
+            )
+        )
+        saved_id = result.upserted_id
+        if saved_id is None:
+            existing = col.find_one({"query_key": query.lower(), "mode": mode}, {"_id": 1})
+            saved_id = existing["_id"] if existing else None
+
+        return jsonify({"success": True, "id": str(saved_id) if saved_id else None}), 200
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/wol/searches/<search_id>", methods=["DELETE"])
+@login_required
+def api_wol_delete_search(search_id):
+    """Remove a saved search. Owners can clear their own; admins can clear any."""
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        col = _get_wol_searches_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        try:
+            oid = ObjectId(search_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid ID"}), 400
+
+        doc = col.find_one({"_id": oid}, {"created_by": 1})
+        if not doc:
+            return jsonify({"error": "Not found"}), 404
+
+        is_admin = session.get("user_role") == "admin"
+        is_owner = (doc.get("created_by") or "") == session.get("user_email", "")
+        if not (is_admin or is_owner):
+            return jsonify({"error": "You can only delete your own saved searches"}), 403
+
+        col.delete_one({"_id": oid})
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
 # React app routes - handle all non-API routes
 # =============================================================================
 @app.route("/api/sentences/analyze", methods=["POST"])

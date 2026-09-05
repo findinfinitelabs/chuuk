@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -16,6 +16,7 @@ import TranslationGame from './pages/TranslationGame'
 import Grammar from './pages/Grammar'
 import Sentences from './pages/Sentences'
 import ArticleAnalysis from './pages/ArticleAnalysis'
+import WolSearch from './pages/WolSearch'
 import Verbs from './pages/Verbs'
 import Compose from './pages/Compose'
 import AdminUsers from './pages/AdminUsers'
@@ -248,6 +249,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('lookup') && (
+              <NavLink 
+                label="Watchtower Library" 
+                leftSection={<IconQuote size="1.2rem" />} 
+                component={Link}
+                to="/wol-search"
+                active={location.pathname === '/wol-search'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             
             <Divider my="sm" />
             
@@ -376,6 +388,7 @@ function App() {
               <Route path="/sentences" element={hasPermission('sentences') ? <Sentences /> : <AccessDenied />} />
               <Route path="/article-analysis" element={hasPermission('sentences') ? <ArticleAnalysis /> : <AccessDenied />} />
               <Route path="/verbs" element={hasPermission('sentences') ? <Verbs /> : <AccessDenied />} />
+              <Route path="/wol-search" element={hasPermission('lookup') ? <WolSearch /> : <AccessDenied />} />
               <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
               <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
               <Route path="/publications" element={hasPermission('publications') ? <Publications /> : <AccessDenied />} />
