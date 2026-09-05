@@ -2,6 +2,7 @@
 """
 Test the actual app's load_users function
 """
+import os
 import sys
 import json
 from pathlib import Path
@@ -49,8 +50,8 @@ def authenticate_user(email, access_code, users):
     return None
 
 # Test User 2
-test_email = "d3jualu.n@gmail.com"
-test_code = "BxAD6bjaFkD4wwcCE38GFLHx"
+test_email = os.environ.get("CHUUK_DEBUG_EMAIL", "")
+test_code = os.environ.get("CHUUK_DEBUG_ACCESS_CODE", "")
 
 print(f"\nTesting: {test_email}")
 print(f"Code: {test_code}")

@@ -2,6 +2,7 @@
 """
 Test login for both users
 """
+import os
 import sys
 import json
 from pathlib import Path
@@ -49,8 +50,8 @@ else:
 print("\n" + "=" * 70)
 print("Testing User 2: Debora Lundy")
 print("=" * 70)
-email2 = "d3jualu.n@gmail.com"
-code2 = "BxAD6bjaFkD4wwcCE38GFLHx"
+email2 = os.environ.get("CHUUK_DEBUG_EMAIL", "")
+code2 = os.environ.get("CHUUK_DEBUG_ACCESS_CODE", "")
 print(f"Email: {email2}")
 print(f"Code:  {code2}")
 print()

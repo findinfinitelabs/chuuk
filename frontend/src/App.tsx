@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconAbc, IconFileText, IconLetterV, IconMessage, IconWorld, IconBrain } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -244,42 +244,6 @@ function App() {
                 component={Link}
                 to="/lookup"
                 active={location.pathname === '/lookup'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            
-            <Divider my="sm" />
-            
-            {hasPermission('grammar') && (
-              <NavLink 
-                label="Compose Sentences" 
-                leftSection={<IconMessage size="1.2rem" />} 
-                component={Link}
-                to="/compose"
-                active={location.pathname === '/compose'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('grammar') && (
-              <NavLink 
-                label="Grammar Practice" 
-                leftSection={<IconAbc size="1.2rem" />} 
-                component={Link}
-                to="/grammar"
-                active={location.pathname === '/grammar'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('sentences') && (
-              <NavLink 
-                label="Verb Usage" 
-                leftSection={<IconLetterV size="1.2rem" />} 
-                component={Link}
-                to="/verbs"
-                active={location.pathname === '/verbs'}
                 className="nav-link"
                 onClick={toggleNav}
               />

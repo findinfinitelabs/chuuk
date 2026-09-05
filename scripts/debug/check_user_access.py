@@ -197,7 +197,7 @@ def main():
     print("2. Go to: http://localhost:5000")
     print("3. Log in with either user's email and access code:")
     print(f"   - User 1: chris.lundy@findinfinite.com")
-    print(f"   - User 2: d3jualu.n@gmail.com")
+    print("   - User 2: (set CHUUK_DEBUG_EMAIL)")
     print()
 
 

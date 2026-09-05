@@ -2,6 +2,7 @@
 """
 Test the actual login API endpoint
 """
+import os
 import requests
 import json
 
@@ -16,8 +17,8 @@ print("=" * 70)
 print("\nTesting User 2: Debora Lundy")
 print("-" * 70)
 
-email = "d3jualu.n@gmail.com"
-access_code = "BxAD6bjaFkD4wwcCE38GFLHx"
+email = os.environ.get("CHUUK_DEBUG_EMAIL", "")
+access_code = os.environ.get("CHUUK_DEBUG_ACCESS_CODE", "")
 
 payload = {
     "email": email,

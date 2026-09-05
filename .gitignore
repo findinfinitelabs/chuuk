@@ -138,7 +138,11 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+# Ignore .env and every variant (.env.local, .env.production, .env.bak, ...)
+# while keeping the checked-in template.
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
