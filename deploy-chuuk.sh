@@ -336,14 +336,34 @@ deploy_main() {
       --image "$image_ref" \
       --set-env-vars "${ENV_ARGS[@]}"
 
-    # Ensure the model volume is mounted (idempotent via az containerapp update --volume)
+    # Mount the model share and roll a new revision. `az containerapp update`
+    # has no --volume/--mount flags, so this goes through a YAML patch. The
+    # revision suffix matters too: with an unchanged `:latest` tag and env,
+    # Azure treats the update above as a no-op and keeps the old revision
+    # running, so the freshly built image would never be pulled.
+    local patch_file
+    patch_file=$(mktemp -t chuuk-revision).yaml
+    az containerapp show --name "$MAIN_APP_NAME" --resource-group "$RESOURCE_GROUP" -o json |
+      python3 -c '
+import json, sys
+mount, suffix = sys.argv[1], sys.argv[2]
+template = json.load(sys.stdin)["properties"]["template"]
+container = template["containers"][0]
+container["volumeMounts"] = [{"volumeName": "models-vol", "mountPath": mount}]
+patch = {"properties": {"template": {
+    "revisionSuffix": suffix,
+    "containers": [container] + template["containers"][1:],
+    "scale": template.get("scale"),
+    "volumes": [{"name": "models-vol", "storageType": "AzureFile", "storageName": "chuuk-models"}],
+}}}
+json.dump(patch, sys.stdout)  # JSON is valid YAML
+' "$MODEL_MOUNT_PATH" "r$(date +%Y%m%d%H%M%S)" > "$patch_file"
     az containerapp update \
       --name "$MAIN_APP_NAME" \
       --resource-group "$RESOURCE_GROUP" \
-      --volume "name=models-vol,storage-type=AzureFile,storage-name=chuuk-models" \
-      --mount "name=models-vol,mount-path=${MODEL_MOUNT_PATH}" 2>/dev/null || \
-        warn "Volume mount update skipped (may require revision; check portal if models do not persist)"
-    success "Main app updated"
+      --yaml "$patch_file" >/dev/null
+    rm -f "$patch_file"
+    success "Main app updated (new revision, model share mounted at ${MODEL_MOUNT_PATH})"
   else
     az containerapp create \
       --name "$MAIN_APP_NAME" \

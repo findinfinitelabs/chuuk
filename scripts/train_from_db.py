@@ -64,6 +64,30 @@ def gather_training_pairs() -> list[dict]:
     return pairs
 
 
+def load_extra_pairs(path: Path, weight: int = 1) -> list[dict]:
+    """Load a JSON file of {chuukese, english} pairs (e.g. the parallel Bible corpus).
+
+    `weight` repeats each pair, which is how sentence-level data is kept from being
+    drowned out by the ~13k single-word dictionary entries.
+    """
+    if not path.exists():
+        log(f"⚠️  Extra pairs file not found, skipping: {path}")
+        return []
+
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    out = []
+    for entry in raw:
+        chk = (entry.get("chuukese") or "").strip()
+        eng = (entry.get("english") or "").strip()
+        if chk and eng and len(chk) > 2 and len(eng) > 3:
+            out.extend([{"chuukese": chk, "english": eng}] * weight)
+
+    log(f"  Extra ({path.name}): {len(out):,} pairs (weight {weight})")
+    return out
+
+
 def upload_models_to_blob(model_dirs: list[str]):
     """Upload fine-tuned model directories to Azure Blob Storage."""
     storage_account = os.environ.get("AZURE_STORAGE_ACCOUNT", "chuukdictmodels")
@@ -127,15 +151,30 @@ def main():
     parser.add_argument("--no-upload", action="store_true", help="Skip upload to Azure Blob")
     parser.add_argument("--direction", choices=["both", "chk_to_en", "en_to_chk"], default="both",
                         help="Which direction(s) to train")
+    parser.add_argument("--learning-rate", type=float, default=3e-5, help="Learning rate")
+    parser.add_argument("--extra-pairs", action="append", default=[], metavar="PATH",
+                        help="JSON file of extra {chuukese, english} pairs to merge in "
+                             "(e.g. training_data/bible_parallel.json). Repeatable.")
+    parser.add_argument("--extra-weight", type=int, default=1,
+                        help="Repeat each extra pair this many times, to up-weight scarce "
+                             "sentence-level data against the word-heavy dictionary.")
+    parser.add_argument("--save-steps", type=int, default=1000,
+                        help="Checkpoint/eval interval. Keep high: eval uses predict_with_generate "
+                             "and is slow on a large eval split.")
     args = parser.parse_args()
 
     log("=" * 70)
     log("Helsinki-NLP Automated Training from Database")
     log(f"Epochs: {args.epochs}  Batch size: {args.batch_size}  Direction: {args.direction}")
+    log(f"Learning rate: {args.learning_rate}  Save/eval every: {args.save_steps} steps")
     log("=" * 70)
 
     # Gather data
     pairs = gather_training_pairs()
+    for extra_path in args.extra_pairs:
+        pairs.extend(load_extra_pairs(Path(extra_path), args.extra_weight))
+    if args.extra_pairs:
+        log(f"Total training pairs after extras: {len(pairs):,}")
     if len(pairs) < 10:
         log("❌ Too few training pairs (<10). Aborting.")
         sys.exit(1)
@@ -179,7 +218,8 @@ def main():
             training_pairs=pairs,
             num_epochs=args.epochs,
             batch_size=args.batch_size,
-            learning_rate=3e-5,
+            learning_rate=args.learning_rate,
+            save_steps=args.save_steps,
         )
         results[direction] = success
         log(f"{'✅' if success else '❌'} {label} {'done' if success else 'FAILED'}")

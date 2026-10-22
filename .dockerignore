@@ -42,3 +42,9 @@ dev-start.ps1
 models/**/checkpoint-*
 training_data
 data/brochures
+# Fine-tuned Helsinki weights are served from the Azure File Share mounted at
+# MODEL_STORE_PATH (see ensure_model_storage in deploy-chuuk.sh), so they must not
+# be baked into the image — they add ~4GB of build context and go stale immediately.
+models/*/finetuned
+models/*/checkpoint-*
+models/*/lora_adapters

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Container, Title, Text, TextInput, Button, Stack, Card, Group, Badge,
   Loader, Alert, Paper, Tabs, Select, Anchor, ScrollArea, Divider,
@@ -37,14 +37,34 @@ interface Subject {
   standalone?: string
 }
 
+/** The same passage in the English edition of the publication. */
+interface English {
+  /** The lined-up sentence(s), or the whole paragraph when they could not be lined up. */
+  text: string
+  /** Every sentence of the English paragraph (absent for Bible verses). */
+  sentences?: string[]
+  /** First and last index into `sentences` that match the Chuukese. */
+  match?: [number, number] | null
+  scope: 'sentence' | 'paragraph' | 'verse'
+  title: string | null
+  /** e.g. "w00 12/1 pp. 14-19", or "Acts 2:26" for Bible text. */
+  citation: string | null
+  publication: string | null
+  link: string
+}
+
 interface WolResult {
   text: string
   segments: Segment[]
   title: string | null
   link: string | null
+  docId?: string | null
+  verseIds?: string[]
   reference: Reference
   citation: string | null
   subject?: Subject | null
+  /** undefined while loading, null when WOL has no English for it. */
+  english?: English | null
 }
 
 interface SubjectCount {
@@ -269,6 +289,74 @@ function Legend() {
   )
 }
 
+/** The English equivalent and its reference, shown under the Chuukese. */
+function EnglishBlock({ english }: { english: English | null | undefined }) {
+  const [context, setContext] = useState(false)
+
+  if (english === undefined) {
+    return (
+      <Group gap={6} className={styles.english}>
+        <Loader size={12} />
+        <Text size="xs" c="dimmed">Finding the English…</Text>
+      </Group>
+    )
+  }
+  if (english === null) {
+    return (
+      <Text size="xs" c="dimmed" className={styles.english}>
+        No English equivalent found on WOL.
+      </Text>
+    )
+  }
+
+  const { sentences, match } = english
+  const hasContext = english.scope === 'sentence' && !!sentences && !!match && sentences.length > 1
+
+  return (
+    <Box className={styles.english}>
+      <Text className={styles.englishText}>
+        {hasContext && context ? (
+          sentences!.map((s, i) => (
+            <span key={i}>
+              {i > 0 && ' '}
+              <span className={i >= match![0] && i <= match![1] ? styles.englishMatch : styles.englishContext}>
+                {s}
+              </span>
+            </span>
+          ))
+        ) : (
+          english.text
+        )}
+        {hasContext && (
+          <button type="button" className={styles.contextToggle} onClick={() => setContext(!context)}>
+            {context ? 'hide paragraph' : 'show paragraph'}
+          </button>
+        )}
+      </Text>
+      <Group gap="xs" wrap="wrap" mt={4}>
+        <Badge variant="light" color="cyan" size="xs">English</Badge>
+        {english.scope === 'paragraph' && (
+          <Text size="xs" c="dimmed" fs="italic">whole paragraph — sentence could not be lined up</Text>
+        )}
+        {english.citation && (
+          <Text size="xs" c="dimmed" className={styles.citation}>{english.citation}</Text>
+        )}
+        {(english.title || english.publication) && (
+          <Text size="xs" c="dimmed">
+            {[english.title, english.publication].filter(Boolean).join(' · ')}
+          </Text>
+        )}
+        <Anchor href={english.link} target="_blank" rel="noopener noreferrer" size="xs">
+          <Group gap={4} wrap="nowrap">
+            <IconExternalLink size={13} />
+            Open English
+          </Group>
+        </Anchor>
+      </Group>
+    </Box>
+  )
+}
+
 /** Citation, date and source link shared by both tabs. */
 function ResultMeta({ result }: { result: WolResult }) {
   const { reference: ref } = result
@@ -419,14 +507,19 @@ function WolSearch() {
   useEffect(() => { refreshSaved() }, [refreshSaved])
 
   /** Persist a completed search so it can be reopened without hitting WOL. */
-  const persist = useCallback(async (mode: 'sentences' | 'verbs', payload: WolResponse, term: string) => {
+  const persist = useCallback(async (
+    mode: 'sentences' | 'verbs',
+    payload: WolResponse,
+    term: string,
+    saved?: { sort: string; pages: number },
+  ) => {
     if (!payload.results?.length) return
     try {
       const res = await axios.post('/api/wol/searches', {
         query: term,
         mode,
-        sort: mode === 'sentences' ? sort : 'newest',
-        pages: Number(pages) || 2,
+        sort: saved?.sort ?? (mode === 'sentences' ? sort : 'newest'),
+        pages: saved?.pages ?? (Number(pages) || 2),
         results: payload.results,
         dictionary: payload.dictionary || {},
         similar: payload.similar || {},
@@ -439,6 +532,44 @@ function WolSearch() {
     }
   }, [sort, pages, refreshSaved])
 
+  // Bumped by every new search or reopen, so English still arriving for an
+  // older result list is dropped instead of being merged into the new one.
+  const englishRun = useRef(0)
+
+  /** Look up the English for every result still missing it, updating the cards
+   *  batch by batch, then save the search again so a reopen has it too. */
+  const fillEnglish = useCallback(async (
+    mode: 'sentences' | 'verbs',
+    payload: WolResponse,
+    term: string,
+    saved?: { sort: string; pages: number },
+  ) => {
+    const run = ++englishRun.current
+    const setter = mode === 'verbs' ? setVerbData : setData
+    const results = [...payload.results]
+    const todo = results.map((r, i) => (r.english === undefined ? i : -1)).filter((i) => i >= 0)
+    if (!todo.length) return
+
+    const BATCH = 10
+    for (let start = 0; start < todo.length; start += BATCH) {
+      const indexes = todo.slice(start, start + BATCH)
+      let english: (English | null)[] = indexes.map(() => null)
+      try {
+        const res = await axios.post('/api/wol/english', {
+          items: indexes.map((i) => results[i]),
+        })
+        english = res.data?.english || english
+      } catch {
+        // One failed batch leaves those cards with "not found" rather than
+        // stalling the rest.
+      }
+      if (run !== englishRun.current) return
+      indexes.forEach((idx, k) => { results[idx] = { ...results[idx], english: english[k] ?? null } })
+      setter((prev) => (prev ? { ...prev, results: [...results] } : prev))
+    }
+    persist(mode, { ...payload, results }, term, saved)
+  }, [persist])
+
   /** Reopen a saved search from the database. */
   const openSaved = async (item: SavedSearch) => {
     setActiveId(item.id)
@@ -449,11 +580,14 @@ function WolSearch() {
     if (target === 'verbs') { setVerbLoading(true); setVerbError('') } else { setLoading(true); setError('') }
     try {
       const res = await axios.get(`/api/wol/searches/${item.id}`)
+      englishRun.current++
       if (target === 'verbs') {
         setVerb(item.query); setVerbData(res.data); setSubjectFilter(null)
       } else {
         setQuery(item.query); setData(res.data)
       }
+      // Searches saved before English lookups existed get it filled in once.
+      fillEnglish(target, res.data, item.query, { sort: item.sort, pages: item.pages })
     } catch (e) {
       const msg = errorMessage(e, 'Could not open that saved search')
       if (target === 'verbs') setVerbError(msg); else setError(msg)
@@ -474,6 +608,7 @@ function WolSearch() {
 
   const runSearch = async () => {
     if (!query.trim()) return
+    englishRun.current++
     setLoading(true); setError(''); setData(null)
     try {
       const res = await axios.post('/api/wol/search', {
@@ -485,7 +620,10 @@ function WolSearch() {
       setFromSaved(false)
       setActiveId(null)
       if (!res.data.results?.length) setError(`No results on wol.jw.org for "${query.trim()}".`)
-      else persist('sentences', res.data, query.trim())
+      else {
+        persist('sentences', res.data, query.trim())
+        fillEnglish('sentences', res.data, query.trim())
+      }
     } catch (e) {
       setError(errorMessage(e, 'Search failed. Please try again.'))
     } finally {
@@ -495,6 +633,7 @@ function WolSearch() {
 
   const runVerbSearch = async () => {
     if (!verb.trim()) return
+    englishRun.current++
     setVerbLoading(true); setVerbError(''); setVerbData(null); setSubjectFilter(null)
     try {
       const res = await axios.post('/api/wol/verb-examples', {
@@ -505,7 +644,10 @@ function WolSearch() {
       setFromSaved(false)
       setActiveId(null)
       if (!res.data.results?.length) setVerbError(`No examples on wol.jw.org for "${verb.trim()}".`)
-      else persist('verbs', res.data, verb.trim())
+      else {
+        persist('verbs', res.data, verb.trim())
+        fillEnglish('verbs', res.data, verb.trim())
+      }
     } catch (e) {
       setVerbError(errorMessage(e, 'Search failed. Please try again.'))
     } finally {
@@ -627,6 +769,7 @@ function WolSearch() {
                       similar={data?.similar || {}}
                       onGloss={setGloss}
                     />
+                    <EnglishBlock english={r.english} />
                     <ResultMeta result={r} />
                   </Card>
                 ))}
@@ -748,6 +891,7 @@ function WolSearch() {
                       similar={verbData?.similar || {}}
                       onGloss={setGloss}
                     />
+                    <EnglishBlock english={r.english} />
                     <ResultMeta result={r} />
                   </Card>
                 ))}

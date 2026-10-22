@@ -4942,6 +4942,43 @@ def api_wol_verb_examples():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/wol/english", methods=["POST"])
+@login_required
+def api_wol_english():
+    """Look up the English equivalent of WOL search results.
+
+    Takes {"items": [result, ...]} — results as returned by /api/wol/search —
+    and returns {"english": [match or null, ...]} in the same order. Each match
+    carries the English text, its paragraph, which sentence(s) line up with the
+    Chuukese, and the English title and citation. Kept separate from the search
+    so results show at once while the English (two page fetches per article)
+    fills in behind them.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get("items") or []
+        if not isinstance(items, list) or not items:
+            return jsonify({"error": "items is required"}), 400
+        if len(items) > 20:
+            return jsonify({"error": "At most 20 items per request"}), 400
+        items = [
+            {
+                "text": str(it.get("text") or ""),
+                "link": str(it.get("link") or ""),
+                "docId": it.get("docId"),
+                "verseIds": it.get("verseIds") or [],
+            }
+            for it in items
+            if isinstance(it, dict)
+        ]
+        return jsonify({"english": _get_wol_search().english_for_many(items)}), 200
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Saved WOL searches
 # ---------------------------------------------------------------------------

@@ -262,3 +262,116 @@ class TestSimilarWords:
         empty = {"by_norm": {}, "by_prefix": {}, "english": {}}
         assert _similar_words("qqqqq", empty) == []
         assert _similar_words("ab", empty) == []  # too short to be meaningful
+
+
+# ---------------------------------------------------------------------------
+# English equivalents
+# ---------------------------------------------------------------------------
+# Trimmed from the Chuukese and English editions of document 2000884: the two
+# share paragraph ids, which is what the lookup relies on.
+CHK_DOC = """
+<html><head><title>Ka Fokkun Aucheani? — Watchtower ONLINE LIBRARY</title></head><body>
+<article>
+  <p data-pid="3">JIOWA a mochen pwe noun kkewe aramas repwe pwapwa. Ua fokkun aucheani ir chapur.</p>
+  <p data-pid="4">Sia kaeo ewe enlet.</p>
+</article></body></html>
+"""
+EN_DOC = """
+<html><head><title>Do You Love Jehovah’s Reminders? — Watchtower ONLINE LIBRARY</title></head><body>
+<ul><li class="resultsNavigationSelected"><span class="navContent">Do You Love Jehovah’s Reminders?</span></li></ul>
+<ul><li class="documentLocation"><a>w00 12/1 pp. 14-19</a></li></ul>
+<input type="hidden" id="parentTitle" value="The Watchtower—2000"/>
+<article>
+  <p data-pid="3">JEHOVAH wants his people to be happy. I love them exceedingly.<a class="fn">*</a></p>
+  <p data-pid="4">We take in accurate knowledge.</p>
+</article></body></html>
+"""
+EN_BIBLE = """
+<html><head><title>Acts — Watchtower ONLINE LIBRARY</title></head><body><article>
+  <p><span class="v" id="v44-2-26-1">26 My heart became cheerful.<a class="b">+</a></span></p>
+  <p><span class="v" id="v44-2-28-1">28 You will fill me with great joy.</span></p>
+</article></body></html>
+"""
+
+
+class _FakeResponse:
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+class _FakeSession:
+    """Serves canned WOL documents by language and counts the fetches."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.headers = {}
+        self.calls = 0
+
+    def get(self, url, timeout=None):
+        self.calls += 1
+        lang = "en" if "/en/" in url else "chk"
+        return _FakeResponse(self.pages[lang])
+
+
+class TestEnglishEquivalents:
+    def test_doc_id_from_link(self):
+        from src.core.wol_search import doc_id_from_link
+
+        assert doc_id_from_link("https://wol.jw.org/chk/wol/d/r303/lp-te/2000884?q=x") == "2000884"
+        assert doc_id_from_link(None) is None
+
+    def test_split_keeps_quotes_and_trailing_citation(self):
+        from src.core.wol_search import _split_sentences
+
+        text = "Welcome back. (Lam. 3:40) They were “beside themselves.” Imagine!"
+        assert _split_sentences(text) == [
+            "Welcome back. (Lam. 3:40)",
+            "They were “beside themselves.”",
+            "Imagine!",
+        ]
+
+    def test_verse_ref(self):
+        from src.core.wol_search import _verse_ref
+
+        assert _verse_ref("Acts", ["v44-2-26-1", "v44-2-28-1"]) == "Acts 2:26, 28"
+
+    def test_matches_sentence_by_paragraph_id(self):
+        wol = WOLSearch(session=_FakeSession({"chk": CHK_DOC, "en": EN_DOC}))
+        english = wol.english_for(
+            {"text": "Ua fokkun aucheani ir chapur.", "link": "/chk/wol/d/r303/lp-te/2000884"}
+        )
+        assert english["scope"] == "sentence"
+        assert english["text"] == "I love them exceedingly."
+        assert english["match"] == [1, 1]
+        assert english["citation"] == "w00 12/1 pp. 14-19"
+        assert english["publication"] == "The Watchtower—2000"
+        assert english["link"].endswith("/en/wol/d/r1/lp-e/2000884#h=3")
+
+    def test_documents_are_cached(self):
+        session = _FakeSession({"chk": CHK_DOC, "en": EN_DOC})
+        wol = WOLSearch(session=session)
+        item = {"text": "Sia kaeo ewe enlet.", "docId": "2000884"}
+        wol.english_for(item)
+        wol.english_for(item)
+        assert session.calls == 2  # one Chuukese, one English
+
+    def test_unlocatable_snippet_returns_none(self):
+        wol = WOLSearch(session=_FakeSession({"chk": CHK_DOC, "en": EN_DOC}))
+        assert wol.english_for({"text": "Nothing like this anywhere.", "docId": "2000884"}) is None
+
+    def test_bible_verse_by_id(self):
+        wol = WOLSearch(session=_FakeSession({"chk": "", "en": EN_BIBLE}))
+        english = wol.english_for(
+            {"text": "26 Pokiten ei, letipei a pwapwa", "docId": "1001061148", "verseIds": ["v44-2-26-1"]}
+        )
+        assert english["scope"] == "verse"
+        assert english["text"] == "26 My heart became cheerful."
+        assert english["citation"] == "Acts 2:26"
+
+    def test_parse_records_doc_and_verse_ids(self):
+        results = WOLSearch()._parse(SAMPLE_HTML, "chapur")
+        assert results[0]["docId"] == "2000884"
+        assert results[0]["verseIds"] == []

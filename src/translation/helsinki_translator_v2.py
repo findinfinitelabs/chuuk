@@ -68,9 +68,15 @@ class HelsinkiChuukeseTranslator:
         self.base_model = base_model
         self.reverse_model = reverse_model
 
-        # Local fine-tuned model paths
-        self.local_chk_to_en = "models/helsinki-chuukese_chuukese_to_english/finetuned"
-        self.local_en_to_chk = "models/helsinki-chuukese_english_to_chuukese/finetuned"
+        # Local fine-tuned model paths.
+        # MODEL_STORE_PATH (persistent Azure File Share in Container Apps) is where
+        # HelsinkiFineTuner writes retrained weights, so it must be checked first —
+        # otherwise the app keeps serving the baked-in image weights (or, if those
+        # are absent, the base OPUS model, which knows no Chuukese).
+        store = os.getenv("MODEL_STORE_PATH", "").strip().rstrip("/")
+        roots = ([store] if store else []) + ["models"]
+        self.local_chk_to_en = self._first_existing(roots, "helsinki-chuukese_chuukese_to_english")
+        self.local_en_to_chk = self._first_existing(roots, "helsinki-chuukese_english_to_chuukese")
 
         self.tokenizer = None
         self.model = None
@@ -83,6 +89,19 @@ class HelsinkiChuukeseTranslator:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.using_finetuned = {"chk_to_en": False, "en_to_chk": False}
         logger.info(f"🔧 Using device: {self.device}")
+
+    @staticmethod
+    def _first_existing(roots: list, model_dir: str) -> str:
+        """Return the first root/{model_dir}/finetuned that holds a usable model.
+
+        Falls back to the last root so callers still get a well-formed path (and
+        the existing "no fine-tuned model" logging) when nothing is trained yet.
+        """
+        candidates = [os.path.join(root, model_dir, "finetuned") for root in roots]
+        for path in candidates:
+            if os.path.exists(os.path.join(path, "config.json")):
+                return path
+        return candidates[-1]
 
     def setup_models(self) -> bool:
         """Initialize Helsinki-NLP OPUS models for translation, preferring fine-tuned if available"""

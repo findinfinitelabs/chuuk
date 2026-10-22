@@ -22,6 +22,7 @@ Two entry points:
 """
 
 import re
+import threading
 from urllib.parse import quote, urljoin
 
 import requests
@@ -289,6 +290,89 @@ def detect_subject(text_before: str) -> dict | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# English equivalents
+# ---------------------------------------------------------------------------
+# A Chuukese WOL document and its English edition share a document id, and
+# their paragraphs share `data-pid`s (Bible verses share span ids such as
+# "v44-2-26-1"). So the English for a snippet is found by locating the snippet's
+# paragraph in the Chuukese document and reading the same paragraph in English.
+
+WOL_DOC = WOL_BASE + "/{lang}/wol/d/{rsconf}/{lib}/{doc_id}"
+_LANGS = {"chk": ("r303", "lp-te"), "en": ("r1", "lp-e")}
+
+_VERSE_ID = re.compile(r"^v(\d+)-(\d+)-(\d+)-\d+$")
+# A sentence ends at . ! or ?, plus any closing quotes/brackets and a trailing
+# parenthesised citation such as "(Lam. 3:40)", and the next starts with a capital.
+_SENTENCE_END = re.compile(
+    r"[.!?][”’\"')\]]*(?:\s+\([^()]{1,80}\))?(?=\s+[“‘\"\[]?[A-ZÀ-Þ])"
+)
+
+
+def doc_id_from_link(link: str | None) -> str | None:
+    """'https://wol.jw.org/chk/wol/d/r303/lp-te/2000884?q=..' → '2000884'."""
+    m = re.search(r"/wol/d/[^/]+/[^/]+/(\d+)", link or "")
+    return m.group(1) if m else None
+
+
+def _norm(text: str) -> str:
+    """Letters and digits only, lowercased — for matching snippets to paragraphs."""
+    return re.sub(r"[^\w]+", " ", _clean(text).lower()).strip()
+
+
+def _split_sentences(text: str) -> list[str]:
+    out, start = [], 0
+    for m in _SENTENCE_END.finditer(text):
+        out.append(text[start: m.end()].strip())
+        start = m.end()
+    out.append(text[start:].strip())
+    return [x for x in out if x]
+
+
+def _same_place(a: list[str], b: list[str], first: int, last: int, slack: float = 0.2) -> bool:
+    """True when sentences first..last start and end at about the same relative
+    position (by character count) in paragraph a as in paragraph b."""
+    def span(sentences):
+        total = sum(len(x) for x in sentences) or 1
+        start = sum(len(x) for x in sentences[:first]) / total
+        end = sum(len(x) for x in sentences[: last + 1]) / total
+        return start, end
+
+    (s1, e1), (s2, e2) = span(a), span(b)
+    return abs(s1 - s2) <= slack and abs(e1 - e2) <= slack
+
+
+def _plain(el) -> str:
+    """Element text without footnote (*) and cross-reference (+) markers."""
+    el = BeautifulSoup(str(el), "html.parser")
+    for marker in el.select("a.fn, sup"):
+        marker.decompose()
+    # Bible cross-reference markers are "+" links; scripture citations in
+    # articles share the class but carry the reference text, so keep those.
+    for marker in el.select("a.b"):
+        if marker.get_text(strip=True) == "+":
+            marker.decompose()
+    text = _clean(el.get_text(" ", strip=True))
+    text = re.sub(r"\s+([,.;:!?’”)\]])", r"\1", text)
+    return re.sub(r"([(\[“‘])\s+", r"\1", text)
+
+
+def _verse_ref(book: str, verse_ids: list[str]) -> str | None:
+    """['v44-2-26-1', 'v44-2-28-1'] + 'Acts' → 'Acts 2:26, 28'."""
+    parts: list[tuple[int, int]] = []
+    for vid in verse_ids:
+        m = _VERSE_ID.match(vid)
+        if m and (int(m.group(2)), int(m.group(3))) not in parts:
+            parts.append((int(m.group(2)), int(m.group(3))))
+    if not parts or not book:
+        return None
+    out, chapter = [], None
+    for ch, vs in parts:
+        out.append(f"{ch}:{vs}" if ch != chapter else str(vs))
+        chapter = ch
+    return f"{book} " + ", ".join(out)
+
+
 class WOLSearch:
     """Search the Chuukese Watchtower Online Library."""
 
@@ -296,6 +380,8 @@ class WOLSearch:
         self.language = language
         self.session = session or requests.Session()
         self.session.headers.update(_HEADERS)
+        self._doc_cache: dict[tuple[str, str], dict] = {}
+        self._doc_lock = threading.Lock()
 
     # -- fetching ----------------------------------------------------------
     def _fetch(self, query: str, page: int, timeout: int) -> str:
@@ -319,6 +405,7 @@ class WOLSearch:
 
             ref_el = group.select_one("li.ref")
             reference = parse_reference(ref_el.get_text(" ", strip=True) if ref_el else "")
+            doc_id = doc_id_from_link(link)
 
             for item in group.select("li.searchResult"):
                 document = item.select_one("div.document")
@@ -331,18 +418,164 @@ class WOLSearch:
                     text = "".join(s["text"] for s in segments)
                     if len(text) < 10 or not any(s["match"] for s in segments):
                         continue
+                    # Bible snippets carry their verse ids; the English edition
+                    # uses the same ids, so they pin down the English verse.
+                    verse_ids = [
+                        v.get("id") for v in para.select("span.v[id]") if _VERSE_ID.match(v.get("id", ""))
+                    ]
                     results.append(
                         {
                             "text": text,
                             "segments": segments,
                             "title": title,
                             "link": link,
+                            "docId": doc_id,
+                            "verseIds": verse_ids,
                             "reference": reference,
                             "citation": reference.get("raw"),
                             "query": query,
                         }
                     )
         return results
+
+    # -- English equivalents ----------------------------------------------
+    def _document(self, doc_id: str, lang: str, timeout: int) -> dict | None:
+        """Fetch one WOL document as {title, citation, publication, paragraphs, verses}.
+
+        Documents are cached: a search usually holds several snippets from the
+        same article, and a reopened search asks for the same articles again.
+        """
+        key = (lang, doc_id)
+        with self._doc_lock:
+            if key in self._doc_cache:
+                return self._doc_cache[key]
+
+        rsconf, lib = _LANGS[lang]
+        try:
+            resp = self.session.get(
+                WOL_DOC.format(lang=lang, rsconf=rsconf, lib=lib, doc_id=doc_id), timeout=timeout
+            )
+            resp.raise_for_status()
+        except requests.RequestException:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        article = soup.find("article") or soup
+        title_el = soup.select_one("li.resultsNavigationSelected .navContent") or soup.find("h1")
+        location = soup.select_one("li.documentLocation")
+        parent = soup.select_one("#parentTitle")
+        doc = {
+            "title": _clean(title_el.get_text(" ", strip=True)) if title_el else None,
+            "citation": _clean(location.get_text(" ", strip=True)) if location else None,
+            "publication": (_clean(parent.get("value", "")) or None) if parent else None,
+            "paragraphs": [
+                (p.get("data-pid"), _plain(p)) for p in article.select("[data-pid]")
+            ],
+            "verses": {
+                v["id"]: _plain(v) for v in article.select("span.v[id]") if _VERSE_ID.match(v["id"])
+            },
+        }
+        # Bible chapters are titled with the book alone ("Acts").
+        if doc["verses"] and soup.title:
+            doc["book"] = _clean(soup.title.get_text().split("—")[0])
+
+        with self._doc_lock:
+            if len(self._doc_cache) >= 200:
+                self._doc_cache.pop(next(iter(self._doc_cache)))
+            self._doc_cache[key] = doc
+        return doc
+
+    def english_for(self, item: dict, timeout: int = 30) -> dict | None:
+        """Find the English equivalent of one search result.
+
+        Returns {text, scope, title, citation, publication, link} where scope is
+        "sentence" when the English sentence(s) could be lined up with the
+        Chuukese ones, "paragraph" when only the whole paragraph could, and
+        "verse" for Bible text. None when the document has no English edition
+        or the snippet could not be located.
+        """
+        doc_id = item.get("docId") or doc_id_from_link(item.get("link"))
+        snippet = item.get("text") or ""
+        if not doc_id or not snippet:
+            return None
+
+        english = self._document(doc_id, "en", timeout)
+        if not english:
+            return None
+        meta = {
+            "title": english["title"],
+            "citation": english["citation"],
+            "publication": english["publication"],
+            "link": WOL_DOC.format(lang="en", rsconf="r1", lib="lp-e", doc_id=doc_id),
+        }
+
+        verse_ids = item.get("verseIds") or []
+        if verse_ids and english["verses"]:
+            text = " ".join(english["verses"][v] for v in verse_ids if v in english["verses"])
+            if not text:
+                return None
+            ref = _verse_ref(english.get("book") or "", verse_ids)
+            return {**meta, "text": text, "scope": "verse", "citation": ref or meta["citation"]}
+
+        chuukese = self._document(doc_id, "chk", timeout)
+        if not chuukese:
+            return None
+
+        # Locate the snippet's paragraph: containment first, then word overlap.
+        target = _norm(snippet)
+        target_words = set(target.split())
+        best_pid, best_text, best_score = None, "", 0.0
+        for pid, text in chuukese["paragraphs"]:
+            norm = _norm(text)
+            if target and target in norm:
+                best_pid, best_text, best_score = pid, text, 1.0
+                break
+            if target_words:
+                score = len(target_words & set(norm.split())) / len(target_words)
+                if score > best_score:
+                    best_pid, best_text, best_score = pid, text, score
+        if best_pid is None or best_score < 0.6:
+            return None
+
+        en_para = next((t for pid, t in english["paragraphs"] if pid == best_pid), None)
+        if not en_para:
+            return None
+        meta["link"] += f"#h={best_pid}"
+
+        # The English is returned as the whole paragraph, with the sentence(s)
+        # that line up with the snippet flagged. Lining up is only attempted
+        # when both sides split into the same number of sentences, and a pair is
+        # trusted only if it sits at roughly the same place in its paragraph —
+        # a wrong guess must not hide the real context.
+        chk_sentences = _split_sentences(best_text)
+        en_sentences = _split_sentences(en_para)
+        match = None
+        if len(chk_sentences) > 1 and len(chk_sentences) == len(en_sentences):
+            hits = []
+            for i, sentence in enumerate(chk_sentences):
+                norm = _norm(sentence)
+                words = set(norm.split())
+                if norm and (norm in target or target in norm):
+                    hits.append(i)
+                elif words and len(words & target_words) / len(words) >= 0.85:
+                    hits.append(i)
+            if hits and _same_place(chk_sentences, en_sentences, hits[0], hits[-1]):
+                match = [hits[0], hits[-1]]
+
+        return {
+            **meta,
+            "text": " ".join(en_sentences[match[0]: match[1] + 1]) if match else en_para,
+            "sentences": en_sentences,
+            "match": match,
+            "scope": "sentence" if match else "paragraph",
+        }
+
+    def english_for_many(self, items: list[dict], timeout: int = 30, workers: int = 6) -> list[dict | None]:
+        """english_for() over a batch, fetching documents in parallel."""
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(lambda it: self.english_for(it, timeout=timeout), items))
 
     # -- public API --------------------------------------------------------
     def search(
@@ -429,4 +662,4 @@ class WOLSearch:
         return found
 
 
-__all__ = ["WOLSearch", "detect_subject", "parse_reference"]
+__all__ = ["WOLSearch", "detect_subject", "doc_id_from_link", "parse_reference"]
