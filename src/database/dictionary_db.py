@@ -1799,9 +1799,13 @@ class DictionaryDB:
         batch_size = 10  # Batch size for Cosmos DB autoscale (1000 RU/s)
         all_entries = []
 
-        # Insert words into dictionary_collection
+        # Insert words into dictionary_collection — merging into any entry that
+        # already has the headword, so overlapping or re-imported files add
+        # senses instead of creating copies.
         if words:
-            self._batch_insert(self.dictionary_collection, words, batch_size, "words")
+            words = self._merge_words_by_headword(words)
+            if words:
+                self._batch_insert(self.dictionary_collection, words, batch_size, "words")
             all_entries.extend(words)
 
         # Insert phrases into phrases_collection
@@ -1820,6 +1824,65 @@ class DictionaryDB:
             all_entries.extend(paragraphs)
 
         return all_entries
+
+    def _merge_words_by_headword(self, words: list[dict]) -> list[dict]:
+        """Fold imported rows into existing dictionary entries with the same
+        headword (and into each other within the batch). Returns the rows that
+        are genuinely new and still need inserting."""
+        import time
+
+        from src.core.dictionary_merge import merge_group, merge_new_into_existing
+
+        # Collapse repeats inside the batch first.
+        by_head: dict[str, list[dict]] = {}
+        for w in words:
+            head = (w.get("chuukese_word") or "").strip().lower()
+            if head:
+                by_head.setdefault(head, []).append(w)
+        collapsed: dict[str, dict] = {}
+        for head, rows in by_head.items():
+            if len(rows) == 1:
+                collapsed[head] = rows[0]
+                continue
+            result = merge_group([{**r, "_id": f"batch-{i}"} for i, r in enumerate(rows)])
+            merged = {k: v for k, v in result["survivor"].items() if k != "_id"}
+            merged.update(result["update"])
+            collapsed[head] = merged
+
+        # Then against what the dictionary already holds.
+        existing_by_head: dict[str, dict] = {}
+        heads = list(collapsed)
+        for i in range(0, len(heads), 200):
+            chunk = heads[i : i + 200]
+            variants = chunk + [h.capitalize() for h in chunk]
+            try:
+                for doc in self.dictionary_collection.find({"chuukese_word": {"$in": variants}}):
+                    key = (doc.get("chuukese_word") or "").strip().lower()
+                    existing_by_head.setdefault(key, doc)
+            except Exception as e:
+                print(f"⚠️ headword lookup failed, inserting without merge: {e}")
+                return list(collapsed.values())
+
+        to_insert, merged_count = [], 0
+        for head, row in collapsed.items():
+            existing = existing_by_head.get(head)
+            if not existing:
+                to_insert.append(row)
+                continue
+            update = merge_new_into_existing(existing, row)
+            if update:
+                try:
+                    self.dictionary_collection.update_one({"_id": existing["_id"]}, {"$set": update})
+                    merged_count += 1
+                    time.sleep(0.02)
+                except Exception as e:
+                    print(f"⚠️ could not merge '{head}': {e}")
+        if merged_count or len(to_insert) != len(words):
+            print(
+                f"🔁 {len(words) - len(to_insert)} rows matched existing headwords "
+                f"({merged_count} entries enriched); {len(to_insert)} new entries to insert"
+            )
+        return to_insert
 
     def _batch_insert(self, collection, items, batch_size, item_type):
         """Insert items in batches with rate limiting handling and exponential backoff"""

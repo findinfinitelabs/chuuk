@@ -72,12 +72,20 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 import requests
 from bs4 import BeautifulSoup
 
+# Neural translation engine. TRANSLATION_ENGINE=helsinki (default, Marian OPUS-MT)
+# or TRANSLATION_ENGINE=madlad (Google MADLAD-400 3B + LoRA, pre-trained on Chuukese).
+# The module-level name `helsinki_translator` is kept for backward compatibility;
+# it holds whichever engine is active. Both expose the same translate_* methods.
 try:
-    from src.translation.helsinki_translator_v2 import HelsinkiChuukeseTranslator
+    from src.training.trainer_factory import engine_display_name, get_translator, translation_engine
 
+    TRANSLATION_ENGINE = translation_engine()
+    TRANSLATION_ENGINE_NAME = engine_display_name(TRANSLATION_ENGINE)
     HELSINKI_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ Helsinki translator not available: {e}")
+    print(f"⚠️ Neural translator not available: {e}")
+    TRANSLATION_ENGINE = "helsinki"
+    TRANSLATION_ENGINE_NAME = "Helsinki-NLP"
     HELSINKI_AVAILABLE = False
 
 # Feature flag: set OLLAMA_ENABLED=true in env to re-enable Ollama integration.
@@ -234,20 +242,20 @@ def set_cached_distinct_values(field: str, values: list):
 
 if HELSINKI_AVAILABLE:
     try:
-        helsinki_translator = HelsinkiChuukeseTranslator()
-        print("🚀 Initializing Helsinki-NLP models in background...")
+        helsinki_translator = get_translator()
+        print(f"🚀 Initializing {TRANSLATION_ENGINE_NAME} models in background...")
 
         # Initialize models in background to avoid blocking startup
         def init_models():
             if helsinki_translator.setup_models():
-                print("✅ Helsinki-NLP models ready!")
+                print(f"✅ {TRANSLATION_ENGINE_NAME} models ready!")
                 helsinki_translator.load_dictionary_data()
             else:
-                print("❌ Failed to initialize Helsinki models")
+                print(f"❌ Failed to initialize {TRANSLATION_ENGINE_NAME} models")
 
         threading.Thread(target=init_models, daemon=True).start()
     except Exception as e:
-        print(f"⚠️ Helsinki translator initialization failed: {e}")
+        print(f"⚠️ {TRANSLATION_ENGINE_NAME} translator initialization failed: {e}")
         helsinki_translator = None
 
 # Start continuous training engine in background
@@ -533,6 +541,7 @@ ROLE_PERMISSIONS = {
         "grammar",
         "admin_users",
         "ai_training",
+        "reviews",
     ],
 }
 
@@ -1594,7 +1603,13 @@ def api_translate():
             return translate_phrases(phrases, direction)
 
         # Otherwise, translate full text
-        results = {"success": True, "original_text": text, "translations": {}}
+        results = {
+            "success": True,
+            "original_text": text,
+            "translations": {},
+            "engine": TRANSLATION_ENGINE,
+            "engine_name": TRANSLATION_ENGINE_NAME,
+        }
 
         # Google Translate - Using REST API with API key
         try:
@@ -1635,7 +1650,7 @@ def api_translate():
                     helsinki_result = helsinki_translator.translate_english_to_chuukese(text)
                 results["translations"]["helsinki"] = helsinki_result
             else:
-                results["translations"]["helsinki"] = "Helsinki translator not available"
+                results["translations"]["helsinki"] = f"{TRANSLATION_ENGINE_NAME} translator not available"
         except Exception as e:
             results["translations"]["helsinki"] = f"Error: {str(e)}"
 
@@ -1728,8 +1743,8 @@ def api_translate_correction():
                     training_status["is_training"] = True
                     training_status["models_training"] = [
                         "Google Translate",
-                        "Helsinki-NLP (Chk→En)",
-                        "Helsinki-NLP (En→Chk)",
+                        f"{TRANSLATION_ENGINE_NAME} (Chk→En)",
+                        f"{TRANSLATION_ENGINE_NAME} (En→Chk)",
                         "Ollama AI",
                     ]
                     training_status["progress"] = 0
@@ -1746,15 +1761,15 @@ def api_translate_correction():
                     training_status["progress"] = 15
 
                     # Step 2: Fine-tune Helsinki models with real training
-                    print("🔄 Fine-tuning Helsinki-NLP models...")
+                    print(f"🔄 Fine-tuning {TRANSLATION_ENGINE_NAME} models...")
                     training_status["progress"] = 20
-                    training_status["message"] = "Fine-tuning Helsinki-NLP models..."
+                    training_status["message"] = f"Fine-tuning {TRANSLATION_ENGINE_NAME} models..."
                     training_status["epoch_current"] = None
                     training_status["epoch_total"] = None
                     training_status["current_direction"] = "chk_to_en"
 
                     try:
-                        from src.training.helsinki_trainer import HelsinkiFineTuner
+                        from src.training.trainer_factory import get_fine_tuner
 
                         def helsinki_progress(
                             stage, progress, epoch=None, total_epochs=None, epoch_step_pct=None, epoch_loss=None
@@ -1773,7 +1788,7 @@ def api_translate_correction():
                             if epoch_loss is not None:
                                 training_status["epoch_loss"] = epoch_loss
 
-                        helsinki_trainer = HelsinkiFineTuner(progress_callback=helsinki_progress)
+                        helsinki_trainer = get_fine_tuner(progress_callback=helsinki_progress)
                         helsinki_success = helsinki_trainer.fine_tune_both_models(
                             num_epochs=1,  # Quick 1-epoch fine-tuning to prevent crashes
                             batch_size=2,  # Small batch size for safety
@@ -2024,7 +2039,7 @@ def translate_helsinki():
             translation = helsinki_translator.translate_english_to_chuukese(text)
 
         return jsonify(
-            {"original_text": text, "translation": translation, "direction": direction, "model": "Helsinki-NLP"}
+            {"original_text": text, "translation": translation, "direction": direction, "model": TRANSLATION_ENGINE_NAME}
         )
 
     except Exception as e:
@@ -2084,7 +2099,7 @@ def evaluate_helsinki():
         test_sample = helsinki_translator.training_data[:20]  # Small sample for quick eval
         results = helsinki_translator.evaluate_translation_quality(test_sample)
 
-        return jsonify({"evaluation_results": results, "model": "Helsinki-NLP", "test_samples": len(test_sample)})
+        return jsonify({"evaluation_results": results, "model": TRANSLATION_ENGINE_NAME, "test_samples": len(test_sample)})
 
     except Exception as e:
         return jsonify({"error": f"Evaluation failed: {str(e)}"})
@@ -3903,126 +3918,12 @@ def api_fetch_article():
                         return f"https://wol.jw.org{href}"
             return None
 
-        def extract_endnote_scripture_refs(element):
-            """Extract scripture references from endnote/footnote sections - each as separate entry"""
-            scripture_refs = []
-            for link in element.find_all("a", href=True):
-                href = link.get("href", "")
-                text = link.get_text(strip=True)
-                # Check if this is a scripture reference link (in endnotes/footnotes)
-                if ("/bc/" in href or "/nwtsty/" in href or "/bible/" in href) and re.search(r"\d+:\d+", text):
-                    if text and len(text) > 1:
-                        scripture_refs.append(text)
-            return scripture_refs
-
-        def is_endnote_section(element):
-            """Check if element is part of an endnote/footnote section"""
-            # Check for common endnote indicators
-            text = element.get_text(strip=True)
-            if text.startswith("PWAL") or text.startswith("SEE ALSO"):
-                return True
-            # Check parent classes
-            parent = element.find_parent(class_=re.compile(r"footnote|endnote|groupFootnote|boxContent"))
-            return parent is not None
+        from src.core.article_sentences import align_hints, parse_article
 
         def parse_sentences(html):
-            soup = BeautifulSoup(html, "html.parser")
-            article = soup.find("article") or soup.find("div", class_="bodyTxt")
-
-            if not article:
-                return [], None
-
-            title_elem = soup.find("h1")
-            title = title_elem.get_text(strip=True) if title_elem else "Untitled"
-
-            paragraphs = article.find_all(["p", "li"])
-            sentences = []
-
-            for idx, para in enumerate(paragraphs):
-                text = para.get_text(separator=" ", strip=True)
-
-                # Remove zero-width characters and other invisible Unicode
-                text = re.sub(r"[\u200b\u200c\u200d\u00ad\ufeff\u2060]", "", text)
-
-                # Clean bullet points but preserve content
-                text = re.sub(r"^[•●◦▪▫■□‣⁃∙]+\s*", "", text)  # Remove leading bullets
-                text = re.sub(r"^\*+\s*", "", text)  # Remove asterisk bullets
-                text = re.sub(r"\s+", " ", text)  # Normalize whitespace
-                text = text.strip()
-
-                if len(text) < 15:
-                    continue
-
-                # Check if this is an endnote section - handle differently
-                if is_endnote_section(para):
-                    # Extract each scripture reference as its own line
-                    endnote_refs = extract_endnote_scripture_refs(para)
-                    for ref in endnote_refs:
-                        sentences.append(
-                            {
-                                "id": len(sentences) + 1,
-                                "text": f"📖 {ref}",
-                                "paragraph_index": idx,
-                                "is_scripture_ref": True,
-                            }
-                        )
-                    continue
-
-                # KEY FIX: Keep em-dash (—) and hyphen-dash (-) scripture references attached to sentences
-                # Pattern matches: sentence ending + em-dash/hyphen + scripture reference
-                # Examples: "...kapas allim."—Féf. 5:42  or  "...example."—1 Cor. 15:33
-
-                # STEP 1: Protect ALL scripture references from being split
-                # This includes inline refs, em-dash refs, and parenthetical refs
-                # Book names loaded from config/scripture_books.json
-                from src.utils.scripture_parser import get_scripture_reference_pattern
-
-                any_scripture_pattern = get_scripture_reference_pattern()
-                protected_refs = []
-
-                def protect_any_scripture(match):
-                    placeholder = f"<<<REF_{len(protected_refs)}>>>"
-                    protected_refs.append(match.group(0))
-                    return placeholder
-
-                # First protect all inline scripture references
-                text_protected = re.sub(any_scripture_pattern, protect_any_scripture, text)
-
-                # Also protect em-dash + scripture that might have already been partially matched
-                # Pattern: punctuation + em-dash + placeholder (already protected scripture)
-                emdash_pattern = r"([.!?])\s*(—|–|-)\s*(<<<REF_\d+>>>)"
-                text_protected = re.sub(emdash_pattern, r"\1\2\3", text_protected)
-
-                # Protect parenthetical scriptures: ( placeholder ) or ( text with placeholder )
-                # These should stay together with surrounding sentence
-                protected_parens = []  # Separate list for parenthetical references
-                paren_pattern = r"\(\s*(<<<REF_\d+>>>(?:\s*;\s*<<<REF_\d+>>>)*)\s*\)"
-
-                def protect_paren(match):
-                    placeholder = f"<<<PAREN_{len(protected_parens)}>>>"
-                    protected_parens.append(match.group(1))  # Store the inner content (just the REF placeholders)
-                    return placeholder
-
-                text_protected = re.sub(paren_pattern, protect_paren, text_protected)
-
-                # Now split on sentence boundaries (. ! ?) followed by space
-                # But not at our placeholders (which start with <) and not after book abbreviations
-                sent_list = re.split(r"(?<=[.!?])\s+(?![<])", text_protected)
-
-                for sent in sent_list:
-                    # First restore parenthetical placeholders (which contain REF placeholders)
-                    for i, paren_content in enumerate(protected_parens):
-                        sent = sent.replace(f"<<<PAREN_{i}>>>", f"({paren_content})")
-
-                    # Then restore scripture references
-                    for i, ref in enumerate(protected_refs):
-                        sent = sent.replace(f"<<<REF_{i}>>>", ref)
-
-                    sent = sent.strip()
-                    if len(sent) > 20:
-                        sentences.append({"id": len(sentences) + 1, "text": sent, "paragraph_index": idx})
-
-            return sentences, title
+            """Sentences with scripture citations kept whole, keyed by WOL paragraph id."""
+            parsed = parse_article(html)
+            return parsed["sentences"], parsed["title"]
 
         # Fetch English
         print(f"📖 Fetching English article from: {english_url}")
@@ -4052,12 +3953,31 @@ def api_fetch_article():
         chuukese_sentences, chuukese_title = parse_sentences(chuukese_html)
         print(f"   Found {len(chuukese_sentences)} Chuukese sentences")
 
+        # Clues: which Chuukese sentences share each English sentence's paragraph,
+        # and which of those are the likely translation.
+        hints = align_hints(english_sentences, chuukese_sentences)
+        print(f"   Paired {len(hints)} of {len(english_sentences)} English sentences to Chuukese paragraphs")
+
+        # Word glosses for the hover, as on the Watchtower Library page: every
+        # Chuukese word we hold, plus related entries for the ones we do not.
+        glossed = _attach_dictionary({"results": chuukese_sentences})
+
+        # Remember the article pair so it can be reopened from the sidebar
+        # without fetching wol.jw.org again.
+        article_id = _save_game_article(
+            english_url, chuukese_url, english_title, chuukese_title, english_sentences, chuukese_sentences, hints
+        )
+
         return (
             jsonify(
                 {
                     "success": True,
                     "english": {"url": english_url, "title": english_title, "sentences": english_sentences},
                     "chuukese": {"url": chuukese_url, "title": chuukese_title, "sentences": chuukese_sentences},
+                    "hints": {str(k): v for k, v in hints.items()},
+                    "dictionary": glossed["dictionary"],
+                    "similar": glossed["similar"],
+                    "article_id": article_id,
                 }
             ),
             200,
@@ -4121,8 +4041,10 @@ def api_save_brochure_match():
 
         # Also save to game matches for statistics
         match_data = {
+            "article_id": data.get("article_id"),
             "english_id": data.get("english_id"),
             "chuukese_ids": data.get("chuukese_ids", []),
+            "word_pairs": data.get("word_pairs") or [],
             "english_text": english_text,
             "original_english_text": data.get("original_english_text"),
             "chuukese_text": chuukese_text,
@@ -4134,6 +4056,8 @@ def api_save_brochure_match():
         }
 
         dict_db.db["brochure_matches"].insert_one(match_data)
+        if data.get("article_id"):
+            _bump_game_article_matches(data["article_id"])
 
         return (
             jsonify(
@@ -4146,6 +4070,491 @@ def api_save_brochure_match():
             ),
             201,
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Saved Translation Game articles
+# ---------------------------------------------------------------------------
+# Every article pair fetched for the game is kept (one document per pair, with
+# both sentence lists and the clues) so it can be reopened from the sidebar
+# without going back to wol.jw.org, together with the matches made on it.
+
+
+def _get_game_articles_collection():
+    if dict_db is None or dict_db.db is None:
+        return None
+    return dict_db.db["game_articles"]
+
+
+_GAME_ARTICLE_META = {
+    "_id": 1,
+    "english_url": 1,
+    "chuukese_url": 1,
+    "english_title": 1,
+    "chuukese_title": 1,
+    "english_count": 1,
+    "chuukese_count": 1,
+    "match_count": 1,
+    "created_at": 1,
+    "updated_at": 1,
+    "created_by": 1,
+}
+
+
+def _serialize_game_article(doc: dict) -> dict:
+    out = dict(doc)
+    out["id"] = str(out.pop("_id", ""))
+    for field in ("created_at", "updated_at"):
+        value = out.get(field)
+        if hasattr(value, "isoformat"):
+            out[field] = value.isoformat()
+    return out
+
+
+def _game_pair_key(english_url: str, chuukese_url: str) -> str:
+    return f"{english_url.strip().split('?')[0].rstrip('/')}|{chuukese_url.strip().split('?')[0].rstrip('/')}"
+
+
+def _save_game_article(english_url, chuukese_url, english_title, chuukese_title, english, chuukese, hints):
+    """Upsert the fetched pair; returns its id (None when the database is unavailable)."""
+    col = _get_game_articles_collection()
+    if col is None:
+        return None
+    try:
+        now = datetime.now(timezone.utc)
+        key = _game_pair_key(english_url, chuukese_url)
+        payload = {
+            "english_url": english_url,
+            "chuukese_url": chuukese_url,
+            "english_title": english_title,
+            "chuukese_title": chuukese_title,
+            "english_sentences": english,
+            "chuukese_sentences": chuukese,
+            "hints": {str(k): v for k, v in hints.items()},
+            "english_count": len(english),
+            "chuukese_count": len(chuukese),
+            "updated_at": now,
+        }
+        result = _cosmos_retry(
+            lambda: col.update_one(
+                {"pair_key": key},
+                {
+                    "$set": payload,
+                    "$setOnInsert": {
+                        "pair_key": key,
+                        "created_at": now,
+                        "created_by": session.get("user_email", ""),
+                        "match_count": 0,
+                    },
+                },
+                upsert=True,
+            )
+        )
+        saved_id = result.upserted_id
+        if saved_id is None:
+            existing = col.find_one({"pair_key": key}, {"_id": 1})
+            saved_id = existing["_id"] if existing else None
+        return str(saved_id) if saved_id else None
+    except Exception as e:  # saving is a convenience; the game must still load
+        print(f"⚠️ Could not save game article: {e}")
+        return None
+
+
+def _bump_game_article_matches(article_id: str) -> None:
+    try:
+        from bson import ObjectId
+
+        col = _get_game_articles_collection()
+        if col is not None:
+            col.update_one(
+                {"_id": ObjectId(article_id)},
+                {"$inc": {"match_count": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
+            )
+    except Exception as e:
+        print(f"⚠️ Could not update game article match count: {e}")
+
+
+def _game_article_oid(article_id):
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    try:
+        return ObjectId(article_id)
+    except InvalidId:
+        return None
+
+
+@app.route("/api/game/articles", methods=["GET"])
+@login_required
+def api_game_list_articles():
+    """Articles fetched for the game, most recently used first (metadata only)."""
+    try:
+        col = _get_game_articles_collection()
+        if col is None:
+            return jsonify([])
+        try:
+            docs = list(col.find({}, _GAME_ARTICLE_META).sort("updated_at", -1).limit(100))
+        except Exception as exc:
+            if not _is_cosmos_excluded_order_by_error(exc):
+                raise
+            docs = list(col.find({}, _GAME_ARTICLE_META).limit(100))
+            docs.sort(key=lambda d: str(d.get("updated_at") or ""), reverse=True)
+        return jsonify([_serialize_game_article(d) for d in docs])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/game/articles/<article_id>", methods=["GET"])
+@login_required
+def api_game_get_article(article_id):
+    """Reopen a saved article pair with its clues, word glosses and the matches
+    made on it, in the same shape as /api/articles/fetch."""
+    try:
+        col = _get_game_articles_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        oid = _game_article_oid(article_id)
+        if oid is None:
+            return jsonify({"error": "Invalid ID"}), 400
+        doc = col.find_one({"_id": oid})
+        if not doc:
+            return jsonify({"error": "Not found"}), 404
+
+        chuukese = doc.get("chuukese_sentences") or []
+        glossed = _attach_dictionary({"results": chuukese})
+
+        matches = []
+        for m in dict_db.db["brochure_matches"].find({"article_id": article_id}, {"_id": 0}):
+            matches.append(
+                {
+                    "english_id": m.get("english_id"),
+                    "chuukese_ids": m.get("chuukese_ids") or [],
+                    "english_text": m.get("english_text"),
+                    "was_edited": bool(m.get("was_edited")),
+                    "word_pairs": m.get("word_pairs") or [],
+                }
+            )
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "article_id": article_id,
+                    "english": {
+                        "url": doc.get("english_url"),
+                        "title": doc.get("english_title"),
+                        "sentences": doc.get("english_sentences") or [],
+                    },
+                    "chuukese": {"url": doc.get("chuukese_url"), "title": doc.get("chuukese_title"), "sentences": chuukese},
+                    "hints": doc.get("hints") or {},
+                    "dictionary": glossed["dictionary"],
+                    "similar": glossed["similar"],
+                    "matches": matches,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/game/articles/<article_id>", methods=["DELETE"])
+@login_required
+def api_game_delete_article(article_id):
+    """Remove an article from the sidebar. Matches already saved to the
+    dictionary are kept. Owners can remove their own; admins can remove any."""
+    try:
+        col = _get_game_articles_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        oid = _game_article_oid(article_id)
+        if oid is None:
+            return jsonify({"error": "Invalid ID"}), 400
+        doc = col.find_one({"_id": oid}, {"created_by": 1})
+        if not doc:
+            return jsonify({"error": "Not found"}), 404
+        is_admin = session.get("user_role") == "admin"
+        if not is_admin and doc.get("created_by") and doc.get("created_by") != session.get("user_email"):
+            return jsonify({"error": "You can only remove articles you added"}), 403
+        col.delete_one({"_id": oid})
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Translation review queue (admin only)
+# ---------------------------------------------------------------------------
+# scripts/verify_verbs_wol.py checks dictionary verbs against real usage on
+# wol.jw.org and writes its findings to `translation_reviews`. Nothing changes
+# in the dictionary until an admin accepts a row here; every applied change
+# keeps the previous values in the entry's `history`.
+
+_REVIEW_APPLY_FIELDS = {
+    "english_translation",
+    "grammar",
+    "grammar_modifier",
+    "base_word",
+    "inflection",
+    "wol_verified",
+}
+
+
+def _reviews_collection():
+    if dict_db is None or dict_db.db is None:
+        return None
+    return dict_db.db["translation_reviews"]
+
+
+def _admin_only():
+    if session.get("user_role") != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    return None
+
+
+def _entry_filter(entry_id: str) -> dict:
+    """Dictionary ids are ObjectIds for most rows and strings for some."""
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    try:
+        return {"_id": ObjectId(entry_id)}
+    except (InvalidId, TypeError):
+        return {"_id": entry_id}
+
+
+def _serialize_review(doc: dict) -> dict:
+    out = dict(doc)
+    out["id"] = str(out.pop("_id", ""))
+    for field in ("created_at", "updated_at", "decided_at"):
+        value = out.get(field)
+        if hasattr(value, "isoformat"):
+            out[field] = value.isoformat()
+    return out
+
+
+def _apply_review(review: dict, proposed: dict, by: str) -> dict:
+    """Write the accepted changes to the dictionary entry, keeping history."""
+    changes = {k: v for k, v in (proposed or {}).items() if k in _REVIEW_APPLY_FIELDS}
+    if not changes:
+        raise ValueError("Nothing to apply")
+    flt = _entry_filter(review["entry_id"])
+    entry = dict_db.dictionary_collection.find_one(flt)
+    if not entry:
+        raise LookupError("Dictionary entry no longer exists")
+    now = datetime.now(timezone.utc)
+    before = {k: entry.get(k) for k in changes}
+    update = {
+        **changes,
+        "date_modified": now,
+        "edited_by": by,
+    }
+    if changes.get("wol_verified") or review.get("kind") == "translation":
+        update["wol_verified"] = True
+        update["wol_verified_at"] = now
+        update["wol_evidence_count"] = (review.get("evidence") or {}).get("pair_count", 0)
+        update["verification_source"] = "wol.jw.org"
+    dict_db.dictionary_collection.update_one(
+        flt,
+        {
+            "$set": update,
+            "$push": {
+                "history": {
+                    "at": now,
+                    "by": by,
+                    "review_id": str(review["_id"]),
+                    "kind": review.get("kind"),
+                    "before": before,
+                    "after": changes,
+                }
+            },
+        },
+    )
+    return changes
+
+
+@app.route("/api/reviews/summary", methods=["GET"])
+@login_required
+def api_reviews_summary():
+    """Counts by kind, outcome and status, plus the latest run."""
+    denied = _admin_only()
+    if denied:
+        return denied
+    try:
+        col = _reviews_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        counts = list(
+            col.aggregate(
+                [{"$group": {"_id": {"kind": "$kind", "outcome": "$outcome", "status": "$status"}, "n": {"$sum": 1}}}]
+            )
+        )
+        rows = [{**c["_id"], "count": c["n"]} for c in counts]
+        run = dict_db.db["review_runs"].find_one(sort=[("started_at", -1)])
+        if run:
+            run["id"] = str(run.pop("_id"))
+            for f in ("started_at", "finished_at"):
+                if hasattr(run.get(f), "isoformat"):
+                    run[f] = run[f].isoformat()
+        return jsonify({"counts": rows, "last_run": run})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reviews", methods=["GET"])
+@login_required
+def api_reviews_list():
+    """Review rows, filtered by status / kind / outcome / tier, with search."""
+    denied = _admin_only()
+    if denied:
+        return denied
+    try:
+        col = _reviews_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        query: dict = {}
+        for key in ("status", "kind", "outcome", "tier"):
+            value = (request.args.get(key) or "").strip()
+            if value:
+                query[key] = value
+        q = (request.args.get("q") or "").strip()
+        if q:
+            query["headword"] = {"$regex": re.escape(q), "$options": "i"}
+        page = max(1, int(request.args.get("page", 1) or 1))
+        per_page = max(1, min(int(request.args.get("per_page", 50) or 50), 200))
+        total = col.count_documents(query)
+        try:
+            docs = list(col.find(query).sort("headword", 1).skip((page - 1) * per_page).limit(per_page))
+        except Exception as exc:
+            if not _is_cosmos_excluded_order_by_error(exc):
+                raise
+            # Cosmos refuses to order by a field it has not indexed yet; the
+            # filtered set is small enough to sort here.
+            docs = sorted(col.find(query), key=lambda d: (d.get("headword") or "").lower())
+            docs = docs[(page - 1) * per_page : page * per_page]
+        return jsonify({"items": [_serialize_review(d) for d in docs], "total": total, "page": page, "per_page": per_page})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reviews/<review_id>/decide", methods=["POST"])
+@login_required
+def api_reviews_decide(review_id):
+    """Accept (and apply) or reject one proposal. Accept may carry an edited
+    `proposed` object, so the reviewer can fix the wording before applying."""
+    denied = _admin_only()
+    if denied:
+        return denied
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        col = _reviews_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        try:
+            oid = ObjectId(review_id)
+        except InvalidId:
+            return jsonify({"error": "Invalid ID"}), 400
+        review = col.find_one({"_id": oid})
+        if not review:
+            return jsonify({"error": "Not found"}), 404
+        data = request.get_json(silent=True) or {}
+        action = data.get("action")
+        if action not in ("accept", "reject", "reopen"):
+            return jsonify({"error": "action must be accept, reject or reopen"}), 400
+        by = session.get("user_email", "")
+        now = datetime.now(timezone.utc)
+
+        if action == "reopen":
+            col.update_one({"_id": oid}, {"$set": {"status": "pending", "updated_at": now}, "$unset": {"decided_by": "", "decided_at": ""}})
+            return jsonify({"success": True, "status": "pending"})
+
+        if action == "reject":
+            col.update_one(
+                {"_id": oid},
+                {"$set": {"status": "rejected", "decided_by": by, "decided_at": now, "decision_note": data.get("note", ""), "updated_at": now}},
+            )
+            return jsonify({"success": True, "status": "rejected"})
+
+        proposed = data.get("proposed") or review.get("proposed") or {}
+        applied = _apply_review(review, proposed, by)
+        col.update_one(
+            {"_id": oid},
+            {
+                "$set": {
+                    "status": "applied",
+                    "applied_changes": applied,
+                    "decided_by": by,
+                    "decided_at": now,
+                    "decision_note": data.get("note", ""),
+                    "updated_at": now,
+                }
+            },
+        )
+        return jsonify({"success": True, "status": "applied", "applied": applied})
+    except (ValueError, LookupError) as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reviews/bulk", methods=["POST"])
+@login_required
+def api_reviews_bulk():
+    """Accept or reject many pending rows at once: by explicit ids, or every
+    pending row matching a filter (used for 'apply all automatic fixes')."""
+    denied = _admin_only()
+    if denied:
+        return denied
+    try:
+        from bson import ObjectId
+
+        col = _reviews_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        data = request.get_json(silent=True) or {}
+        action = data.get("action")
+        if action not in ("accept", "reject"):
+            return jsonify({"error": "action must be accept or reject"}), 400
+        query: dict = {"status": "pending"}
+        if data.get("ids"):
+            query["_id"] = {"$in": [ObjectId(i) for i in data["ids"]]}
+        else:
+            flt = data.get("filter") or {}
+            for key in ("kind", "outcome", "tier"):
+                if flt.get(key):
+                    query[key] = flt[key]
+            if len(query) == 1:
+                return jsonify({"error": "A filter or ids are required"}), 400
+        by = session.get("user_email", "")
+        now = datetime.now(timezone.utc)
+        done, failed = 0, []
+        for review in col.find(query).limit(5000):
+            try:
+                if action == "accept":
+                    applied = _apply_review(review, review.get("proposed") or {}, by)
+                    col.update_one(
+                        {"_id": review["_id"]},
+                        {"$set": {"status": "applied", "applied_changes": applied, "decided_by": by, "decided_at": now, "updated_at": now}},
+                    )
+                else:
+                    col.update_one(
+                        {"_id": review["_id"]},
+                        {"$set": {"status": "rejected", "decided_by": by, "decided_at": now, "updated_at": now}},
+                    )
+                done += 1
+            except Exception as e:
+                failed.append({"id": str(review["_id"]), "headword": review.get("headword"), "error": str(e)})
+        return jsonify({"success": True, "done": done, "failed": failed})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -5333,25 +5742,12 @@ def analyze_article_url():
                     result.append((elem.name, raw))
             return result, soup
 
-        def split_sentences(raw_text, scripture_pattern):
-            """Split a paragraph into sentence strings, protecting scripture refs."""
-            protected_refs = []
+        def split_sentences(raw_text, scripture_pattern=None):
+            """Split a paragraph into sentence strings, keeping scripture citations
+            whole and attached (shared splitter, see src/utils/scripture_parser)."""
+            from src.utils.scripture_parser import split_sentences as _shared_split
 
-            def protect(m, _r=protected_refs):
-                ph = f"<<<S{len(_r)}>>>"
-                _r.append(m.group(0))
-                return ph
-
-            protected = re.sub(scripture_pattern, protect, raw_text)
-            parts = re.split(r"(?<=[.!?])\s+(?![<])", protected)
-            out = []
-            for part in parts:
-                for i, ref in enumerate(protected_refs):
-                    part = part.replace(f"<<<S{i}>>>", ref)
-                part = part.strip()
-                if len(part) >= 10:
-                    out.append(part)
-            return out
+            return [part for part in _shared_split(raw_text) if len(part) >= 10]
 
         def _fuzzy_token_match(tok_clean: str, trans_word: str) -> bool:
             """True if tok_clean and trans_word are close enough to count as aligned."""

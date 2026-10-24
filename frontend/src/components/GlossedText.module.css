@@ -1,0 +1,104 @@
+/*
+ * GlossedText — Chuukese words tinted by dictionary status, with a floating
+ * gloss on hover. Shared by the Watchtower Library search and the Translation
+ * Game so both pages read the same way.
+ */
+
+/* A word with no dictionary tint still needs the same padding so the line
+   does not jitter as tints appear. */
+.word {
+  padding: 1px 2px;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* In the dictionary, with an English translation. */
+.translated {
+  background-color: #d3f9d8;
+  cursor: help;
+}
+
+.translated:hover {
+  background-color: #b2f2bb;
+}
+
+/* In the dictionary, but no English translation recorded yet. */
+.untranslated {
+  background-color: #ffdeeb;
+  cursor: help;
+}
+
+.untranslated:hover {
+  background-color: #fcc2d7;
+}
+
+/* Not in the dictionary, but we hold words that look related. */
+.similar {
+  background-color: #fff3bf;
+  cursor: help;
+}
+
+.similar:hover {
+  background-color: #ffec99;
+}
+
+/* Floating gloss shown on hover. One node for the whole page, positioned
+   against the cursor, rather than a tooltip per word. */
+.gloss {
+  position: fixed;
+  z-index: 400;
+  max-width: 280px;
+  pointer-events: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1a1b1e;
+  color: #f1f3f5;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.glossWord {
+  font-weight: 700;
+  color: #ffd43b;
+}
+
+.glossEnglish {
+  color: #8ce99a;
+}
+
+.glossMeta {
+  color: #adb5bd;
+  font-size: 0.74rem;
+}
+
+/* Alphabetical list of related words we do hold */
+.glossList {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.glossList li {
+  padding: 1px 0;
+  color: #ffe066;
+  font-size: 0.8rem;
+}
+
+.glossList li span {
+  color: #ced4da;
+  font-size: 0.74rem;
+}
+
+/* Legend swatch */
+.swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}

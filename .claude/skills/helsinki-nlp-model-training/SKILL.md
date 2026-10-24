@@ -5,6 +5,17 @@ description: Fine-tuning the Helsinki-NLP OPUS-MT models for Chuukese ↔ Englis
 
 # Helsinki-NLP Model Training
 
+> **Engine switch (Oct 2026).** `TRANSLATION_ENGINE=madlad` swaps the whole stack for Google
+> MADLAD-400 3B (`google/madlad400-3b-mt`), which — unlike `opus-mt-mul-en` — was *pre-trained on
+> Chuukese*. Runtime: [`MadladChuukeseTranslator`](../../../src/translation/madlad_translator.py);
+> trainer: [`MadladFineTuner`](../../../src/training/madlad_trainer.py) (LoRA, one adapter for both
+> directions, `<2en>` / `<2chk>` prefix tokens); CLI: [`scripts/train_madlad.py`](../../../scripts/train_madlad.py)
+> (writes `models/madlad400-chuukese/lora/` + `eval_report.json` with baseline vs fine-tuned BLEU/chrF).
+> `app.py` and the continuous trainer pick the engine via
+> [`trainer_factory`](../../../src/training/trainer_factory.py) — never import a tuner class directly
+> in new code. MADLAD needs CUDA or Apple Metal (~6 GB bf16 weights); Helsinki stays the CPU/container
+> default. The rest of this document describes the Helsinki path.
+
 The runtime translator is the [`HelsinkiTranslator`](../../../src/translation/helsinki_translator_v2.py#L87) (loads pre-trained Marian models). The fine-tuner that produces those models is [`HelsinkiFineTuner`](../../../src/training/helsinki_trainer.py#L72). The orchestration around it (data assembly, scheduling, status surfacing) is documented in the [production-retraining-orchestration](../production-retraining-orchestration/SKILL.md) skill — this skill focuses on the trainer and translator internals.
 
 ## Model layout

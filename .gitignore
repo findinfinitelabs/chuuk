@@ -236,6 +236,9 @@ scripts/*.json
 # Model files - exclude large binary and vocab files
 models/*/checkpoint-*/
 models/*/finetuned/
+models/madlad400-chuukese/lora/checkpoints/
+models/madlad400-chuukese/merged/
+models/madlad400-chuukese/lora/*.safetensors
 models/*/*.safetensors
 models/*/*.pt
 models/*/*.pth
@@ -245,3 +248,7 @@ models/*/vocab.json
 
 # Trained models in scripts directory
 scripts/models/
+
+# Regenerable local caches (training pairs pulled from the DB, WOL sentence cache)
+models/madlad400-chuukese/run/
+data/verb_verification/

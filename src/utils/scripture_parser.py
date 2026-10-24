@@ -1,6 +1,17 @@
 """
 Scripture reference parsing utilities.
-Loads book names from config and provides regex patterns for matching scripture references.
+
+Loads book names from config/scripture_books.json and provides:
+
+- a regex that matches a complete scripture citation, in any of the forms
+  wol.jw.org uses in English and Chuukese articles, e.g.
+      Féf. 5:42              1 Cor. 13:4, 7           Acts 19:8-10
+      Fof. 27:37–28:2        Kölf. 3:13, 14           2Ki 21:4-7
+      Rom 3:25; 14:24, 25; 1 Kor. 5:9-13              KÖLF. 32:5
+- helpers to protect those citations with placeholders and restore them, and
+- ``split_sentences()``, which breaks a paragraph into sentences without ever
+  cutting through a citation, and keeps a trailing "(Mat. 6:9)" or
+  "—Kölf. 23:4." with the sentence it belongs to.
 """
 
 import json
@@ -38,40 +49,61 @@ def load_scripture_books():
 
 @lru_cache(maxsize=1)
 def get_all_book_names():
-    """Get a flat list of all scripture book names (abbreviations and full names)."""
+    """Get a flat, de-duplicated list of all scripture book names (abbreviations and full names)."""
     books = load_scripture_books()
+    seen = set()
     all_names = []
-    for key, names in books.items():
-        all_names.extend(names)
+    for names in books.values():
+        for name in names:
+            if name not in seen:
+                seen.add(name)
+                all_names.append(name)
     return all_names
 
 
 @lru_cache(maxsize=1)
 def get_book_names_pattern():
-    """Build regex pattern for matching any scripture book name."""
+    """Build regex pattern for matching any scripture book name (case-insensitive).
+
+    Book names are matched whole: a leading word boundary is enforced and the
+    name must be followed by an optional period and the chapter number, so "Is"
+    only matches as Isaiah in "Is. 2:3", never inside "This".
+    """
     all_names = get_all_book_names()
-    # Sort by length descending so longer names match first (e.g., "Corinthians" before "Cor")
+    # Sort by length descending so longer names match first (e.g., "Corinthians" before "Cor").
     all_names_sorted = sorted(all_names, key=len, reverse=True)
-    return r"(?:" + "|".join(re.escape(name) for name in all_names_sorted) + r")"
+    alternatives = "|".join(re.escape(name).replace(r"\ ", r"\s+") for name in all_names_sorted)
+    return r"(?i:" + alternatives + r")"
+
+
+# "13:4", "13:4, 7", "19:8-10", "27:37–28:2", "3:13, 14", "4:3a"
+_VERSES = r"\d+:\s?\d+[ab]?(?:\s?[-–—]\s?\d+(?::\d+)?[ab]?)?(?:\s?,\s?\d+[ab]?(?:\s?[-–—]\s?\d+(?::\d+)?)?)*"
+# "14:24, 25; 15:2" — further chapter:verse groups of the same book
+_CHAPTERS = rf"{_VERSES}(?:\s?;\s?{_VERSES})*"
+_ORDINAL = r"(?:[1-3]\s?)?"
 
 
 @lru_cache(maxsize=1)
 def get_scripture_reference_pattern():
     """
-    Build regex pattern for matching scripture references.
+    Build regex pattern for matching complete scripture references.
 
-    Examples matched:
-    - 1 Cor. 13:4, 7
-    - Féf. 5:42
-    - Acts 19:8-10
-    - 1 Corinthians 15:33
-    - Mateus 5:3
+    One capturing group wraps the whole citation, so ``re.findall`` returns the
+    citation text. Matched forms include:
+
+    - 1 Cor. 13:4, 7 / Féf. 5:42 / Acts 19:8-10 / 1 Corinthians 15:33 / Mateus 5:3
+    - 2Ki 21:4-7 (ordinal joined to the book), KÖLF. 32:5 (upper case)
+    - Fof. 27:37–28:2 (range across chapters)
+    - Rom 3:25; 14:24, 25; 1 Kor. 5:9-13 (several books / chapters joined by ";")
     """
     book_names = get_book_names_pattern()
-    # Pattern: [optional 1-3] BookName[.] chapter:verse(s)
-    # Supports comma and hyphen verse ranges, semicolon for multiple refs
-    pattern = rf"([1-3]?\s*{book_names}\.?\s+\d+:\s*\d+(?:\s*[-–,]\s*\d+)*(?:\s*;\s*[1-3]?\s*{book_names}\.?\s+\d+:\s*\d+(?:\s*[-–,]\s*\d+)*)*)"
+    one_book = rf"{_ORDINAL}{book_names}\.?\s*{_CHAPTERS}"
+    pattern = rf"((?<![\w.]){one_book}(?:\s?;\s?{one_book})*)"
     return pattern
+
+
+_PLACEHOLDER = "<<<REF_{}>>>"
+_PLACEHOLDER_RE = re.compile(r"<<<REF_(\d+)>>>")
 
 
 def protect_scripture_references(text):
@@ -85,7 +117,7 @@ def protect_scripture_references(text):
     protected_refs = []
 
     def protect_ref(match):
-        placeholder = f"<<<REF_{len(protected_refs)}>>>"
+        placeholder = _PLACEHOLDER.format(len(protected_refs))
         protected_refs.append(match.group(0))
         return placeholder
 
@@ -95,9 +127,57 @@ def protect_scripture_references(text):
 
 def restore_scripture_references(text, protected_refs):
     """Restore protected scripture references in text."""
-    for i, ref in enumerate(protected_refs):
-        text = text.replace(f"<<<REF_{i}>>>", ref)
+    return _PLACEHOLDER_RE.sub(lambda m: protected_refs[int(m.group(1))], text)
+
+
+# ---------------------------------------------------------------------------
+# Sentence splitting
+# ---------------------------------------------------------------------------
+
+_INVISIBLE = re.compile(r"[​‌‍­﻿⁠]")
+
+# A sentence ends at . ! or ?, plus any closing quotes/brackets, plus an optional
+# trailing parenthesised citation such as "(Kölf. 137:1, 3)" or "(Álleani Aisea
+# 55:7.)". The next sentence starts with an opening quote/bracket, a capital
+# (including Chuukese Á É Ó Ú Ä Ö Ü), a digit (paragraph numbers) or a
+# protected citation.
+_SENTENCE_END = re.compile(
+    r"[.!?][”’\"')\]]*(?:\s*\((?:[^()<]|<<<REF_\d+>>>){1,160}\))?"
+    r"(?=\s+[“‘\"'(\[]?(?:[A-ZÀ-Þ]|\d|<<<REF_))"
+)
+
+
+def normalize_text(text):
+    """Collapse whitespace and undo the stray spaces HTML extraction leaves
+    around punctuation: "Mattu 24:14 , ewe" → "Mattu 24:14, ewe", "( Mat. 6:9 )"
+    → "(Mat. 6:9)"."""
+    text = _INVISIBLE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+([,.;:!?’”)\]])", r"\1", text)
+    text = re.sub(r"([(\[“‘])\s+", r"\1", text)
+    # "wa.— Luk 15:7 ." → "wa.—Luk 15:7."
+    text = re.sub(r"\s*(—|–)\s*", r"\1", text)
     return text
+
+
+def split_sentences(text):
+    """Split a paragraph into sentences, keeping every scripture citation whole
+    and attached to the sentence it cites.
+
+    >>> split_sentences('A erá: “Esap wor an mwäl.” (Tut. 32:4) A alónga an kefil.')
+    ['A erá: “Esap wor an mwäl.” (Tut. 32:4)', 'A alónga an kefil.']
+    """
+    text = normalize_text(text)
+    if not text:
+        return []
+    protected, refs = protect_scripture_references(text)
+
+    out, start = [], 0
+    for m in _SENTENCE_END.finditer(protected):
+        out.append(protected[start : m.end()].strip())
+        start = m.end()
+    out.append(protected[start:].strip())
+    return [restore_scripture_references(s, refs) for s in out if s]
 
 
 # For backwards compatibility and direct import

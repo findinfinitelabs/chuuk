@@ -35,8 +35,12 @@ class EpochProgressCallback(TrainerCallback):
         self.num_epochs = num_epochs
         self.stage_name = stage_name
 
+    def _current_epoch(self, state: TrainerState) -> int:
+        # After the final step state.epoch == num_epochs exactly; don't report "epoch 4/3".
+        return min(int(state.epoch) + 1, self.num_epochs)
+
     def on_epoch_begin(self, args, state: TrainerState, control: TrainerControl, **kwargs):
-        epoch = int(state.epoch) + 1
+        epoch = self._current_epoch(state)
         if self.progress_callback:
             self.progress_callback(
                 f"Training {self.stage_name} — epoch {epoch}/{self.num_epochs}",
@@ -53,9 +57,9 @@ class EpochProgressCallback(TrainerCallback):
         loss = (logs or {}).get("loss", None)
         if self.progress_callback:
             self.progress_callback(
-                f"Training {self.stage_name} — epoch {int(state.epoch) + 1}/{self.num_epochs}",
+                f"Training {self.stage_name} — epoch {self._current_epoch(state)}/{self.num_epochs}",
                 None,
-                epoch=int(state.epoch) + 1,
+                epoch=self._current_epoch(state),
                 total_epochs=self.num_epochs,
                 epoch_step_pct=step_pct,
                 epoch_loss=round(loss, 4) if loss is not None else None,

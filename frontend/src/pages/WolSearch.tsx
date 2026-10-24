@@ -9,6 +9,8 @@ import {
   IconUser, IconQuote, IconHistory, IconTrash, IconDatabase,
 } from '@tabler/icons-react'
 import axios from 'axios'
+import { GlossedWords, GlossCard, GlossLegend } from '../components/GlossedText'
+import type { Dictionary, SimilarMap, Gloss } from '../components/GlossedText'
 import styles from './WolSearch.module.css'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -72,36 +74,6 @@ interface SubjectCount {
   count: number
 }
 
-/** A dictionary entry for one Chuukese word, keyed by its lowercase form. */
-interface DictEntry {
-  english: string
-  grammar: string
-  grammar_modifier: string | null
-  definition: string
-  status: 'translated' | 'untranslated'
-}
-
-type Dictionary = Record<string, DictEntry>
-
-/** A dictionary word that looks related to one we don't hold. */
-interface SimilarWord {
-  word: string
-  english: string
-}
-
-/** Related words for each unknown word, already in alphabetical order. */
-type SimilarMap = Record<string, SimilarWord[]>
-
-/** What the floating gloss is currently describing: either a dictionary entry
- *  or, for an unknown word, the related entries we do hold. */
-interface Gloss {
-  word: string
-  entry?: DictEntry
-  similar?: SimilarWord[]
-  x: number
-  y: number
-}
-
 interface WolResponse {
   query: string
   results: WolResult[]
@@ -153,11 +125,6 @@ const SUBJECT_COLOR: Record<Subject['kind'], string> = {
   name: 'teal',
 }
 
-/** Splits on non-letters, keeping the separators so the sentence rebuilds exactly.
- *  Mirrors the backend's `[^\W\d_]+`, so both sides agree on what a word is. */
-const TOKENS = /([^\p{L}]+)/u
-const IS_WORD = /^\p{L}+$/u
-
 /** Renders the sentence: every word tinted by its dictionary status, and the
  *  searched term marked on top of that. */
 function Sentence({
@@ -171,45 +138,15 @@ function Sentence({
   return (
     <Text className={styles.sentence}>
       {segments.map((seg, si) => {
-        const body = seg.text.split(TOKENS).map((tok, ti) => {
-          if (!tok) return null
-          const key = `${si}-${ti}`
-          if (!IS_WORD.test(tok)) return <span key={key}>{tok}</span>
-
-          const lower = tok.toLowerCase()
-          const entry = dictionary[lower]
-          const near = entry ? undefined : similar[lower]
-          const tint = entry
-            ? entry.status === 'translated'
-              ? styles.translated
-              : styles.untranslated
-            : near
-              ? styles.similar
-              : undefined
-
-          const hoverable = entry || near
-          return (
-            <span
-              key={key}
-              className={`${styles.word}${tint ? ` ${tint}` : ''}`}
-              onMouseEnter={
-                hoverable
-                  ? (e) =>
-                      onGloss({
-                        word: tok,
-                        entry,
-                        similar: near,
-                        x: e.clientX,
-                        y: e.clientY,
-                      })
-                  : undefined
-              }
-              onMouseLeave={hoverable ? () => onGloss(null) : undefined}
-            >
-              {tok}
-            </span>
-          )
-        })
+        const body = (
+          <GlossedWords
+            text={seg.text}
+            dictionary={dictionary}
+            similar={similar}
+            onGloss={onGloss}
+            keyPrefix={`${si}-`}
+          />
+        )
         return seg.match ? (
           <mark key={si} className={styles.hit}>{body}</mark>
         ) : (
@@ -220,74 +157,7 @@ function Sentence({
   )
 }
 
-/** The floating gloss. One instance for the page, following the cursor. */
-function GlossCard({ gloss }: { gloss: Gloss }) {
-  // Keep the card on screen near the right and bottom edges.
-  const left = Math.min(gloss.x + 14, window.innerWidth - 300)
-  const top = Math.min(gloss.y + 18, window.innerHeight - 160)
-  const { entry, similar } = gloss
-
-  return (
-    <div className={styles.gloss} style={{ left, top }}>
-      <div className={styles.glossWord}>{gloss.word}</div>
-
-      {entry ? (
-        <>
-          {entry.status === 'translated' ? (
-            <div className={styles.glossEnglish}>{entry.english}</div>
-          ) : (
-            <div className={styles.glossMeta}>In the dictionary — no English translation yet</div>
-          )}
-          {(entry.grammar || entry.definition) && (
-            <div className={styles.glossMeta}>
-              {entry.grammar}
-              {entry.grammar && entry.definition ? ' · ' : ''}
-              {entry.definition}
-            </div>
-          )}
-        </>
-      ) : similar && similar.length > 0 ? (
-        <>
-          <div className={styles.glossMeta}>
-            Not in the dictionary. Similar {similar.length === 1 ? 'entry' : 'entries'} we have:
-          </div>
-          <ul className={styles.glossList}>
-            {similar.map((s) => (
-              <li key={s.word}>
-                {s.word}
-                {s.english && <span> — {s.english}</span>}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
-  )
-}
-
-/** Explains the word tints. */
-function Legend() {
-  return (
-    <Group gap="md" mt="xs">
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#d3f9d8' }} />
-        in dictionary, translated
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#ffdeeb' }} />
-        in dictionary, no translation
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#fff3bf' }} />
-        similar entries exist
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: 'transparent', border: '1px solid #ced4da' }} />
-        not in dictionary
-      </Text>
-    </Group>
-  )
-}
+const Legend = GlossLegend
 
 /** The English equivalent and its reference, shown under the Chuukese. */
 function EnglishBlock({ english }: { english: English | null | undefined }) {

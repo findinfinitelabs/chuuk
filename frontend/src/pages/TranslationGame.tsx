@@ -1,16 +1,30 @@
-import { useState, useEffect, useRef } from 'react'
-import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip, Divider, Loader, Tabs } from '@mantine/core'
-import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy, IconLink, IconUnlink, IconPencil, IconEye, IconEdit } from '@tabler/icons-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Card, Title, Text, Button, Group, Stack, Badge, Alert, ScrollArea, Paper, Textarea, Modal, TextInput, ActionIcon, CopyButton, Tooltip, Divider, Loader, Tabs, Switch, Box, NavLink as MantineNavLink } from '@mantine/core'
+import { IconTrophy, IconTarget, IconRefresh, IconCheck, IconX, IconWorld, IconCopy, IconLink, IconUnlink, IconPencil, IconEye, IconEdit, IconHistory, IconTrash } from '@tabler/icons-react'
 import MarkdownIt from 'markdown-it'
 import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './TranslationGame.css'
+import { GlossedWords, GlossCard, GlossLegend } from '../components/GlossedText'
+import type { Dictionary, SimilarMap, Gloss } from '../components/GlossedText'
 
 interface Sentence {
   id: number
   text: string
   editedText?: string
   paragraph_index?: number
+  /** wol.jw.org paragraph id — shared by the English and Chuukese editions. */
+  pid?: string | null
+  sentence_index?: number
+  sentence_count?: number
+  is_scripture_ref?: boolean
+}
+
+/** Clue for one English sentence: the Chuukese sentences in the same paragraph,
+ *  and which of those the server thinks are its translation. */
+interface Hint {
+  paragraph: number[]
+  likely: number[]
 }
 
 interface Match {
@@ -41,7 +55,107 @@ interface WordPair {
   inDatabase: boolean
 }
 
+/** One row in the saved-article sidebar. */
+interface SavedArticle {
+  id: string
+  english_title: string | null
+  chuukese_title: string | null
+  english_url: string
+  chuukese_url: string
+  english_count: number
+  chuukese_count: number
+  match_count: number
+  updated_at?: string
+  created_by?: string
+}
+
+/** A match as stored by the server, returned when a saved article is reopened. */
+interface SavedMatch {
+  english_id: number
+  chuukese_ids: number[]
+  english_text: string | null
+  was_edited: boolean
+  word_pairs: WordPair[]
+}
+
 const _md = new MarkdownIt()
+
+/** Articles already fetched for the game. Reopening one costs a single
+ *  database read instead of two round trips to wol.jw.org, and restores the
+ *  matches made on it. */
+function ArticleSidebar({
+  saved, activeId, loading, error, onSelect, onDelete,
+}: {
+  saved: SavedArticle[]
+  activeId: string | null
+  loading: boolean
+  error: string
+  onSelect: (a: SavedArticle) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <Box style={{ width: 250, flexShrink: 0 }}>
+      <Paper withBorder radius="md" p="sm" style={{ position: 'sticky', top: 16 }}>
+        <Group gap={6} mb="sm">
+          <IconHistory size={16} color="#7c55de" />
+          <Text size="sm" fw={700} c="violet.8">Saved Articles</Text>
+          {loading && <Loader size="xs" style={{ marginLeft: 'auto' }} />}
+        </Group>
+        <Divider mb="sm" />
+        {error && <Text size="xs" c="red" mb="xs">{error}</Text>}
+        <ScrollArea h={520} type="auto">
+          {saved.length === 0 && !loading && (
+            <Text size="xs" c="dimmed" ta="center" py="md">
+              Articles you load are saved here automatically, with your matches.
+            </Text>
+          )}
+          {saved.map((item) => {
+            const done = item.english_count > 0 && item.match_count >= item.english_count
+            return (
+              <Box key={item.id} mb={4} style={{ position: 'relative' }}>
+                <MantineNavLink
+                  label={
+                    <Stack gap={2}>
+                      <Text size="xs" fw={700} lineClamp={2} c={activeId === item.id ? 'violet.9' : undefined}>
+                        {item.english_title || item.english_url}
+                      </Text>
+                      {item.chuukese_title && (
+                        <Text size="xs" c="dimmed" lineClamp={1}>{item.chuukese_title}</Text>
+                      )}
+                      <Group gap={4} mt={2}>
+                        <Badge size="xs" variant="light" color="blue">{item.english_count} EN</Badge>
+                        <Badge size="xs" variant="light" color="green">{item.chuukese_count} CHK</Badge>
+                        <Badge size="xs" variant={done ? 'filled' : 'light'} color={done ? 'teal' : 'orange'}>
+                          {item.match_count} matched
+                        </Badge>
+                      </Group>
+                      {item.updated_at && (
+                        <Text size="xs" c="dimmed">{new Date(item.updated_at).toLocaleDateString()}</Text>
+                      )}
+                    </Stack>
+                  }
+                  active={activeId === item.id}
+                  onClick={() => onSelect(item)}
+                  style={{ borderRadius: 6, paddingRight: 30 }}
+                />
+                <ActionIcon
+                  size="xs"
+                  color="red"
+                  variant="subtle"
+                  style={{ position: 'absolute', top: 8, right: 4 }}
+                  onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
+                  aria-label={`Remove saved article ${item.english_title || item.english_url}`}
+                >
+                  <IconTrash size={12} />
+                </ActionIcon>
+              </Box>
+            )
+          })}
+        </ScrollArea>
+      </Paper>
+    </Box>
+  )
+}
 
 const PAIR_COLORS = ['green', 'blue', 'orange', 'violet', 'teal', 'red', 'cyan', 'pink', 'grape', 'yellow']
 
@@ -52,6 +166,34 @@ function TranslationGame() {
   const [selectedEnglish, setSelectedEnglish] = useState<number | null>(null)
   const [selectedChuukese, setSelectedChuukese] = useState<number[]>([])  // Changed to array
   const [matches, setMatches] = useState<Match[]>([])
+  const [hints, setHints] = useState<Record<string, Hint>>({})
+  const [showClues, setShowClues] = useState(true)
+  // Word glosses for the Chuukese column (same hover as the Watchtower Library page)
+  const [dictionary, setDictionary] = useState<Dictionary>({})
+  const [similar, setSimilar] = useState<SimilarMap>({})
+  const [gloss, setGloss] = useState<Gloss | null>(null)
+  const chuukeseCardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  // Saved-article sidebar
+  const [articleId, setArticleId] = useState<string | null>(null)
+  const [saved, setSaved] = useState<SavedArticle[]>([])
+  const [savedLoading, setSavedLoading] = useState(false)
+  const [savedError, setSavedError] = useState('')
+
+  const refreshSaved = useCallback(async () => {
+    setSavedLoading(true)
+    try {
+      const res = await axios.get('/api/game/articles')
+      setSaved(Array.isArray(res.data) ? res.data : [])
+      setSavedError('')
+    } catch {
+      setSavedError('Could not load saved articles')
+    } finally {
+      setSavedLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refreshSaved() }, [refreshSaved])
   const [score, setScore] = useState(0)
   const [totalAttempts, setTotalAttempts] = useState(0)
   const [correctMatches, setCorrectMatches] = useState(0)
@@ -94,13 +236,27 @@ function TranslationGame() {
     if (englishSentences.length > 0 || chuukeseSentences.length > 0) {
       saveGameStateToCache()
     }
-  }, [englishSentences, chuukeseSentences, matches, selectedEnglish, selectedChuukese, englishUrl, chuukeseUrl, articleTitle])
+  }, [englishSentences, chuukeseSentences, matches, selectedEnglish, selectedChuukese, englishUrl, chuukeseUrl, articleTitle, hints, dictionary, similar, articleId])
+
+  // Bring the first clue into view when an English sentence is picked.
+  useEffect(() => {
+    if (selectedEnglish === null || !showClues) return
+    const hint = hints[String(selectedEnglish)]
+    const target = hint?.likely[0] ?? hint?.paragraph[0]
+    if (target !== undefined) {
+      chuukeseCardRefs.current[target]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [selectedEnglish, hints, showClues])
 
   const saveGameStateToCache = () => {
     const gameState = {
       englishSentences,
       chuukeseSentences,
       matches,
+      hints,
+      dictionary,
+      similar,
+      articleId,
       englishUrl,
       chuukeseUrl,
       articleTitle,
@@ -120,6 +276,10 @@ function TranslationGame() {
           setEnglishSentences(gameState.englishSentences || [])
           setChuukeseSentences(gameState.chuukeseSentences || [])
           setMatches(gameState.matches || [])
+          setHints(gameState.hints || {})
+          setDictionary(gameState.dictionary || {})
+          setSimilar(gameState.similar || {})
+          setArticleId(gameState.articleId || null)
           setEnglishUrl(gameState.englishUrl || '')
           setChuukeseUrl(gameState.chuukeseUrl || '')
           setArticleTitle(gameState.articleTitle || '')
@@ -146,6 +306,11 @@ function TranslationGame() {
     setEnglishSentences([])
     setChuukeseSentences([])
     setMatches([])
+    setHints({})
+    setDictionary({})
+    setSimilar({})
+    setGloss(null)
+    setArticleId(null)
     setSelectedEnglish(null)
     setSelectedChuukese([])
     setEnglishUrl('')
@@ -186,8 +351,13 @@ function TranslationGame() {
       
       setEnglishSentences(response.data.english.sentences)
       setChuukeseSentences(response.data.chuukese.sentences)
+      setHints(response.data.hints || {})
+      setDictionary(response.data.dictionary || {})
+      setSimilar(response.data.similar || {})
+      setArticleId(response.data.article_id || null)
       setArticleTitle(response.data.english.title)
       setMatches([])
+      refreshSaved()
       setSelectedEnglish(null)
       setSelectedChuukese([])
       
@@ -196,7 +366,7 @@ function TranslationGame() {
         message: `Loaded: ${response.data.english.title}`,
         color: 'green'
       })
-    } catch (error) {
+    } catch {
       notifications.show({
         title: 'Error',
         message: 'Failed to fetch article. Make sure it\'s a valid wol.jw.org URL.',
@@ -204,6 +374,58 @@ function TranslationGame() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  /** Reopen a saved article pair, with the matches already made on it. */
+  const openSaved = async (item: SavedArticle) => {
+    try {
+      setLoading(true)
+      setGloss(null)
+      const res = await axios.get(`/api/game/articles/${item.id}`)
+      const data = res.data
+      setEnglishSentences(data.english.sentences || [])
+      setChuukeseSentences(data.chuukese.sentences || [])
+      setHints(data.hints || {})
+      setDictionary(data.dictionary || {})
+      setSimilar(data.similar || {})
+      setArticleId(data.article_id || item.id)
+      setEnglishUrl(data.english.url || '')
+      setChuukeseUrl(data.chuukese.url || '')
+      setArticleTitle(data.english.title || '')
+      const restored: Match[] = ((data.matches || []) as SavedMatch[])
+        .filter((m) => typeof m.english_id === 'number')
+        .map((m) => ({
+          englishId: m.english_id,
+          chuukeseIds: m.chuukese_ids || [],
+          editedEnglishText: m.was_edited && m.english_text ? m.english_text : undefined,
+          savedWordPairs: m.word_pairs && m.word_pairs.length > 0 ? m.word_pairs : undefined,
+        }))
+      // One match per English sentence: keep the latest saved.
+      const byEnglish = new Map<number, Match>()
+      restored.forEach((m) => byEnglish.set(m.englishId, m))
+      setMatches(Array.from(byEnglish.values()))
+      setSelectedEnglish(null)
+      setSelectedChuukese([])
+      notifications.show({
+        title: 'Article Restored',
+        message: `${data.english.title || 'Article'} · ${byEnglish.size} match${byEnglish.size === 1 ? '' : 'es'}`,
+        color: 'violet'
+      })
+    } catch {
+      notifications.show({ title: 'Error', message: 'Could not open that saved article', color: 'red' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const removeSaved = async (id: string) => {
+    try {
+      await axios.delete(`/api/game/articles/${id}`)
+      if (articleId === id) setArticleId(null)
+      refreshSaved()
+    } catch {
+      setSavedError('Could not remove that saved article')
     }
   }
 
@@ -556,8 +778,11 @@ function TranslationGame() {
         original_english_text: englishSentence?.text,
         chuukese_text: chuukeseTexts,
         is_correct: isCorrect,
-        user_id: 'anonymous'
+        user_id: 'anonymous',
+        article_id: articleId,
+        word_pairs: currentWordPairs,
       })
+      if (articleId) refreshSaved()
       
       // Add to matches with edited text and saved word pairs
       setMatches(prev => [...prev, { 
@@ -581,7 +806,7 @@ function TranslationGame() {
       setSelectedEnglish(null)
       setSelectedChuukese([])
       
-    } catch (error) {
+    } catch {
       notifications.show({
         title: 'Error',
         message: 'Failed to save match',
@@ -592,6 +817,11 @@ function TranslationGame() {
 
   const resetGame = () => {
     setMatches([])
+    setHints({})
+    setDictionary({})
+    setSimilar({})
+    setGloss(null)
+    setArticleId(null)
     setSelectedEnglish(null)
     setSelectedChuukese([])
     setEnglishUrl('')
@@ -610,8 +840,27 @@ function TranslationGame() {
 
   const accuracy = totalAttempts > 0 ? Math.round((correctMatches / totalAttempts) * 100) : 0
 
+  // The clue for the selected English sentence, if the server could pair its paragraph.
+  const activeHint: Hint | undefined =
+    showClues && selectedEnglish !== null ? hints[String(selectedEnglish)] : undefined
+  const clueFor = (chuukeseId: number): 'likely' | 'paragraph' | null => {
+    if (!activeHint) return null
+    if (activeHint.likely.includes(chuukeseId)) return 'likely'
+    if (activeHint.paragraph.includes(chuukeseId)) return 'paragraph'
+    return null
+  }
+
   return (
-    <Stack gap="lg">
+    <Group align="flex-start" gap="lg" wrap="nowrap" className="game-layout">
+      <ArticleSidebar
+        saved={saved}
+        activeId={articleId}
+        loading={savedLoading}
+        error={savedError}
+        onSelect={openSaved}
+        onDelete={removeSaved}
+      />
+      <Stack gap="lg" style={{ flex: 1, minWidth: 0 }}>
       {/* Header Card */}
       <Card withBorder>
         <Group justify="space-between">
@@ -788,8 +1037,8 @@ function TranslationGame() {
         <>
           <Alert title="How to Play" color="blue">
             <Text size="sm">
-              1. Click an English sentence<br />
-              2. Click one or more Chuukese sentences that match it<br />
+              1. Click an English sentence — the Chuukese sentences from the same paragraph light up, and the likely match is marked <Badge size="xs" color="yellow" variant="filled">Clue</Badge><br />
+              2. Click one or more Chuukese sentences that match it (hover a word for its dictionary entry)<br />
               3. Click "Confirm Match" button<br />
               4. Edit the English text if needed before saving
             </Text>
@@ -844,6 +1093,14 @@ function TranslationGame() {
                           {sentence.editedText && (
                             <Badge size="xs" color="orange" variant="dot">Edited</Badge>
                           )}
+                          {selected && activeHint && (
+                            <Badge size="xs" color="yellow" variant="light">
+                              {activeHint.likely.length} clue{activeHint.likely.length === 1 ? '' : 's'}
+                            </Badge>
+                          )}
+                          {selected && showClues && !activeHint && (
+                            <Badge size="xs" color="gray" variant="light">no clue</Badge>
+                          )}
                           {matched ? (
                             <Tooltip label="Click to re-edit this match" withArrow>
                               <Group gap={4}>
@@ -864,33 +1121,66 @@ function TranslationGame() {
           {/* Chuukese Column */}
           <Card withBorder>
             <Title order={4} mb="md">
-              <Badge color="green" size="lg" mb="xs">Chuukese ({chuukeseSentences.length})</Badge>
+              <Group justify="space-between" align="center">
+                <Badge color="green" size="lg" mb="xs">Chuukese ({chuukeseSentences.length})</Badge>
+                <Switch
+                  size="sm"
+                  label="Show clues"
+                  checked={showClues}
+                  onChange={(e) => setShowClues(e.currentTarget.checked)}
+                />
+              </Group>
+              <GlossLegend />
             </Title>
             <ScrollArea h={600}>
               <Stack gap="xs">
                 {chuukeseSentences.map((sentence) => {
                   const matched = isMatched(sentence.id, 'chuukese')
                   const selected = selectedChuukese.includes(sentence.id)
+                  const clue = matched ? null : clueFor(sentence.id)
+                  const background = matched ? '#e8f5e9'
+                    : selected ? '#e3f2fd'
+                    : clue === 'likely' ? '#fff3bf'
+                    : clue === 'paragraph' ? '#fff9db'
+                    : 'white'
+                  const border = selected ? '2px solid #2196F3'
+                    : matched ? '2px solid #4CAF50'
+                    : clue === 'likely' ? '2px dashed #f59f00'
+                    : clue === 'paragraph' ? '1px dashed #fab005'
+                    : '1px solid #dee2e6'
                   
                   return (
                     <Paper
                       key={sentence.id}
+                      ref={(el: HTMLDivElement | null) => { chuukeseCardRefs.current[sentence.id] = el }}
                       p="md"
                       withBorder
-                      className={`sentence-card ${matched ? 'matched' : ''} ${selected ? 'selected' : ''}`}
+                      className={`sentence-card ${matched ? 'matched' : ''} ${selected ? 'selected' : ''} ${clue ? `clue-${clue}` : ''}`}
                       onClick={() => !matched && handleChuukeseClick(sentence.id)}
                       style={{
                         cursor: matched ? 'not-allowed' : 'pointer',
-                        opacity: matched ? 0.5 : 1,
-                        backgroundColor: matched ? '#e8f5e9' : selected ? '#e3f2fd' : 'white',
-                        border: selected ? '2px solid #2196F3' : matched ? '2px solid #4CAF50' : '1px solid #dee2e6'
+                        opacity: matched ? 0.5 : activeHint && !clue && !selected ? 0.55 : 1,
+                        backgroundColor: background,
+                        border
                       }}
                     >
                       <Group justify="space-between" align="flex-start">
                         <Text size="sm" className="chuukese-text-style" style={{ flex: 1 }}>
-                          {sentence.editedText || sentence.text}
+                          <GlossedWords
+                            text={sentence.editedText || sentence.text}
+                            dictionary={dictionary}
+                            similar={similar}
+                            onGloss={setGloss}
+                            keyPrefix={`${sentence.id}-`}
+                          />
                         </Text>
                         <Group gap="xs">
+                          {clue === 'likely' && (
+                            <Badge size="xs" color="yellow" variant="filled">Clue</Badge>
+                          )}
+                          {clue === 'paragraph' && (
+                            <Badge size="xs" color="yellow" variant="outline">Same ¶</Badge>
+                          )}
                           {sentence.editedText && (
                             <Badge size="xs" color="orange" variant="dot">Edited</Badge>
                           )}
@@ -905,6 +1195,8 @@ function TranslationGame() {
           </Card>
         </Group>
       )}
+
+      {gloss && <GlossCard gloss={gloss} />}
 
       {/* Completion Message */}
       {matches.length === englishSentences.length && englishSentences.length > 0 && (
@@ -1199,7 +1491,8 @@ function TranslationGame() {
           </Group>
         </Stack>
       </Modal>
-    </Stack>
+      </Stack>
+    </Group>
   )
 }
 

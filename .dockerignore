@@ -48,3 +48,6 @@ data/brochures
 models/*/finetuned
 models/*/checkpoint-*
 models/*/lora_adapters
+# MADLAD LoRA checkpoints / merged weights are never baked into the image
+models/madlad400-chuukese/lora/checkpoints
+models/madlad400-chuukese/merged

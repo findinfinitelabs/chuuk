@@ -42,6 +42,8 @@ function Translate() {
   
   const [text, setText] = useState(cachedText)
   const [translations, setTranslations] = useState<TranslationResults>(cachedTranslations)
+  // Name of the neural engine behind the `helsinki` result (Helsinki-NLP or MADLAD-400)
+  const [engineName, setEngineName] = useState<string>('Helsinki-NLP')
   const [phraseTranslations, setPhraseTranslations] = useState<PhraseTranslation[]>([])
   const [correction, setCorrection] = useState('')
   const [direction, setDirection] = useState<'chk_to_en' | 'en_to_chk'>(cachedDirection)
@@ -212,6 +214,7 @@ function Translate() {
 
       if (fullTextResponse.data.success) {
         setTranslations(fullTextResponse.data.translations)
+        if (fullTextResponse.data.engine_name) setEngineName(fullTextResponse.data.engine_name)
       }
 
       // Split text into phrases for phrase-by-phrase breakdown
@@ -552,7 +555,7 @@ function Translate() {
               <Card.Section withBorder inheritPadding py="sm">
                 <Group gap="xs">
                   <IconLanguage size={20} color="var(--mantine-color-green-6)" />
-                  <Title order={4}>Helsinki-NLP</Title>
+                  <Title order={4}>{engineName}</Title>
                 </Group>
               </Card.Section>
               <Card.Section inheritPadding py="md" pos="relative">

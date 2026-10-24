@@ -157,7 +157,10 @@ class TrainingPairCollector:
                 sentences = para.get("sentences", [])
                 for sent in sentences:
                     chk = (sent.get("text_only") or sent.get("chuukese") or "").strip()
-                    eng = (sent.get("english_text") or sent.get("english_assembled") or "").strip()
+                    # Only real translations. `english_assembled` is a word-by-word
+                    # dictionary gloss ("why you are / you were erá so, like that…")
+                    # and teaching it as English wrecks the sentence model.
+                    eng = (sent.get("english_text") or "").strip()
                     if chk and eng and len(chk) > 3 and len(eng) > 3:
                         pairs.append({
                             "chuukese": chk,
@@ -189,8 +192,15 @@ class TrainingPairCollector:
                 seen[key] = p
 
         filtered = [p for p in seen.values() if p["confidence"] >= min_confidence]
-        logger.info("Collected %d pairs (after dedup + confidence filter)", len(filtered))
-        return filtered
+
+        # Strip verse numbers / footnote markers, drop reference lists, glosses and
+        # misaligned verses — see src/training/pair_cleaning.py
+        from src.training.pair_cleaning import clean_pairs
+        stats: dict = {}
+        cleaned = clean_pairs(filtered, stats)
+        logger.info("Collected %d pairs (after dedup + confidence filter); cleaning kept %d, dropped %d, normalised %d",
+                    len(filtered), stats["kept"], stats["dropped"], stats["normalised"])
+        return cleaned
 
     def count_new_pairs(self, since_pairs_count: int) -> int:
         """Quick estimate of new pairs since last count."""
@@ -411,17 +421,21 @@ class ContinuousTrainer:
             run.log(f"LoRA teach: '{chuukese}' ↔ '{english}' [{direction}]")
             _emit_progress(f"LoRA update: teaching '{chuukese}' ↔ '{english}'", 10)
 
-            from src.training.helsinki_trainer import HelsinkiFineTuner
-            tuner = HelsinkiFineTuner(
+            from src.training.trainer_factory import get_fine_tuner
+            tuner = get_fine_tuner(
                 progress_callback=lambda stage, pct, **kw: _emit_progress(stage, pct)
             )
 
             pairs = [{"chuukese": chuukese, "english": english}]
             directions = []
-            if direction in ("both", "chk_to_en"):
-                directions.append("chk_to_en")
-            if direction in ("both", "en_to_chk"):
-                directions.append("en_to_chk")
+            if getattr(tuner, "bidirectional", False):
+                # MADLAD: one model, one adapter — a single pass teaches both directions
+                directions.append("both")
+            else:
+                if direction in ("both", "chk_to_en"):
+                    directions.append("chk_to_en")
+                if direction in ("both", "en_to_chk"):
+                    directions.append("en_to_chk")
 
             success = True
             for d in directions:
@@ -542,7 +556,7 @@ class ContinuousTrainer:
 
             emit(f"Loaded {len(pairs)} training pairs. Starting fine-tune…", 10)
 
-            from src.training.helsinki_trainer import HelsinkiFineTuner
+            from src.training.trainer_factory import get_fine_tuner
 
             def hk_progress(stage, pct, epoch=None, total_epochs=None,
                             epoch_step_pct=None, epoch_loss=None, **kw):
@@ -552,23 +566,33 @@ class ContinuousTrainer:
                 if epoch_loss is not None:
                     run.chk_to_en_loss = epoch_loss
 
-            tuner = HelsinkiFineTuner(progress_callback=hk_progress)
+            tuner = get_fine_tuner(progress_callback=hk_progress)
 
-            emit("Fine-tuning Chuukese→English…", 15)
-            ok1 = tuner.fine_tune_model(
-                direction="chk_to_en",
-                training_pairs=pairs,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-            )
+            if getattr(tuner, "bidirectional", False):
+                # MADLAD: a single LoRA run covers both directions
+                emit("Fine-tuning Chuukese⇄English…", 15)
+                ok1 = ok2 = tuner.fine_tune_model(
+                    direction="both",
+                    training_pairs=pairs,
+                    num_epochs=num_epochs,
+                    batch_size=batch_size,
+                )
+            else:
+                emit("Fine-tuning Chuukese→English…", 15)
+                ok1 = tuner.fine_tune_model(
+                    direction="chk_to_en",
+                    training_pairs=pairs,
+                    num_epochs=num_epochs,
+                    batch_size=batch_size,
+                )
 
-            emit("Fine-tuning English→Chuukese…", 55)
-            ok2 = tuner.fine_tune_model(
-                direction="en_to_chk",
-                training_pairs=pairs,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-            )
+                emit("Fine-tuning English→Chuukese…", 55)
+                ok2 = tuner.fine_tune_model(
+                    direction="en_to_chk",
+                    training_pairs=pairs,
+                    num_epochs=num_epochs,
+                    batch_size=batch_size,
+                )
 
             if ok1 and ok2:
                 run.status = "completed"

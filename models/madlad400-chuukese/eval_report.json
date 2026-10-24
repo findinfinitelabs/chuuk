@@ -1,0 +1,28 @@
+{
+  "config": {
+    "epochs": 1,
+    "batch_size": 16,
+    "grad_accum": 1,
+    "learning_rate": 0.0002,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "train_ffn": false,
+    "direction": "both",
+    "save_steps": 500,
+    "fresh": true,
+    "merge": false,
+    "snapshot": null,
+    "bible_file": "training_data/bible_parallel.json",
+    "min_confidence": 50,
+    "sentence_weight": 2,
+    "max_pairs": 0,
+    "eval_size": 300,
+    "seed": 42,
+    "eval_baseline": true,
+    "eval_only": false,
+    "phase": null
+  },
+  "pairs": 29125,
+  "eval_pairs": 300,
+  "started_at": "2026-10-23T07:22:13"
+}

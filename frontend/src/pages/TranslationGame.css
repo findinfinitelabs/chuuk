@@ -39,3 +39,15 @@
   font-family: 'Georgia', serif;
   line-height: 1.6;
 }
+
+/* Saved-article sidebar sits beside the board on desktop and stacks above it
+   on narrow screens, where a 250px column would squeeze the sentences. */
+@media (max-width: 900px) {
+  .game-layout {
+    flex-wrap: wrap !important;
+  }
+
+  .game-layout > *:first-child {
+    width: 100% !important;
+  }
+}
