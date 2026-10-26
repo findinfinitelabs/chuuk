@@ -11,6 +11,7 @@ import {
 import axios from 'axios'
 import { GlossedWords, GlossCard, GlossLegend } from '../components/GlossedText'
 import type { Dictionary, SimilarMap, Gloss } from '../components/GlossedText'
+import type { PhraseMap } from '../components/glossUtils'
 import styles from './WolSearch.module.css'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -85,6 +86,8 @@ interface WolResponse {
   dictionary?: Dictionary
   /** For words we don't hold: related entries we do, alphabetically. */
   similar?: SimilarMap
+  /** Multi-word headwords occurring in the results. */
+  phrases?: PhraseMap
 }
 
 /** One row in the saved-search sidebar. */
@@ -128,11 +131,12 @@ const SUBJECT_COLOR: Record<Subject['kind'], string> = {
 /** Renders the sentence: every word tinted by its dictionary status, and the
  *  searched term marked on top of that. */
 function Sentence({
-  segments, dictionary, similar, onGloss,
+  segments, dictionary, similar, phrases = {}, onGloss,
 }: {
   segments: Segment[]
   dictionary: Dictionary
   similar: SimilarMap
+  phrases?: PhraseMap
   onGloss: (g: Gloss | null) => void
 }) {
   return (
@@ -143,6 +147,7 @@ function Sentence({
             text={seg.text}
             dictionary={dictionary}
             similar={similar}
+            phrases={phrases}
             onGloss={onGloss}
             keyPrefix={`${si}-`}
           />
@@ -393,6 +398,7 @@ function WolSearch() {
         results: payload.results,
         dictionary: payload.dictionary || {},
         similar: payload.similar || {},
+        phrases: payload.phrases || {},
         subjectCounts: payload.subjectCounts || [],
       })
       if (res.data?.id) setActiveId(res.data.id)
@@ -637,6 +643,7 @@ function WolSearch() {
                       segments={r.segments}
                       dictionary={data?.dictionary || {}}
                       similar={data?.similar || {}}
+                      phrases={data?.phrases || {}}
                       onGloss={setGloss}
                     />
                     <EnglishBlock english={r.english} />
@@ -759,6 +766,7 @@ function WolSearch() {
                       segments={r.segments}
                       dictionary={verbData?.dictionary || {}}
                       similar={verbData?.similar || {}}
+                      phrases={verbData?.phrases || {}}
                       onGloss={setGloss}
                     />
                     <EnglishBlock english={r.english} />

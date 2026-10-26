@@ -3977,7 +3977,9 @@ def api_fetch_article():
                     "hints": {str(k): v for k, v in hints.items()},
                     "dictionary": glossed["dictionary"],
                     "similar": glossed["similar"],
+                    "phrases": glossed["phrases"],
                     "article_id": article_id,
+                    "matches": _game_article_matches(article_id) if article_id else [],
                 }
             ),
             200,
@@ -4176,6 +4178,25 @@ def _bump_game_article_matches(article_id: str) -> None:
         print(f"⚠️ Could not update game article match count: {e}")
 
 
+def _game_article_matches(article_id: str) -> list[dict]:
+    """The sentence matches made on a saved article, oldest first, in the shape
+    the game restores them from."""
+    if not article_id or dict_db is None or dict_db.db is None:
+        return []
+    matches = []
+    for m in dict_db.db["brochure_matches"].find({"article_id": article_id}, {"_id": 0}).sort("timestamp", 1):
+        matches.append(
+            {
+                "english_id": m.get("english_id"),
+                "chuukese_ids": m.get("chuukese_ids") or [],
+                "english_text": m.get("english_text"),
+                "was_edited": bool(m.get("was_edited")),
+                "word_pairs": m.get("word_pairs") or [],
+            }
+        )
+    return matches
+
+
 def _game_article_oid(article_id):
     from bson import ObjectId
     from bson.errors import InvalidId
@@ -4225,17 +4246,7 @@ def api_game_get_article(article_id):
         chuukese = doc.get("chuukese_sentences") or []
         glossed = _attach_dictionary({"results": chuukese})
 
-        matches = []
-        for m in dict_db.db["brochure_matches"].find({"article_id": article_id}, {"_id": 0}):
-            matches.append(
-                {
-                    "english_id": m.get("english_id"),
-                    "chuukese_ids": m.get("chuukese_ids") or [],
-                    "english_text": m.get("english_text"),
-                    "was_edited": bool(m.get("was_edited")),
-                    "word_pairs": m.get("word_pairs") or [],
-                }
-            )
+        matches = _game_article_matches(article_id)
 
         return (
             jsonify(
@@ -4251,6 +4262,7 @@ def api_game_get_article(article_id):
                     "hints": doc.get("hints") or {},
                     "dictionary": glossed["dictionary"],
                     "similar": glossed["similar"],
+                    "phrases": glossed["phrases"],
                     "matches": matches,
                 }
             ),
@@ -4764,110 +4776,184 @@ def api_word_suggestions():
 
 @app.route("/api/brochures/match/words", methods=["GET"])
 def api_lookup_word_pairs():
-    """Look up existing dictionary entries for a list of Chuukese tokens.
-    Returns matched entries so the frontend can pre-populate linked pairs."""
+    """Dictionary glosses for the Chuukese words of a sentence being matched.
+
+    Returns the same ``dictionary`` / ``similar`` maps the game board uses for
+    its hover gloss (so the Match Words modal reads identically), plus ``pairs``
+    — the words we hold a translation for — which the modal pre-links.
+    """
     try:
         tokens_param = request.args.get("chuukese_tokens", "")
-        if not tokens_param:
-            return jsonify({"pairs": []}), 200
+        tokens = [_clean_headword(t) for t in tokens_param.split(",")]
+        tokens = [t for t in tokens if t]
+        if not tokens:
+            return jsonify({"pairs": [], "dictionary": {}, "similar": {}, "phrases": {}}), 200
 
-        tokens = [t.strip() for t in tokens_param.split(",") if t.strip()]
+        glossed = _attach_dictionary({"results": [{"text": " ".join(tokens)}]})
+        dictionary = glossed["dictionary"]
         pairs = []
-        for token in tokens:
-            entry = dict_db.dictionary_collection.find_one(
-                {"chuukese_word": {"$regex": f"^{re.escape(token)}$", "$options": "i"}},
-                {"chuukese_word": 1, "english_translation": 1, "grammar": 1, "definition": 1,
-                 "confidence_score": 1, "verified": 1}
-            )
-            if entry:
-                pairs.append({
-                    "chuukese": entry.get("chuukese_word", token),
-                    "english": entry.get("english_translation", ""),
-                    "grammar": entry.get("grammar", "noun") or "noun",
-                    "description": entry.get("definition", "") or "",
-                    "confidence_score": entry.get("confidence_score", 0),
-                    "verified": entry.get("verified", False),
-                })
-        return jsonify({"pairs": pairs}), 200
+        for token in dict.fromkeys(tokens):  # first occurrence order, no repeats
+            entry = dictionary.get(token.lower())
+            if entry and entry["english"]:
+                pairs.append(
+                    {
+                        "chuukese": token,
+                        "english": entry["english"],
+                        "grammar": entry["grammar"] or "noun",
+                        "description": entry["definition"],
+                        "verified": entry["verified"],
+                        "appearances": entry["appearances"],
+                    }
+                )
+        return jsonify({"pairs": pairs, "dictionary": dictionary, "similar": glossed["similar"], "phrases": glossed["phrases"]}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+_MAX_GAME_APPEARANCES = 25
+
+
+def _find_headword(word: str):
+    """The existing row for a headword in whichever collection holds it, as
+    ``(collection, field, doc)``; ``None`` when no collection does."""
+    pattern = {"$regex": f"^{re.escape(word)}$", "$options": "i"}
+    for collection, field in _dictionary_sources():
+        doc = _cosmos_retry(lambda c=collection, f=field: c.find_one({f: pattern}))
+        if doc:
+            return collection, field, doc
+    return None
+
+
+def _appearance_update(existing: list, appearance: dict | None) -> list | None:
+    """``game_appearances`` with this sentence added (newest first), or None when
+    the same sentence of the same article is already recorded."""
+    if not appearance or not appearance.get("article_id"):
+        return None
+    rows = [a for a in (existing or []) if isinstance(a, dict)]
+    if any(a.get("article_id") == appearance["article_id"] and a.get("english") == appearance["english"] for a in rows):
+        return None
+    return ([appearance] + rows)[:_MAX_GAME_APPEARANCES]
+
+
 @app.route("/api/brochures/match/words", methods=["POST"])
 def api_save_word_pairs():
-    """Save individual word pairs extracted from a validated sentence match.
-    Each pair is upserted into dictionary_collection at confidence 100 / verified."""
+    """Save the word pairs linked in a validated sentence match.
+
+    Each Chuukese word is stored cleaned of surrounding punctuation (so a later
+    article finds "Jeremaia" even when it was linked as "Jeremaia,"), at
+    confidence 100 / verified. A word we already hold keeps its entry: a new
+    English wording is merged in as another sense, and the article the pair
+    came from is recorded on the entry so the gloss can list where the word
+    was seen. Pure numbers are matched in the game but never stored.
+
+    Returns the refreshed gloss entries so the client can update its maps.
+    """
     try:
-        data = request.get_json()
-        word_pairs = data.get("word_pairs", [])  # [{chuukese, english, grammar}]
+        from src.core.dictionary_merge import merge_senses  # noqa: PLC0415
+
+        data = request.get_json() or {}
+        word_pairs = data.get("word_pairs", [])  # [{chuukese, english, grammar, description}]
         source_sentence_id = data.get("source_sentence_id", "")
 
         if not word_pairs:
             return jsonify({"error": "word_pairs is required"}), 400
 
-        saved = []
-        skipped = []
+        appearance = None
+        if data.get("article_id"):
+            appearance = {
+                "article_id": str(data["article_id"]),
+                "title": (data.get("article_title") or "").strip(),
+                "url": (data.get("article_url") or "").strip(),
+                "english": (data.get("english_text") or "").strip()[:300],
+                "chuukese": (data.get("chuukese_text") or "").strip()[:300],
+                "matched_at": datetime.now(timezone.utc),
+            }
+
+        now = datetime.now(timezone.utc)
+        initials = _get_user_initials()
+        saved, updated, skipped = [], [], []
 
         for pair in word_pairs:
-            chuukese_word = (pair.get("chuukese") or "").strip()
-            english_translation = (pair.get("english") or "").strip()
+            chuukese_word = _clean_headword(pair.get("chuukese") or "")
+            english_translation = _clean_headword(pair.get("english") or "")
             grammar = (pair.get("grammar") or "noun").strip()
             description = (pair.get("description") or "").strip()
 
             if not chuukese_word or not english_translation:
                 continue
+            if chuukese_word.isdigit():  # numbers pair in the game but are not headwords
+                skipped.append(chuukese_word)
+                continue
 
-            entry = {
-                "chuukese_word": chuukese_word,
-                "english_translation": english_translation,
-                "grammar": grammar,
-                "definition": description,
-                "confidence_score": 100,
-                "confidence_level": "verified",
-                "verified": True,
-                "user_confirmed": True,
-                "source": "translation_game_word_pair",
-                "source_sentence_id": source_sentence_id,
-                "updated_date": datetime.now(timezone.utc),
-            }
-
-            existing = dict_db.dictionary_collection.find_one(
-                {"chuukese_word": {"$regex": f"^{re.escape(chuukese_word)}$", "$options": "i"}}
-            )
-
-            if existing:
-                # Append new translation to definition/notes if different from current
-                existing_translation = existing.get("english_translation", "").strip()
-                existing_definition = existing.get("definition", "").strip()
+            found = _find_headword(chuukese_word)
+            if found:
+                collection, _field, existing = found
+                existing_translation = (existing.get("english_translation") or "").strip()
                 update_fields = {
-                    "grammar": grammar,
                     "confidence_score": 100,
                     "confidence_level": "verified",
                     "verified": True,
                     "user_confirmed": True,
-                    "updated_date": datetime.now(timezone.utc),
-                    "edited_by": _get_user_initials(),
+                    "updated_date": now,
+                    "date_modified": now,
+                    "edited_by": initials,
+                    "source_sentence_id": source_sentence_id,
                 }
-                # Only update primary translation if field was empty
-                if not existing_translation:
-                    update_fields["english_translation"] = english_translation
-                elif english_translation.lower() != existing_translation.lower():
-                    # Different meaning — append to notes/definition on a new line
-                    note_line = f"Also: {english_translation} (translation game)"
-                    if note_line not in existing_definition:
-                        update_fields["definition"] = (existing_definition + "\n" + note_line).strip()
-                # Always write description if provided (overrides existing definition)
-                if description:
+                if not (existing.get("grammar") or "").strip():
+                    update_fields["grammar"] = grammar
+                merged = merge_senses(existing_translation, english_translation)
+                if merged and merged != existing_translation:
+                    update_fields["english_translation"] = merged
+                if description and description != (existing.get("definition") or "").strip():
                     update_fields["definition"] = description
-                dict_db.dictionary_collection.update_one({"_id": existing["_id"]}, {"$set": update_fields})
-                skipped.append(chuukese_word)
+                appearances = _appearance_update(existing.get("game_appearances"), appearance)
+                if appearances is not None:
+                    update_fields["game_appearances"] = appearances
+                _cosmos_retry(lambda c=collection, e=existing, u=update_fields: c.update_one({"_id": e["_id"]}, {"$set": u}))
+                updated.append(chuukese_word)
             else:
-                entry["created_date"] = datetime.now(timezone.utc)
-                entry["edited_by"] = _get_user_initials()
-                dict_db.dictionary_collection.insert_one(entry)
+                entry = {
+                    "chuukese_word": chuukese_word,
+                    "english_translation": english_translation,
+                    "grammar": grammar,
+                    "definition": description,
+                    "confidence_score": 100,
+                    "confidence_level": "verified",
+                    "verified": True,
+                    "user_confirmed": True,
+                    "source": "translation_game_word_pair",
+                    "source_sentence_id": source_sentence_id,
+                    "created_date": now,
+                    "updated_date": now,
+                    "edited_by": initials,
+                    "game_appearances": [appearance] if appearance else [],
+                }
+                _cosmos_retry(lambda e=entry: dict_db.dictionary_collection.insert_one(e))
                 saved.append(chuukese_word)
 
-        return jsonify({"saved": saved, "updated": skipped, "total": len(saved) + len(skipped)}), 201
+        words = {w.lower() for w in saved + updated if " " not in w}
+        dictionary = _lookup_words_bulk(words) if words else {}
+        phrases: dict = {}
+        for headword in saved + updated:
+            if " " in headword:
+                found = _find_headword(headword)
+                if found:
+                    _index_phrase(phrases, headword, found[2])
+        if phrases:  # the next article's gloss must know the new phrase
+            _similar_index_cache["index"] = None
+        return (
+            jsonify(
+                {
+                    "saved": saved,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "total": len(saved) + len(updated),
+                    "dictionary": dictionary,
+                    "phrases": phrases,
+                }
+            ),
+            201,
+        )
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -5019,8 +5105,16 @@ def _get_wol_search():
     return _wol_search
 
 
-# Letters only, so the split matches the one the frontend uses for rendering.
-_WOL_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+# Letters and digits (no underscore), so the split matches the one the frontend
+# uses for rendering and numbers can be paired in the Translation Game.
+_WOL_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _clean_headword(text: str) -> str:
+    """See ``src.core.dictionary_merge.clean_headword``."""
+    from src.core.dictionary_merge import clean_headword  # noqa: PLC0415
+
+    return clean_headword(text)
 
 
 def _wol_entry_rank(doc: dict) -> tuple:
@@ -5035,7 +5129,8 @@ def _wol_entry_rank(doc: dict) -> tuple:
         confidence = float(doc.get("confidence_score") or 0)
     except (TypeError, ValueError):
         confidence = 0.0
-    return (has_english, confidence, bool((doc.get("definition") or "").strip()))
+    confirmed = bool(doc.get("user_confirmed") or doc.get("verified"))
+    return (has_english, confirmed, confidence, bool((doc.get("definition") or "").strip()))
 
 
 def _dictionary_sources() -> list[tuple]:
@@ -5097,6 +5192,9 @@ def _lookup_words_bulk(words: set[str]) -> dict:
                             "grammar": 1,
                             "grammar_modifier": 1,
                             "definition": 1,
+                            "verified": 1,
+                            "user_confirmed": 1,
+                            "game_appearances": 1,
                         },
                     )
                 )
@@ -5121,6 +5219,18 @@ def _lookup_words_bulk(words: set[str]) -> dict:
             "grammar_modifier": doc.get("grammar_modifier") or None,
             "definition": (doc.get("definition") or "").strip(),
             "status": "translated" if english else "untranslated",
+            "verified": bool(doc.get("user_confirmed") or doc.get("verified")),
+            # Articles this word was matched in during the Translation Game.
+            "appearances": [
+                {
+                    "article_id": a.get("article_id"),
+                    "title": a.get("title") or "",
+                    "url": a.get("url") or "",
+                    "english": a.get("english") or "",
+                }
+                for a in (doc.get("game_appearances") or [])
+                if isinstance(a, dict)
+            ],
         }
     return out
 
@@ -5154,7 +5264,7 @@ def _get_similarity_index() -> dict:
         if age < CACHE_EXPIRY_SECONDS:
             return cached["index"]
 
-    index = {"by_norm": {}, "by_prefix": {}, "english": {}}
+    index = {"by_norm": {}, "by_prefix": {}, "english": {}, "grammar": {}, "phrases": {}}
     sources = _dictionary_sources()
     if not sources:
         return index
@@ -5163,7 +5273,7 @@ def _get_similarity_index() -> dict:
         try:
             docs = _cosmos_retry(
                 lambda c=collection, f=field: list(
-                    c.find({}, {"_id": 0, f: 1, "english_translation": 1})
+                    c.find({}, {"_id": 0, f: 1, "english_translation": 1, "grammar": 1, "definition": 1, "type": 1})
                 )
             )
         except Exception as e:
@@ -5172,15 +5282,21 @@ def _get_similarity_index() -> dict:
 
         for doc in docs:
             word = (doc.get(field) or "").strip()
-            # Single words only. Both collections carry whole example sentences,
-            # and offering one as a "similar word" would be noise.
-            if not word or " " in word:
+            if not word:
+                continue
+            if " " in word:
+                # Short multi-word headwords ("ewe Kot") are matched as phrases;
+                # whole example sentences are not.
+                _index_phrase(index["phrases"], word, doc)
                 continue
             english = (doc.get("english_translation") or "").strip()
             # Keep the most informative gloss when a word appears more than once.
             if english and len(english) > len(index["english"].get(word, "")):
                 index["english"][word] = english
             index["english"].setdefault(word, english)
+            grammar = (doc.get("grammar") or "").strip()
+            if grammar:
+                index["grammar"].setdefault(word, grammar)
 
             norm = _norm_word(word)
             if not norm:
@@ -5191,6 +5307,65 @@ def _get_similarity_index() -> dict:
     _similar_index_cache["index"] = index
     _similar_index_cache["timestamp"] = datetime.now(timezone.utc)
     return index
+
+
+_PHRASE_MAX_WORDS = 4
+
+
+def _index_phrase(phrases: dict, headword: str, doc: dict) -> None:
+    """File a multi-word headword under its lowercase word sequence, keeping
+    the best-populated row when the same phrase appears more than once."""
+    if (doc.get("type") or "") == "sentence":
+        return
+    words = [w.lower() for w in _WOL_WORD_RE.findall(headword)]
+    if not 2 <= len(words) <= _PHRASE_MAX_WORDS:
+        return
+    english = (doc.get("english_translation") or "").strip()
+    entry = {
+        "text": headword,
+        "words": words,
+        "english": english,
+        "grammar": (doc.get("grammar") or "").strip(),
+        "definition": (doc.get("definition") or "").strip(),
+    }
+    key = " ".join(words)
+    current = phrases.get(key)
+    if current is None or (not current["english"] and english):
+        phrases[key] = entry
+
+
+def _find_phrases(text: str, phrases: dict) -> dict:
+    """The indexed phrases occurring in `text` as consecutive words, keyed as
+    in the index. 'ewe Kot' is found in 'ewe Kot mi tong' but not across a
+    sentence boundary ('ewe. Kot')."""
+    found: dict = {}
+    if not phrases:
+        return found
+    tokens = [(m.group(0).lower(), m.start(), m.end()) for m in _WOL_WORD_RE.finditer(text)]
+    by_first: dict[str, list] = {}
+    for key, entry in phrases.items():
+        by_first.setdefault(entry["words"][0], []).append(entry)
+    for i, (word, _start, end) in enumerate(tokens):
+        for entry in by_first.get(word, ()):
+            n = len(entry["words"])
+            if i + n > len(tokens):
+                continue
+            ok = True
+            prev_end = end
+            for k in range(1, n):
+                w, s_, e_ = tokens[i + k]
+                gap = text[prev_end:s_]
+                if w != entry["words"][k] or not _PHRASE_GAP_RE.fullmatch(gap):
+                    ok = False
+                    break
+                prev_end = e_
+            if ok:
+                found[" ".join(entry["words"])] = entry
+    return found
+
+
+# Words of one phrase may be separated by spaces or a hyphen, nothing else.
+_PHRASE_GAP_RE = re.compile(r"[\s\-\u2011]+")
 
 
 def _within_one_edit(a: str, b: str) -> bool:
@@ -5253,7 +5428,8 @@ def _similar_words(word: str, index: dict, limit: int = _SIMILAR_LIMIT) -> list[
         return []
 
     ordered = sorted(matches, key=lambda w: (_norm_word(w), w))[:limit]
-    return [{"word": w, "english": index["english"].get(w, "")} for w in ordered]
+    grammar = index.get("grammar", {})
+    return [{"word": w, "english": index["english"].get(w, ""), "grammar": grammar.get(w, "")} for w in ordered]
 
 
 def _attach_dictionary(payload: dict) -> dict:
@@ -5262,21 +5438,29 @@ def _attach_dictionary(payload: dict) -> dict:
     words: set[str] = set()
     for result in payload.get("results", []):
         for match in _WOL_WORD_RE.finditer(result.get("text", "")):
-            words.add(match.group(0).lower())
+            word = match.group(0)
+            if not word.isdigit():  # numbers are never headwords
+                words.add(word.lower())
 
     found = _lookup_words_bulk(words)
     payload["dictionary"] = found
 
     unknown = [w for w in words if w not in found]
     similar: dict[str, list] = {}
-    if unknown:
-        index = _get_similarity_index()
-        if index["by_prefix"]:
-            for word in unknown:
-                hits = _similar_words(word, index)
-                if hits:
-                    similar[word] = hits
+    phrases: dict = {}
+    index = _get_similarity_index() if (unknown or words) else None
+    if index and unknown and index["by_prefix"]:
+        for word in unknown:
+            hits = _similar_words(word, index)
+            if hits:
+                similar[word] = hits
+    # Multi-word headwords present in the text ("ewe Kot"), so the gloss can
+    # show the phrase and each of its words.
+    if index and index.get("phrases"):
+        for result in payload.get("results", []):
+            phrases.update(_find_phrases(result.get("text", ""), index["phrases"]))
     payload["similar"] = similar
+    payload["phrases"] = phrases
     return payload
 
 

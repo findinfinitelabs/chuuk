@@ -161,12 +161,12 @@ class TestWordTokenisation:
     """The backend split must match the one the frontend renders with, or words
     silently lose their tint."""
 
-    def test_splits_letters_only(self):
+    def test_splits_letters_and_digits(self):
         from app import _WOL_WORD_RE
 
         text = '"Ewe kapas allim epwe akkomw."—MARK 13:10.'
         assert _WOL_WORD_RE.findall(text) == [
-            "Ewe", "kapas", "allim", "epwe", "akkomw", "MARK",
+            "Ewe", "kapas", "allim", "epwe", "akkomw", "MARK", "13", "10",
         ]
 
     def test_keeps_accented_characters_whole(self):

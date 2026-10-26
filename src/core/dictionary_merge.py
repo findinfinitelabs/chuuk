@@ -18,6 +18,15 @@ from collections import Counter
 from datetime import datetime, timezone
 
 SENSE_SEPARATOR = "; "
+_SURROUNDING_PUNCT_RE = re.compile(r"^[^\w]+|[^\w]+$", re.UNICODE)
+
+
+def clean_headword(text) -> str:
+    """A headword as it should be stored: punctuation and quotes gone from its
+    outer edges, whitespace collapsed. 'Jeremaia,' -> 'Jeremaia'; '"ewe Kot.'
+    -> 'ewe Kot'. Inner punctuation stays: '(Jer 48:27, 29;' -> 'Jer 48:27, 29'."""
+    collapsed = " ".join(str(text or "").split())
+    return _SURROUNDING_PUNCT_RE.sub("", collapsed)
 
 
 def _norm(text) -> str:
@@ -28,7 +37,7 @@ def _key(text) -> str:
     """Comparison key: lowercase, no leading 'to', no brackets, singular-ish.
     'to force (by threats)' and 'force by threat' compare equal."""
     k = _norm(text).lower().rstrip(".")
-    k = re.sub(r"[()\[\],]", " ", k)
+    k = re.sub(r"[()\[\],\"“”‘’']", " ", k)
     k = re.sub(r"^to\s+", "", k)
     k = re.sub(r"\s+", " ", k).strip()
     return " ".join(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in k.split())
@@ -55,6 +64,13 @@ def merge_senses(*wordings: str) -> str:
             senses = [s for s in senses if not set(_key(s).replace(",", " ").split()) <= words or _key(s) == k]
             senses.append(sense)
     return SENSE_SEPARATOR.join(senses)
+
+
+def clean_senses(english) -> str:
+    """An English wording with stray punctuation gone from each sense and
+    repeats collapsed: '(Jer 48:27 29 42' -> 'Jer 48:27 29 42';
+    'Moab; “Moab”' -> 'Moab'."""
+    return merge_senses(*(clean_headword(sense) for sense in split_senses(english)))
 
 
 def _filled(entry: dict) -> int:
@@ -137,4 +153,4 @@ def merge_new_into_existing(existing: dict, new: dict) -> dict:
     return update
 
 
-__all__ = ["merge_group", "merge_senses", "split_senses", "choose_survivor", "merge_new_into_existing"]
+__all__ = ["clean_headword", "clean_senses", "merge_group", "merge_senses", "split_senses", "choose_survivor", "merge_new_into_existing"]

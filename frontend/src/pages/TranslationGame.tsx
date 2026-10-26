@@ -6,6 +6,8 @@ import { notifications } from '@mantine/notifications'
 import axios from 'axios'
 import './TranslationGame.css'
 import { GlossedWords, GlossCard, GlossLegend } from '../components/GlossedText'
+import { findPhraseSpans, glossStatus, GLOSS_COLOR, phraseGloss, spanIndex } from '../components/glossUtils'
+import type { PhraseMap } from '../components/glossUtils'
 import type { Dictionary, SimilarMap, Gloss } from '../components/GlossedText'
 
 interface Sentence {
@@ -53,6 +55,12 @@ interface WordPair {
   color: string
   description: string
   inDatabase: boolean
+  /** Proposed from a related entry, an identical token or a number rather than
+   *  an exact dictionary hit; the user decides whether it stands. */
+  fuzzy?: boolean
+  /** The dictionary word a fuzzy proposal was based on. */
+  baseWord?: string
+  source?: 'dictionary' | 'similar' | 'number' | 'identical' | 'manual'
 }
 
 /** One row in the saved-article sidebar. */
@@ -159,6 +167,238 @@ function ArticleSidebar({
 
 const PAIR_COLORS = ['green', 'blue', 'orange', 'violet', 'teal', 'red', 'cyan', 'pink', 'grape', 'yellow']
 
+/** A reference tail: an em/en dash after the sentence's closing punctuation,
+ *  then a publication or scripture citation ("now?—w24.05 17 ¶10.",
+ *  "manaw.—Jer 48:27, 29."). Inside a sentence a dash sits between words,
+ *  so this never cuts a parenthetical aside. */
+const REF_TAIL = /(?<=[.?!”’'")\]])\s*[—–]\s*(?=[\p{L}\p{N}¶(]).*$/u
+/** A parenthesised citation: verses ("(Jon 3:16)") or a publication ("(w24.05 17)"). */
+const PAREN_REF = /\((?:[^()]*\d+:\d+[^()]*|\s*(?:w|g|mwb|wp|km|bt|lff|lfb|ijwbq|od|jy|rr|lvs|cl|kr|ws)\d{2}(?:\.\d{2})?[^()]*)\)/giu
+
+/** The sentence body and the references it carried, kept apart so a citation
+ *  never blends into a word chip ("IEI?—w24.05"). */
+function splitReferences(text: string): { body: string; refs: string[] } {
+  const refs: string[] = []
+  let body = text.replace(REF_TAIL, (m) => { refs.push(m.trim()); return '' })
+  body = body.replace(PAREN_REF, (m) => { refs.push(m.trim()); return ' ' })
+  return { body: body.replace(/\s+/g, ' ').trim(), refs }
+}
+
+/** The word chips of a sentence: references removed, dashes split off, and
+ *  chips with no letter or digit dropped. */
+function tokenize(text: string): string[] {
+  return splitReferences(text).body
+    .replace(/[—–]/g, ' — ')
+    .split(/\s+/)
+    .filter((t) => /[\p{L}\p{N}]/u.test(t))
+}
+
+/** Saved pairs point at chip positions; after the chips of a sentence change
+ *  (a reference split off, text edited) find each pair's words again. A pair
+ *  whose words are gone keeps its old positions. */
+function realignPairs(pairs: WordPair[], enTokens: string[], chkTokens: string[]): WordPair[] {
+  const enKeys = enTokens.map(tokenKey)
+  const chkKeys = chkTokens.map(tokenKey)
+  const usedEn = new Set<number>()
+  const usedChk = new Set<number>()
+  const locate = (words: string[], keys: string[], used: Set<number>): number[] | null => {
+    const wanted = words.map((w) => w.toLowerCase())
+    for (let i = 0; i + wanted.length <= keys.length; i++) {
+      const run = Array.from({ length: wanted.length }, (_, k) => i + k)
+      if (run.every((idx) => !used.has(idx) && keys[idx] === wanted[idx - i])) {
+        run.forEach((idx) => used.add(idx))
+        return run
+      }
+    }
+    return null
+  }
+  return pairs.map((p) => {
+    const en = locate(p.englishWords, enKeys, usedEn)
+    const chk = locate(p.chuukeseWords, chkKeys, usedChk)
+    return { ...p, englishIndices: en ?? p.englishIndices, chuukeseIndices: chk ?? p.chuukeseIndices }
+  })
+}
+
+/** A token without its surrounding punctuation: 'Jeremaia,' → 'Jeremaia'. */
+const stripToken = (t: string) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+/** The key a token is looked up by in the dictionary maps. */
+const tokenKey = (t: string) => stripToken(t).toLowerCase()
+const isNumber = (t: string) => /^\p{N}+$/u.test(t)
+
+/** English function words that never identify a translation on their own. */
+const EN_STOPWORDS = new Set([
+  'the', 'a', 'an', 'to', 'of', 'in', 'on', 'at', 'and', 'or', 'is', 'are', 'be', 'was', 'were',
+  'it', 'its', 'for', 'with', 'by', 'as', 'that', 'this', 'his', 'her', 'their', 'our', 'your',
+  'my', 'he', 'she', 'they', 'we', 'you', 'i', 'not', 'do', 'does', 'did', 'have', 'has', 'had',
+  'will', 'would', 'can', 'could', 'from', 'but', 'so', 'if', 'one', 'someone', 'something',
+])
+
+/** Crude stem so 'loves' meets 'love' and 'walking' meets 'walk'. */
+function stem(word: string): string {
+  const w = word.toLowerCase()
+  if (w.length > 5 && w.endsWith('ing')) return w.slice(0, -3)
+  if (w.length > 4 && w.endsWith('ed')) return w.slice(0, -2)
+  if (w.length > 3 && w.endsWith('es')) return w.slice(0, -2)
+  if (w.length > 3 && w.endsWith('s')) return w.slice(0, -1)
+  return w
+}
+
+/** 'loved' and 'love' are the same word for pairing purposes: equal stems, or
+ *  one is a prefix of the other once both are at least four letters. */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true
+  const sa = stem(a), sb = stem(b)
+  if (sa === sb) return true
+  if (a.length >= 4 && b.length >= 4) return sa.startsWith(sb) || sb.startsWith(sa)
+  return false
+}
+
+/** The senses of a dictionary wording, each as its words: 'to love; love of'
+ *  → [['love'], ['love', 'of']] with stopwords kept, [['love'], ['love']] without. */
+function senseWords(english: string, keepStopwords = false): string[][] {
+  return english
+    .split(/[;/]/)
+    .map((sense) =>
+      sense
+        .replace(/\(.*?\)/g, ' ')
+        .replace(/^\s*to\s+/i, '')
+        .split(/[\s,]+/)
+        .map((w) => stripToken(w).toLowerCase())
+        .filter((w) => w && (keepStopwords || !EN_STOPWORDS.has(w))),
+    )
+    .filter((words) => words.length > 0)
+}
+
+/** Unused indices where `words` occur in order as a run, or []. */
+function findRun(words: string[], enKeys: string[], used: Set<number>): number[] {
+  for (let i = 0; i + words.length <= enKeys.length; i++) {
+    const run = Array.from({ length: words.length }, (_, k) => i + k)
+    if (run.every((idx) => !used.has(idx) && sameWord(enKeys[idx], words[idx - i]))) return run
+  }
+  return []
+}
+
+/** English token indices that express `english`: the whole sense as written
+ *  ("the God"), then its content words as a run, then any single content
+ *  word. Only unused indices are considered. */
+function findEnglish(english: string, enKeys: string[], used: Set<number>): number[] {
+  for (const words of senseWords(english, true)) {
+    if (words.length > 1) {
+      const run = findRun(words, enKeys, used)
+      if (run.length > 0) return run
+    }
+  }
+  for (const words of senseWords(english)) {
+    if (words.length > 1) {
+      const run = findRun(words, enKeys, used)
+      if (run.length > 0) return run
+    }
+    for (const w of words) {
+      if (w.length < 3) continue
+      const idx = enKeys.findIndex((k, i) => !used.has(i) && sameWord(k, w))
+      if (idx >= 0) return [idx]
+    }
+  }
+  return []
+}
+
+/** Dictionary phrases among whitespace-split Chuukese tokens. A token ending
+ *  in sentence punctuation ("ewe.") cannot run on into the next. */
+function chkPhraseSpans(chkTokens: string[], phrases: PhraseMap) {
+  const keys = chkTokens.map(tokenKey)
+  const joinable = (i: number) => !/[.;:!?]["'”’)]*$/.test(chkTokens[i])
+  return findPhraseSpans(keys, phrases, joinable)
+}
+
+/** The colour and number a confirmed sentence match is shown with, on both
+ *  the English card and its Chuukese card(s). */
+function matchBadge(matches: Match[], predicate: (m: Match) => boolean): { color: string; n: number } | null {
+  const i = matches.findIndex(predicate)
+  return i < 0 ? null : { color: PAIR_COLORS[i % PAIR_COLORS.length], n: i + 1 }
+}
+
+/** Word pairs the game can propose before the user links anything: exact
+ *  dictionary entries, fuzzy hits through a related entry (same base word),
+ *  identical tokens such as names, and numbers. */
+function proposePairs(
+  enTokens: string[], chkTokens: string[], dictionary: Dictionary, similar: SimilarMap, phrases: PhraseMap = {},
+): WordPair[] {
+  const enKeys = enTokens.map(tokenKey)
+  const usedEn = new Set<number>()
+  const usedChk = new Set<number>()
+  const pairs: WordPair[] = []
+
+  const add = (chkIdx: number[], enIdx: number[], extra: Partial<WordPair>) => {
+    enIdx.forEach((i) => usedEn.add(i))
+    chkIdx.forEach((i) => usedChk.add(i))
+    pairs.push({
+      id: `auto_${chkIdx.join('-')}_${enIdx.join('-')}`,
+      englishIndices: enIdx,
+      chuukeseIndices: chkIdx,
+      englishWords: enIdx.map((i) => stripToken(enTokens[i])),
+      chuukeseWords: chkIdx.map((i) => stripToken(chkTokens[i])),
+      grammar: 'noun',
+      color: PAIR_COLORS[pairs.length % PAIR_COLORS.length],
+      description: '',
+      inDatabase: false,
+      ...extra,
+    })
+  }
+
+  // Dictionary phrases first ("ewe Kot" ↔ "the God"): both words make one pair.
+  chkPhraseSpans(chkTokens, phrases).forEach((span) => {
+    if (!span.entry.english) return
+    const idx = findEnglish(span.entry.english, enKeys, usedEn)
+    if (idx.length > 0) {
+      const chkIdx = Array.from({ length: span.end - span.start }, (_, k) => span.start + k)
+      add(chkIdx, idx, {
+        grammar: span.entry.grammar || 'phrase', description: span.entry.definition,
+        inDatabase: true, source: 'dictionary',
+      })
+    }
+  })
+
+  chkTokens.forEach((raw, chkIdx) => {
+    const key = tokenKey(raw)
+    if (!key || usedChk.has(chkIdx)) return
+
+    if (isNumber(key)) {
+      const idx = enKeys.findIndex((k, i) => !usedEn.has(i) && k === key)
+      if (idx >= 0) add([chkIdx], [idx], { grammar: 'number', source: 'number' })
+      return
+    }
+
+    const entry = dictionary[key]
+    if (entry?.english) {
+      const idx = findEnglish(entry.english, enKeys, usedEn)
+      if (idx.length > 0) {
+        add([chkIdx], idx, {
+          grammar: entry.grammar || 'noun', description: entry.definition,
+          inDatabase: true, source: 'dictionary',
+        })
+      }
+      return
+    }
+
+    for (const near of similar[key] || []) {
+      if (!near.english) continue
+      const idx = findEnglish(near.english, enKeys, usedEn)
+      if (idx.length > 0) {
+        add([chkIdx], idx, { grammar: near.grammar || 'noun', fuzzy: true, baseWord: near.word, source: 'similar' })
+        return
+      }
+    }
+
+    // A name spelled the same in both languages.
+    if (key.length >= 3) {
+      const idx = enKeys.findIndex((k, i) => !usedEn.has(i) && k === key)
+      if (idx >= 0) add([chkIdx], [idx], { fuzzy: true, source: 'identical' })
+    }
+  })
+
+  return pairs
+}
+
 function TranslationGame() {
   const [englishSentences, setEnglishSentences] = useState<Sentence[]>([])
   const [chuukeseSentences, setChuukeseSentences] = useState<Sentence[]>([])
@@ -171,6 +411,7 @@ function TranslationGame() {
   // Word glosses for the Chuukese column (same hover as the Watchtower Library page)
   const [dictionary, setDictionary] = useState<Dictionary>({})
   const [similar, setSimilar] = useState<SimilarMap>({})
+  const [phrases, setPhrases] = useState<PhraseMap>({})
   const [gloss, setGloss] = useState<Gloss | null>(null)
   const chuukeseCardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
@@ -213,12 +454,37 @@ function TranslationGame() {
   // Word-level matching state
   const [englishTokens, setEnglishTokens] = useState<string[]>([])
   const [chuukeseTokens, setChuukeseTokens] = useState<string[]>([])
+  /** Citations split off the sentences, shown under the chips but never matched. */
+  const [englishRefs, setEnglishRefs] = useState<string[]>([])
+  const [chuukeseRefs, setChuukeseRefs] = useState<string[]>([])
   const [selEnTokens, setSelEnTokens] = useState<number[]>([])
   const [selChkTokens, setSelChkTokens] = useState<number[]>([])
   const [wordPairs, setWordPairs] = useState<WordPair[]>([])
   const [wordSuggestions, setWordSuggestions] = useState<Record<string, WordSuggestion>>({})
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [showEditTexts, setShowEditTexts] = useState(false)
+  /** Set once the user links or unlinks a pair, so a late lookup result does
+   *  not overwrite their work with fresh proposals. */
+  const pairsTouched = useRef(false)
+
+  /** Fold entries saved or looked up on the server into the board's gloss maps,
+   *  so the next sentence with the same word shows it as known. */
+  const mergeGloss = useCallback((dict: Dictionary | undefined, near: SimilarMap | undefined, found?: PhraseMap) => {
+    if (found && Object.keys(found).length > 0) {
+      setPhrases(prev => ({ ...prev, ...found }))
+    }
+    if (dict && Object.keys(dict).length > 0) {
+      setDictionary(prev => ({ ...prev, ...dict }))
+      setSimilar(prev => {
+        const next = { ...prev }
+        Object.keys(dict).forEach(k => { delete next[k] })
+        return next
+      })
+    }
+    if (near && Object.keys(near).length > 0) {
+      setSimilar(prev => ({ ...near, ...prev }))
+    }
+  }, [])
 
   // Description editor modal state
   const [descModalOpen, setDescModalOpen] = useState(false)
@@ -236,7 +502,7 @@ function TranslationGame() {
     if (englishSentences.length > 0 || chuukeseSentences.length > 0) {
       saveGameStateToCache()
     }
-  }, [englishSentences, chuukeseSentences, matches, selectedEnglish, selectedChuukese, englishUrl, chuukeseUrl, articleTitle, hints, dictionary, similar, articleId])
+  }, [englishSentences, chuukeseSentences, matches, selectedEnglish, selectedChuukese, englishUrl, chuukeseUrl, articleTitle, hints, dictionary, similar, phrases, articleId])
 
   // Bring the first clue into view when an English sentence is picked.
   useEffect(() => {
@@ -256,6 +522,7 @@ function TranslationGame() {
       hints,
       dictionary,
       similar,
+      phrases,
       articleId,
       englishUrl,
       chuukeseUrl,
@@ -279,6 +546,7 @@ function TranslationGame() {
           setHints(gameState.hints || {})
           setDictionary(gameState.dictionary || {})
           setSimilar(gameState.similar || {})
+          setPhrases(gameState.phrases || {})
           setArticleId(gameState.articleId || null)
           setEnglishUrl(gameState.englishUrl || '')
           setChuukeseUrl(gameState.chuukeseUrl || '')
@@ -309,6 +577,7 @@ function TranslationGame() {
     setHints({})
     setDictionary({})
     setSimilar({})
+    setPhrases({})
     setGloss(null)
     setArticleId(null)
     setSelectedEnglish(null)
@@ -354,16 +623,18 @@ function TranslationGame() {
       setHints(response.data.hints || {})
       setDictionary(response.data.dictionary || {})
       setSimilar(response.data.similar || {})
+      setPhrases(response.data.phrases || {})
       setArticleId(response.data.article_id || null)
       setArticleTitle(response.data.english.title)
-      setMatches([])
+      // An article played before comes back with the matches already made on it.
+      const restored = restoreMatches(response.data.matches)
       refreshSaved()
       setSelectedEnglish(null)
       setSelectedChuukese([])
       
       notifications.show({
         title: 'Success',
-        message: `Loaded: ${response.data.english.title}`,
+        message: `Loaded: ${response.data.english.title}${restored ? ` · ${restored} saved match${restored === 1 ? '' : 'es'} restored` : ''}`,
         color: 'green'
       })
     } catch {
@@ -375,6 +646,24 @@ function TranslationGame() {
     } finally {
       setLoading(false)
     }
+  }
+
+  /** Put the matches saved on the server onto the board (one per English
+   *  sentence, latest wins) and return how many there are. */
+  const restoreMatches = (saved: SavedMatch[] | undefined): number => {
+    const restored: Match[] = (saved || [])
+      .filter((m) => typeof m.english_id === 'number')
+      .map((m) => ({
+        englishId: m.english_id,
+        chuukeseIds: m.chuukese_ids || [],
+        editedEnglishText: m.was_edited && m.english_text ? m.english_text : undefined,
+        savedWordPairs: m.word_pairs && m.word_pairs.length > 0 ? m.word_pairs : undefined,
+      }))
+    const byEnglish = new Map<number, Match>()
+    restored.forEach((m) => byEnglish.set(m.englishId, m))
+    const list = Array.from(byEnglish.values())
+    setMatches(list)
+    return list.length
   }
 
   /** Reopen a saved article pair, with the matches already made on it. */
@@ -389,27 +678,17 @@ function TranslationGame() {
       setHints(data.hints || {})
       setDictionary(data.dictionary || {})
       setSimilar(data.similar || {})
+      setPhrases(data.phrases || {})
       setArticleId(data.article_id || item.id)
       setEnglishUrl(data.english.url || '')
       setChuukeseUrl(data.chuukese.url || '')
       setArticleTitle(data.english.title || '')
-      const restored: Match[] = ((data.matches || []) as SavedMatch[])
-        .filter((m) => typeof m.english_id === 'number')
-        .map((m) => ({
-          englishId: m.english_id,
-          chuukeseIds: m.chuukese_ids || [],
-          editedEnglishText: m.was_edited && m.english_text ? m.english_text : undefined,
-          savedWordPairs: m.word_pairs && m.word_pairs.length > 0 ? m.word_pairs : undefined,
-        }))
-      // One match per English sentence: keep the latest saved.
-      const byEnglish = new Map<number, Match>()
-      restored.forEach((m) => byEnglish.set(m.englishId, m))
-      setMatches(Array.from(byEnglish.values()))
+      const count = restoreMatches(data.matches)
       setSelectedEnglish(null)
       setSelectedChuukese([])
       notifications.show({
         title: 'Article Restored',
-        message: `${data.english.title || 'Article'} · ${byEnglish.size} match${byEnglish.size === 1 ? '' : 'es'}`,
+        message: `${data.english.title || 'Article'} · ${count} match${count === 1 ? '' : 'es'}`,
         color: 'violet'
       })
     } catch {
@@ -516,98 +795,59 @@ function TranslationGame() {
       })
       setEditedChuukeseTexts(initialChuukeseTexts)
 
-      // Tokenize both sides
-      const enTokens = engText.split(/\s+/).filter(Boolean)
-      const chkTokens = Object.values(initialChuukeseTexts)
-        .join(' ')
-        .split(/\s+/)
-        .filter(Boolean)
+      // Tokenize both sides: citations set aside, chips keep their punctuation
+      // for display, lookups go through tokenKey.
+      const enTokens = tokenize(engText)
+      const chkText = Object.values(initialChuukeseTexts).join(' ')
+      const chkTokens = tokenize(chkText)
       setEnglishTokens(enTokens)
       setChuukeseTokens(chkTokens)
+      setEnglishRefs(splitReferences(engText).refs)
+      setChuukeseRefs(splitReferences(chkText).refs)
       setSelEnTokens([])
       setSelChkTokens([])
       setWordSuggestions({})
       setShowEditTexts(false)
       setEditModalOpen(true)
 
-      // Restore previously saved word pairs (re-edit flow), or start fresh
-      if (existingPairs && existingPairs.length > 0) {
-        setWordPairs(existingPairs)
-      } else {
-        setWordPairs([])
-      }
+      // Restore previously saved word pairs (re-edit flow), or propose pairs
+      // from what the board already knows about these words.
+      const restoring = !!existingPairs && existingPairs.length > 0
+      pairsTouched.current = restoring
+      setWordPairs(restoring ? realignPairs(existingPairs!, enTokens, chkTokens) : proposePairs(enTokens, chkTokens, dictionary, similar, phrases))
 
-      // Fetch Helsinki suggestions + DB lookup in parallel
+      // Fresh dictionary glosses (a word saved a moment ago must show as known)
+      // and model suggestions, in parallel.
+      const lookupKeys = Array.from(new Set(chkTokens.map(stripToken).filter(t => t && !isNumber(t))))
       setLoadingSuggestions(true)
       const suggestionsReq = axios.post('/api/translate/word-suggestions', {
-        chuukese_tokens: chkTokens,
+        chuukese_tokens: lookupKeys,
         english_sentence: engText
       })
       const dbLookupReq = axios.get('/api/brochures/match/words', {
-        params: { chuukese_tokens: chkTokens.join(',') }
+        params: { chuukese_tokens: lookupKeys.join(',') }
       })
 
       Promise.allSettled([suggestionsReq, dbLookupReq]).then(([suggResult, dbResult]) => {
-        // Build suggestions map
         const map: Record<string, WordSuggestion> = {}
         if (suggResult.status === 'fulfilled') {
-          suggResult.value.data.suggestions?.forEach((s: WordSuggestion) => {
-            map[s.chuukese] = s
+          suggResult.value.data.suggestions?.forEach((sg: WordSuggestion) => {
+            map[tokenKey(sg.chuukese)] = sg
           })
         }
 
-        // Layer in DB lookup: mark tokens as in_dictionary if found
         if (dbResult.status === 'fulfilled') {
-          const dbPairs: Array<{chuukese: string; english: string; grammar: string; description: string; verified: boolean}> =
-            dbResult.value.data.pairs || []
-
-          dbPairs.forEach(dbPair => {
-            const existing = map[dbPair.chuukese]
-            if (existing) {
-              map[dbPair.chuukese] = { ...existing, in_dictionary: true }
-            } else {
-              // Word found in DB but Helsinki didn't know it
-              map[dbPair.chuukese] = {
-                chuukese: dbPair.chuukese,
-                helsinki_translation: dbPair.english,
-                matched_english_words: [],
-                grammar_suggestion: dbPair.grammar,
-                in_dictionary: true,
-                confidence: 'high',
-              }
-            }
+          const freshDict: Dictionary = dbResult.value.data.dictionary || {}
+          const freshSimilar: SimilarMap = dbResult.value.data.similar || {}
+          const freshPhrases: PhraseMap = dbResult.value.data.phrases || {}
+          mergeGloss(freshDict, freshSimilar, freshPhrases)
+          Object.keys(freshDict).forEach(k => {
+            if (map[k]) map[k] = { ...map[k], in_dictionary: true }
           })
-
-          // If no existing pairs were passed in, auto-populate from DB
-          if (!existingPairs || existingPairs.length === 0) {
-            const autoPairs: WordPair[] = []
-            dbPairs.forEach((dbPair, i) => {
-              // Find token index in chkTokens
-              const chkIdx = chkTokens.findIndex(
-                t => t.toLowerCase() === dbPair.chuukese.toLowerCase()
-              )
-              // Find token index in enTokens (any word in english translation)
-              const enWords = dbPair.english.toLowerCase().split(/\s+/)
-              const enIndices = enTokens
-                .map((t, idx) => ({ t: t.replace(/[.,!?;:]+$/, '').toLowerCase(), idx }))
-                .filter(({ t }) => enWords.includes(t))
-                .map(({ idx }) => idx)
-
-              if (chkIdx >= 0) {
-                autoPairs.push({
-                  id: `db_${i}_${chkIdx}`,
-                  englishIndices: enIndices,
-                  chuukeseIndices: [chkIdx],
-                  englishWords: enIndices.map(i => enTokens[i].replace(/[.,!?;:]+$/, '')),
-                  chuukeseWords: [dbPair.chuukese],
-                  grammar: dbPair.grammar,
-                  color: PAIR_COLORS[autoPairs.length % PAIR_COLORS.length],
-                  description: dbPair.description,
-                  inDatabase: true,
-                })
-              }
-            })
-            if (autoPairs.length > 0) setWordPairs(autoPairs)
+          if (!pairsTouched.current) {
+            setWordPairs(proposePairs(
+              enTokens, chkTokens, { ...dictionary, ...freshDict }, { ...freshSimilar, ...similar }, { ...phrases, ...freshPhrases },
+            ))
           }
         }
 
@@ -639,20 +879,28 @@ function TranslationGame() {
       // Proceed with sentence match
       attemptMatch(editingEnglishId, pendingChuukeseIds, wordPairs, editedText, editedChuukeseTexts)
 
-      // Save word pairs if any were linked (awaited so DB is updated before modal closes)
+      // Save word pairs if any were linked (awaited so DB is updated before modal closes).
+      // The server returns the refreshed entries, which go straight into the
+      // board's gloss maps so the next sentence shows these words as known.
       if (wordPairs.length > 0) {
         try {
-          await axios.post('/api/brochures/match/words', {
+          const res = await axios.post('/api/brochures/match/words', {
             word_pairs: wordPairs.map(p => ({
-              chuukese: p.chuukeseWords.join(' '),
-              english: p.englishWords.join(' '),
+              chuukese: p.chuukeseWords.map(stripToken).join(' '),
+              english: p.englishWords.map(stripToken).join(' '),
               grammar: p.grammar,
               description: p.description,
             })),
-            source_sentence_id: `${editingEnglishId}_${pendingChuukeseIds.join('_')}`
+            source_sentence_id: `${editingEnglishId}_${pendingChuukeseIds.join('_')}`,
+            article_id: articleId,
+            article_title: articleTitle,
+            article_url: chuukeseUrl,
+            english_text: editedText,
+            chuukese_text: Object.values(editedChuukeseTexts).join(' '),
           })
+          mergeGloss(res.data?.dictionary, undefined, res.data?.phrases)
         } catch {
-          // non-critical — sentence match already saved
+          notifications.show({ title: 'Word pairs not saved', message: 'The sentence match was saved, but the dictionary update failed', color: 'orange' })
         }
       }
       
@@ -681,14 +929,16 @@ function TranslationGame() {
 
   const linkSelectedTokens = () => {
     if (selEnTokens.length === 0 || selChkTokens.length === 0) return
-    const enWords = selEnTokens.sort((a,b)=>a-b).map(i => englishTokens[i].replace(/[.,!?;:]+$/, ''))
-    const chkWords = selChkTokens.sort((a,b)=>a-b).map(i => chuukeseTokens[i])
-    // AI picks grammar from Helsinki suggestions; fall back to 'noun'
-    const primaryChk = chkWords[0]
-    const sugg = wordSuggestions[primaryChk]
-    const grammar = sugg?.grammar_suggestion || 'noun'
-    const inDatabase = sugg?.in_dictionary ?? false
+    const enWords = selEnTokens.sort((a,b)=>a-b).map(i => stripToken(englishTokens[i]))
+    const chkWords = selChkTokens.sort((a,b)=>a-b).map(i => stripToken(chuukeseTokens[i]))
+    // Grammar: the dictionary's tag when we hold the word, else the model's guess
+    const primaryKey = tokenKey(chkWords[0] || '')
+    const entry = dictionary[primaryKey]
+    const sugg = wordSuggestions[primaryKey]
+    const grammar = entry?.grammar || sugg?.grammar_suggestion || 'noun'
+    const inDatabase = !!entry
     const color = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
+    pairsTouched.current = true
     setWordPairs(prev => [...prev, {
       id: `${selEnTokens.join('-')}_${selChkTokens.join('-')}`,
       englishIndices: [...selEnTokens],
@@ -697,8 +947,9 @@ function TranslationGame() {
       chuukeseWords: chkWords,
       grammar,
       color,
-      description: '',
+      description: entry?.definition || '',
       inDatabase,
+      source: 'manual',
     }])
     setSelEnTokens([])
     setSelChkTokens([])
@@ -738,6 +989,7 @@ function TranslationGame() {
   }
 
   const unlinkPair = (pairId: string) => {
+    pairsTouched.current = true
     setWordPairs(prev => prev.filter(p => p.id !== pairId))
   }
 
@@ -820,6 +1072,7 @@ function TranslationGame() {
     setHints({})
     setDictionary({})
     setSimilar({})
+    setPhrases({})
     setGloss(null)
     setArticleId(null)
     setSelectedEnglish(null)
@@ -832,13 +1085,11 @@ function TranslationGame() {
     clearGameState()
   }
 
-  const isMatched = (id: number, type: 'english' | 'chuukese') => {
-    return matches.some(m => 
-      type === 'english' ? m.englishId === id : m.chuukeseIds.includes(id)
-    )
-  }
-
   const accuracy = totalAttempts > 0 ? Math.round((correctMatches / totalAttempts) * 100) : 0
+
+  // Dictionary phrases among the modal's Chuukese chips, so hovering one word
+  // of "ewe Kot" shows the phrase and both words.
+  const modalPhraseSpans = spanIndex(chkPhraseSpans(chuukeseTokens, phrases))
 
   // The clue for the selected English sentence, if the server could pair its paragraph.
   const activeHint: Hint | undefined =
@@ -1039,6 +1290,7 @@ function TranslationGame() {
             <Text size="sm">
               1. Click an English sentence — the Chuukese sentences from the same paragraph light up, and the likely match is marked <Badge size="xs" color="yellow" variant="filled">Clue</Badge><br />
               2. Click one or more Chuukese sentences that match it (hover a word for its dictionary entry)<br />
+              &nbsp;&nbsp;&nbsp;Matched pairs share a colour and number across both columns; click a matched English sentence to redo it<br />
               3. Click "Confirm Match" button<br />
               4. Edit the English text if needed before saving
             </Text>
@@ -1068,7 +1320,8 @@ function TranslationGame() {
             <ScrollArea h={600}>
               <Stack gap="xs">
                 {englishSentences.map((sentence) => {
-                  const matched = isMatched(sentence.id, 'english')
+                  const badge = matchBadge(matches, m => m.englishId === sentence.id)
+                  const matched = !!badge
                   const selected = selectedEnglish === sentence.id
                   
                   return (
@@ -1080,9 +1333,9 @@ function TranslationGame() {
                       onClick={() => handleEnglishClick(sentence.id)}
                       style={{
                         cursor: 'pointer',
-                        opacity: matched ? 0.75 : 1,
-                        backgroundColor: matched ? '#e8f5e9' : selected ? '#e3f2fd' : 'white',
-                        border: selected ? '2px solid #2196F3' : matched ? '2px solid #4CAF50' : '1px solid #dee2e6'
+                        backgroundColor: badge ? `var(--mantine-color-${badge.color}-0)` : selected ? '#e3f2fd' : 'white',
+                        border: selected ? '2px solid #2196F3' : badge ? `2px solid var(--mantine-color-${badge.color}-6)` : '1px solid #dee2e6',
+                        borderLeftWidth: badge ? 6 : undefined,
                       }}
                     >
                       <Group justify="space-between" align="flex-start">
@@ -1090,6 +1343,9 @@ function TranslationGame() {
                           {sentence.editedText || sentence.text}
                         </Text>
                         <Group gap="xs">
+                          {badge && (
+                            <Badge size="sm" color={badge.color} variant="filled" circle>{badge.n}</Badge>
+                          )}
                           {sentence.editedText && (
                             <Badge size="xs" color="orange" variant="dot">Edited</Badge>
                           )}
@@ -1135,16 +1391,17 @@ function TranslationGame() {
             <ScrollArea h={600}>
               <Stack gap="xs">
                 {chuukeseSentences.map((sentence) => {
-                  const matched = isMatched(sentence.id, 'chuukese')
+                  const badge = matchBadge(matches, m => m.chuukeseIds.includes(sentence.id))
+                  const matched = !!badge
                   const selected = selectedChuukese.includes(sentence.id)
                   const clue = matched ? null : clueFor(sentence.id)
-                  const background = matched ? '#e8f5e9'
+                  const background = badge ? `var(--mantine-color-${badge.color}-0)`
                     : selected ? '#e3f2fd'
                     : clue === 'likely' ? '#fff3bf'
                     : clue === 'paragraph' ? '#fff9db'
                     : 'white'
                   const border = selected ? '2px solid #2196F3'
-                    : matched ? '2px solid #4CAF50'
+                    : badge ? `2px solid var(--mantine-color-${badge.color}-6)`
                     : clue === 'likely' ? '2px dashed #f59f00'
                     : clue === 'paragraph' ? '1px dashed #fab005'
                     : '1px solid #dee2e6'
@@ -1159,9 +1416,10 @@ function TranslationGame() {
                       onClick={() => !matched && handleChuukeseClick(sentence.id)}
                       style={{
                         cursor: matched ? 'not-allowed' : 'pointer',
-                        opacity: matched ? 0.5 : activeHint && !clue && !selected ? 0.55 : 1,
+                        opacity: !matched && activeHint && !clue && !selected ? 0.55 : 1,
                         backgroundColor: background,
-                        border
+                        border,
+                        borderLeftWidth: badge ? 6 : undefined,
                       }}
                     >
                       <Group justify="space-between" align="flex-start">
@@ -1170,11 +1428,15 @@ function TranslationGame() {
                             text={sentence.editedText || sentence.text}
                             dictionary={dictionary}
                             similar={similar}
+                            phrases={phrases}
                             onGloss={setGloss}
                             keyPrefix={`${sentence.id}-`}
                           />
                         </Text>
                         <Group gap="xs">
+                          {badge && (
+                            <Badge size="sm" color={badge.color} variant="filled" circle>{badge.n}</Badge>
+                          )}
                           {clue === 'likely' && (
                             <Badge size="xs" color="yellow" variant="filled">Clue</Badge>
                           )}
@@ -1184,7 +1446,7 @@ function TranslationGame() {
                           {sentence.editedText && (
                             <Badge size="xs" color="orange" variant="dot">Edited</Badge>
                           )}
-                          {matched && <IconCheck size={20} color="green" />}
+                          {badge && <IconCheck size={16} color={`var(--mantine-color-${badge.color}-7)`} />}
                         </Group>
                       </Group>
                     </Paper>
@@ -1223,9 +1485,12 @@ function TranslationGame() {
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Select English words (blue) and Chuukese words (orange), then click <strong>Link</strong> to pair them.
+            Pairs the dictionary already knows are linked for you; <Badge size="xs" variant="outline" color="orange">fuzzy</Badge> pairs
+            come from a related entry, an identical name or a number — unlink any that are wrong.
+            Select English and Chuukese words, then click <strong>Link</strong> to pair the rest. Hover a Chuukese word for its gloss.
             {loadingSuggestions && <Loader size="xs" ml="xs" />}
           </Text>
+          <GlossLegend />
 
           {/* English word chips */}
           <Stack gap={4}>
@@ -1250,6 +1515,9 @@ function TranslationGame() {
                 )
               })}
             </Group>
+            {englishRefs.length > 0 && (
+              <Text size="xs" c="dimmed" fs="italic">References (not matched): {englishRefs.join(' ')}</Text>
+            )}
           </Stack>
 
           {/* Chuukese word chips */}
@@ -1260,43 +1528,41 @@ function TranslationGame() {
                 const pair = wordPairs.find(p => p.chuukeseIndices.includes(idx))
                 const isSelected = selChkTokens.includes(idx)
                 const isPaired = !!pair
-                const sugg = wordSuggestions[token]
-                const inDb = sugg?.in_dictionary ?? false
+                const key = tokenKey(token)
+                const entry = dictionary[key]
+                const near = entry ? undefined : similar[key]
+                const status = glossStatus(entry, near)
+                const sugg = wordSuggestions[key]
+                const span = modalPhraseSpans.get(idx)
                 const pendingColor = PAIR_COLORS[wordPairs.length % PAIR_COLORS.length]
-                const tooltipLabel = sugg
-                  ? `→ "${sugg.helsinki_translation}" (${sugg.confidence})${inDb ? ' · In dictionary ✓' : ''}`
-                  : inDb ? 'In dictionary ✓' : ''
+                const hoverable = !!(entry || near || sugg || span)
                 return (
-                  <Tooltip
+                  <Badge
                     key={idx}
-                    label={tooltipLabel}
-                    disabled={!tooltipLabel}
-                    withArrow
+                    size="lg"
+                    variant={isPaired || isSelected ? 'filled' : status ? 'light' : 'outline'}
+                    color={isSelected ? pendingColor : isPaired ? pair!.color : status ? GLOSS_COLOR[status] : 'gray'}
+                    style={{
+                      cursor: 'pointer', userSelect: 'none',
+                      outline: isPaired && pair!.fuzzy ? '2px dashed var(--mantine-color-orange-5)' : undefined,
+                      outlineOffset: 1,
+                    }}
+                    onClick={() => toggleChkToken(idx)}
+                    onMouseEnter={hoverable ? (e) => setGloss({
+                      word: stripToken(token), entry, similar: near,
+                      phrase: span ? phraseGloss(span.entry, dictionary) : undefined,
+                      suggestion: sugg?.helsinki_translation, x: e.clientX, y: e.clientY,
+                    }) : undefined}
+                    onMouseLeave={hoverable ? () => setGloss(null) : undefined}
                   >
-                    <div style={{ position: 'relative', display: 'inline-flex' }}>
-                      <Badge
-                        size="lg"
-                        variant={isPaired || isSelected ? 'filled' : 'outline'}
-                        color={isSelected ? pendingColor : isPaired ? pair!.color : 'gray'}
-                        style={{ cursor: 'pointer', userSelect: 'none',
-                                 outline: sugg?.confidence === 'high' && !isPaired && !isSelected ? '2px solid var(--mantine-color-orange-3)' : undefined }}
-                        onClick={() => toggleChkToken(idx)}
-                      >
-                        {token}
-                      </Badge>
-                      {inDb && !isPaired && (
-                        <span style={{
-                          position: 'absolute', top: -3, right: -3,
-                          background: 'var(--mantine-color-teal-5)',
-                          borderRadius: '50%', width: 8, height: 8,
-                          pointerEvents: 'none',
-                        }} />
-                      )}
-                    </div>
-                  </Tooltip>
+                    {token}
+                  </Badge>
                 )
               })}
             </Group>
+            {chuukeseRefs.length > 0 && (
+              <Text size="xs" c="dimmed" fs="italic" className="chuukese-text-style">References (not matched): {chuukeseRefs.join(' ')}</Text>
+            )}
           </Stack>
 
           {/* Link button */}
@@ -1332,6 +1598,14 @@ function TranslationGame() {
                         <Text size="sm" c="dimmed">↔</Text>
                         <Badge color={pair.color} variant="light">{pair.chuukeseWords.join(' ')}</Badge>
                         <Badge size="xs" variant="outline" color="gray">{pair.grammar}</Badge>
+                        {pair.fuzzy && (
+                          <Tooltip
+                            label={pair.baseWord ? `Proposed from the entry "${pair.baseWord}"` : pair.source === 'number' ? 'Same number on both sides' : 'Same word on both sides'}
+                            withArrow
+                          >
+                            <Badge size="xs" variant="outline" color="orange">fuzzy{pair.baseWord ? ` · ${pair.baseWord}` : ''}</Badge>
+                          </Tooltip>
+                        )}
                         {pair.inDatabase && (
                           <Tooltip label="Already in database" withArrow>
                             <span style={{
