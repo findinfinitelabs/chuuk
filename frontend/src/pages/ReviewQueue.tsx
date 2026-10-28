@@ -49,7 +49,7 @@ interface Review {
   id: string
   entry_id: string
   headword: string
-  kind: 'translation' | 'grammar'
+  kind: 'translation' | 'grammar' | 'new_word'
   outcome: string
   tier: 'auto' | 'review' | null
   status: 'pending' | 'applied' | 'rejected' | 'info'
@@ -64,7 +64,12 @@ interface Review {
     suggestions?: string[]
     pairs?: Pair[]
     notes?: string[]
+    /** new_word rows: where the proposal came from and what else was seen */
+    source?: string
+    variants?: { headword: string; english: string }[]
+    model?: { word?: string; sentence?: string | null }
   }
+  proposed_by?: string
   decided_by?: string
   decided_at?: string
   applied_changes?: Record<string, unknown>
@@ -110,13 +115,15 @@ function ReviewCard({ review, onDecide }: { review: Review; onDecide: (r: Review
   const pairs = ev.pairs || []
   const meta = OUTCOME_LABEL[review.outcome] || { label: review.outcome, color: 'gray' }
   const isTranslation = review.kind === 'translation'
+  const isNewWord = review.kind === 'new_word'
   const pending = review.status === 'pending'
+  const [grammar, setGrammar] = useState<string>(String(review.proposed?.grammar ?? ''))
 
   const decide = async (action: 'accept' | 'reject' | 'reopen') => {
     setBusy(true)
     try {
-      const proposed = action === 'accept' && isTranslation && review.proposed && 'english_translation' in review.proposed
-        ? { ...review.proposed, english_translation: english.trim() }
+      const proposed = action === 'accept' && (isTranslation || isNewWord) && review.proposed && 'english_translation' in review.proposed
+        ? { ...review.proposed, english_translation: english.trim(), ...(isNewWord ? { grammar: grammar.trim() } : {}) }
         : undefined
       await onDecide(review, action, proposed)
     } finally {
@@ -143,7 +150,36 @@ function ReviewCard({ review, onDecide }: { review: Review; onDecide: (r: Review
             )}
           </Group>
 
-          {isTranslation ? (
+          {isNewWord ? (
+            <Stack gap={6}>
+              <Group gap="lg" align="flex-end" wrap="wrap">
+                <TextInput label="English" value={english} onChange={(e) => setEnglish(e.currentTarget.value)} disabled={!pending} size="sm" style={{ flex: 2, minWidth: 220 }} />
+                <TextInput label="Grammar" value={grammar} onChange={(e) => setGrammar(e.currentTarget.value)} disabled={!pending} size="sm" style={{ flex: 1, minWidth: 140 }} />
+              </Group>
+              {review.proposed?.definition ? <Text size="xs" c="dimmed">definition: {String(review.proposed.definition)}</Text> : null}
+              {review.proposed?.example ? (
+                <Text size="xs" c="dimmed">
+                  seen in: “{String(review.proposed.example)}”
+                  {review.proposed.example_english ? ` — “${String(review.proposed.example_english)}”` : ''}
+                </Text>
+              ) : null}
+              <Group gap="xs" wrap="wrap">
+                {ev.source ? <Badge size="xs" variant="light" color="blue">proposal from: {String(ev.source).replace('_', ' ')}</Badge> : null}
+                {review.proposed_by ? <Text size="xs" c="dimmed">proposed by {review.proposed_by}</Text> : null}
+                {(ev.renderings || []).map((r) => (
+                  <Badge key={r.stem} size="xs" variant="light" color="teal" style={{ cursor: pending ? 'pointer' : 'default' }} onClick={() => pending && setEnglish(r.word)}>
+                    WOL: {r.word} · {r.count}
+                  </Badge>
+                ))}
+                {ev.model && typeof ev.model === 'object' && (ev.model as { word?: string }).word ? (
+                  <Badge size="xs" variant="light" color="grape">model: {(ev.model as { word?: string }).word}</Badge>
+                ) : null}
+                {(ev.variants || []).map((v) => (
+                  <Badge key={v.headword} size="xs" variant="light" color="blue">also spelled {v.headword}{v.english ? ` — ${v.english}` : ''}</Badge>
+                ))}
+              </Group>
+            </Stack>
+          ) : isTranslation ? (
             <Group gap="lg" align="flex-start">
               <Stack gap={2} style={{ minWidth: 220 }}>
                 <Text size="xs" c="dimmed" tt="uppercase">Dictionary</Text>
@@ -194,7 +230,7 @@ function ReviewCard({ review, onDecide }: { review: Review; onDecide: (r: Review
           ) : review.status !== 'info' ? (
             <Button size="xs" variant="subtle" leftSection={<IconRotate size={14} />} loading={busy} onClick={() => decide('reopen')}>Reopen</Button>
           ) : null}
-          {isTranslation && pairs.length > 0 && (
+          {(isTranslation || isNewWord) && pairs.length > 0 && (
             <ActionIcon variant="subtle" onClick={() => setOpen((o) => !o)} aria-label="Toggle evidence">
               {open ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
             </ActionIcon>
@@ -353,6 +389,8 @@ function ReviewQueue() {
 
   const outcomes = kind === 'grammar'
     ? [{ value: 'normalize', label: 'Grammar fix' }, { value: 'merge_conflict', label: 'Merged copies disagree' }]
+    : kind === 'new_word'
+    ? [{ value: 'proposed', label: 'Proposed from analysis' }]
     : [
         { value: 'needs_review', label: 'Translation differs' },
         { value: 'add_senses', label: 'More senses on WOL' },
@@ -386,6 +424,7 @@ function ReviewQueue() {
             <Badge color="orange" variant="light">{count((r) => r.status === 'pending' && r.outcome === 'add_senses')} more senses</Badge>
             <Badge color="teal" variant="light">{pendingConfirmed} confirmed</Badge>
             <Badge color="violet" variant="light">{pendingAuto} grammar fixes</Badge>
+            <Badge color="blue" variant="light">{count((r) => r.status === 'pending' && r.kind === 'new_word')} new words</Badge>
             <Badge color="gray" variant="light">{count((r) => r.status === 'info')} no usable evidence</Badge>
             <Badge color="teal">{count((r) => r.status === 'applied')} applied</Badge>
             <Group gap="xs" ml="auto">
@@ -408,6 +447,7 @@ function ReviewQueue() {
         <Tabs.List>
           <Tabs.Tab value="translation">Translations</Tabs.Tab>
           <Tabs.Tab value="grammar">Grammar tags</Tabs.Tab>
+          <Tabs.Tab value="new_word">New words</Tabs.Tab>
         </Tabs.List>
       </Tabs>
 

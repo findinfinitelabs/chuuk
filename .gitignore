@@ -252,3 +252,6 @@ scripts/models/
 # Regenerable local caches (training pairs pulled from the DB, WOL sentence cache)
 models/madlad400-chuukese/run/
 data/verb_verification/
+
+# Cached wol.jw.org pages from scripts/harvest_wol_pairs.py
+data/wol_cache/

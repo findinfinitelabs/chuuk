@@ -98,6 +98,31 @@ def load_chk_to_en_pairs(data_file: Path) -> list:
     return all_pairs
 
 
+def load_distilled_pairs(paths: list, weight: int = 1) -> list:
+    """
+    Load synthetic pairs produced by scripts/distill_madlad.py: real Chuukese
+    sentences with MADLAD's English. Each file is a list of
+    {"chuukese": ..., "english": ...}. They are repeated `weight` times
+    (default 1 — synthetic data should not outweigh human-checked pairs).
+    """
+    pairs = []
+    for raw_path in paths:
+        path = PROJECT_ROOT / raw_path
+        if not path.exists():
+            print(f"⚠️  Distilled file not found, skipping: {path}")
+            continue
+        with open(path, encoding="utf-8") as f:
+            rows = json.load(f)
+        loaded = [
+            {"chuukese": r["chuukese"].strip(), "english": r["english"].strip()}
+            for r in rows
+            if (r.get("chuukese") or "").strip() and (r.get("english") or "").strip()
+        ]
+        print(f"📂 Distilled pairs from {path.name}: {len(loaded):,} (weight ×{weight})")
+        pairs.extend(loaded * max(1, weight))
+    return pairs
+
+
 def load_en_to_chk_pairs(data_file: Path) -> list:
     """
     Load english_to_chuukese_validated.json.
@@ -205,9 +230,24 @@ def main():
         help="Path to English→Chuukese training data file",
     )
 
+    parser.add_argument(
+        "--distilled",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Synthetic pairs from scripts/distill_madlad.py (repeatable). Added to both directions.",
+    )
+    parser.add_argument(
+        "--distilled-weight",
+        type=int,
+        default=1,
+        help="Repeat each distilled pair this many times (default: 1)",
+    )
+
     args = parser.parse_args()
 
     chk_en_path = PROJECT_ROOT / args.chk_en_file
+    distilled = load_distilled_pairs(args.distilled, args.distilled_weight) if args.distilled else []
     en_chk_path = PROJECT_ROOT / args.en_chk_file
 
     print("=" * 70)
@@ -230,7 +270,7 @@ def main():
             print(f"❌ File not found: {chk_en_path}")
             sys.exit(1)
 
-        pairs = load_chk_to_en_pairs(chk_en_path)
+        pairs = load_chk_to_en_pairs(chk_en_path) + distilled
         print()
 
         success = trainer.fine_tune_model(
@@ -250,7 +290,7 @@ def main():
             print(f"❌ File not found: {en_chk_path}")
             sys.exit(1)
 
-        pairs = load_en_to_chk_pairs(en_chk_path)
+        pairs = load_en_to_chk_pairs(en_chk_path) + distilled
         print()
 
         success = trainer.fine_tune_model(

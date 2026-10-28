@@ -5,9 +5,11 @@
  */
 import type { DictEntry, Dictionary, Gloss, SimilarWord } from './GlossedText'
 
-export type GlossStatus = 'translated' | 'untranslated' | 'similar' | null
+export type GlossStatus = 'translated' | 'untranslated' | 'accent' | 'similar' | null
 
 export function glossStatus(entry: DictEntry | undefined, near: SimilarWord[] | undefined): GlossStatus {
+  // Held under a different accent spelling: known, but worth flagging.
+  if (entry?.variant_of) return 'accent'
   if (entry) return entry.status
   if (near && near.length > 0) return 'similar'
   return null
@@ -17,6 +19,7 @@ export function glossStatus(entry: DictEntry | undefined, near: SimilarWord[] | 
 export const GLOSS_COLOR: Record<Exclude<GlossStatus, null>, string> = {
   translated: 'green',
   untranslated: 'pink',
+  accent: 'blue',
   similar: 'yellow',
 }
 

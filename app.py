@@ -65,6 +65,7 @@ def get_nwt_chuukese_parser():
 
 from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
+from src.core import sentence_analysis as _sa
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
 from scripts.processing_logger import processing_logger
@@ -4350,8 +4351,61 @@ def _serialize_review(doc: dict) -> dict:
     return out
 
 
+def _apply_new_word_review(review: dict, proposed: dict, by: str) -> dict:
+    """Create the entry a "new_word" proposal describes (from the Sentence or
+    Article Analysis pages). If the headword was added in the meantime, the
+    existing row is updated instead, with the previous values kept in history."""
+    word = (proposed.get("chuukese_word") or review.get("headword") or "").strip()
+    english = (proposed.get("english_translation") or "").strip()
+    if not word or not english:
+        raise ValueError("A Chuukese word and an English translation are required")
+    grammar = (proposed.get("grammar") or "").strip()
+    changes = {
+        "english_translation": english,
+        "grammar": dict_db._normalize_grammar(grammar) if grammar else "",
+        "definition": (proposed.get("definition") or "").strip(),
+    }
+    now = datetime.now(timezone.utc)
+    history = {
+        "at": now,
+        "by": by,
+        "review_id": str(review["_id"]),
+        "kind": "new_word",
+        "after": changes,
+    }
+    existing = dict_db.dictionary_collection.find_one({"chuukese_word": word})
+    if existing:
+        history["before"] = {k: existing.get(k) for k in changes}
+        dict_db.dictionary_collection.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {**changes, "date_modified": now, "edited_by": by}, "$push": {"history": history}},
+        )
+        return {**changes, "entry_id": str(existing["_id"])}
+
+    example = (proposed.get("example") or "").strip()
+    entry = {
+        "chuukese_word": word,
+        **changes,
+        "confidence_score": 90,
+        "confidence_level": "high",
+        "verified": True,
+        "examples": [example] if example else [],
+        "type": "word",
+        "source": "Sentence Analysis suggestion",
+        "created_date": now,
+        "updated_date": now,
+        "added_by": review.get("proposed_by") or by,
+        "edited_by": by,
+        "history": [history],
+    }
+    result = dict_db.dictionary_collection.insert_one(entry)
+    return {**changes, "entry_id": str(result.inserted_id)}
+
+
 def _apply_review(review: dict, proposed: dict, by: str) -> dict:
     """Write the accepted changes to the dictionary entry, keeping history."""
+    if review.get("kind") == "new_word":
+        return _apply_new_word_review(review, proposed or {}, by)
     changes = {k: v for k, v in (proposed or {}).items() if k in _REVIEW_APPLY_FIELDS}
     if not changes:
         raise ValueError("Nothing to apply")
@@ -5186,7 +5240,7 @@ def _lookup_words_bulk(words: set[str]) -> dict:
                     c.find(
                         {f: {"$in": variant_list}},
                         {
-                            "_id": 0,
+                            "_id": 1,
                             f: 1,
                             "english_translation": 1,
                             "grammar": 1,
@@ -5208,12 +5262,19 @@ def _lookup_words_bulk(words: set[str]) -> dict:
             if not key:
                 continue
             if key not in best or _wol_entry_rank(doc) > _wol_entry_rank(best[key]):
+                doc["_source"] = field
                 best[key] = doc
 
     out = {}
     for key, doc in best.items():
         english = (doc.get("english_translation") or "").strip()
         out[key] = {
+            "entry_id": str(doc["_id"]) if doc.get("_id") is not None else None,
+            # Which collection holds it: only `dictionary_entries` rows can be
+            # edited in place from the analysis pages.
+            "source": {"chuukese_word": "dictionary", "chuukese_phrase": "phrases", "chuukese": "words"}.get(
+                doc.get("_source"), "dictionary"
+            ),
             "english": english,
             "grammar": (doc.get("grammar") or "").strip(),
             "grammar_modifier": doc.get("grammar_modifier") or None,
@@ -5462,6 +5523,45 @@ def _attach_dictionary(payload: dict) -> dict:
     payload["similar"] = similar
     payload["phrases"] = phrases
     return payload
+
+
+def _analyze_text(text: str) -> dict:
+    """Dictionary coverage of one block of text, for the analysis pages.
+
+    Returns the same ``dictionary`` / ``similar`` / ``phrases`` maps the
+    Watchtower Library page uses, so every page reads alike. On top of the bulk
+    lookup, a word the dictionary holds under a different accent spelling
+    ("pwaselo" for "pwáseló") is returned as that entry with ``variant_of``
+    naming the headword, instead of being reported missing.
+    """
+    keys = _sa.word_keys(text)
+    found = _lookup_words_bulk(keys)
+    index = _get_similarity_index()
+
+    variants = _sa.accent_variants(keys, found, index.get("by_norm") or {})
+    if variants:
+        heads = _lookup_words_bulk({h for hs in variants.values() for h in hs})
+        for key, headwords in variants.items():
+            entries = [(h, heads.get(h.lower())) for h in headwords]
+            entries = [(h, e) for h, e in entries if e]
+            if not entries:
+                continue
+            # The variant with a translation wins, then a confirmed one.
+            entries.sort(key=lambda he: (bool(he[1]["english"]), he[1].get("verified", False)), reverse=True)
+            headword, entry = entries[0]
+            found[key] = {**entry, "variant_of": headword, "variants": [h for h, _ in entries]}
+
+    similar: dict[str, list] = {}
+    if index.get("by_prefix"):
+        for key in keys:
+            if key in found:
+                continue
+            hits = _similar_words(key, index)
+            if hits:
+                similar[key] = hits
+
+    phrases = _find_phrases(text, index.get("phrases") or {}) if index.get("phrases") else {}
+    return {"dictionary": found, "similar": similar, "phrases": phrases}
 
 
 @app.route("/api/wol/search", methods=["POST"])
@@ -5755,94 +5855,337 @@ def api_wol_delete_search(search_id):
 @app.route("/api/sentences/analyze", methods=["POST"])
 @login_required
 def analyze_sentence():
-    """Analyze a Chuukese sentence word by word"""
-    try:
-        data = request.get_json()
-        sentence = data.get("sentence", "").strip()
+    """Analyze a Chuukese sentence word by word against the dictionary.
 
+    Returns the words in order plus the ``dictionary``, ``similar`` and
+    ``phrases`` maps the Watchtower Library page uses. Words held under a
+    different accent spelling come back as that entry with ``variant_of``.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        sentence = (data.get("sentence") or "").strip()
         if not sentence:
             return jsonify({"error": "Sentence is required"}), 400
+        if len(sentence) > 2000:
+            return jsonify({"error": "Sentence is too long (2000 characters max)"}), 400
 
-        # Split sentence into words (handle punctuation)
-        words = re.findall(r"\b[\w\u00C0-\u024F]+\b", sentence)
-
-        if not words:
+        tokens = _sa.words_in(sentence)
+        if not tokens:
             return jsonify({"error": "No valid words found in sentence"}), 400
 
-        # Look up each word in dictionary
-        word_analyses = []
-        found_words = []
-        grammar_sequence = []
-
-        for word in words:
-            # Try exact match first
-            result = dict_db.dictionary_collection.find_one(
-                {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}}
-            )
-
-            # If not found, try without case sensitivity
-            if not result:
-                result = dict_db.dictionary_collection.find_one(
-                    {"chuukese_word": {"$regex": f"^{re.escape(word)}", "$options": "i"}}
-                )
-
-            if result:
-                # Prepare full entry for modal display
-                full_entry = {
-                    "entry_id": str(result["_id"]),
-                    "notes": result.get("notes", ""),
-                    "examples": result.get("examples", ""),
-                    "english": result.get("english_translation", ""),
-                    "grammar": result.get("grammar", ""),
-                    "definition": result.get("definition", ""),
-                    "pronunciation": result.get("pronunciation", ""),
-                    "source": result.get("source", ""),
-                    "etymology": result.get("etymology", ""),
-                    "usage": result.get("usage", ""),
-                    "synonyms": result.get("synonyms", ""),
-                    "antonyms": result.get("antonyms", ""),
-                    "related_words": result.get("related_words", ""),
-                }
-
-                word_analyses.append(
-                    {
-                        "original": word,
-                        "english": result.get("english_translation", "unknown"),
-                        "grammar": result.get("grammar", "unknown"),
-                        "grammar_modifier": result.get("grammar_modifier"),
-                        "definition": result.get("definition", ""),
-                        "found": True,
-                        "full_entry": full_entry,
-                    }
-                )
-                found_words.append(result.get("english_translation", word))
-                grammar_sequence.append(result.get("grammar", "unknown"))
-            else:
-                word_analyses.append({"original": word, "english": word, "grammar": "unknown", "found": False})
-                found_words.append(word)
-                grammar_sequence.append("unknown")
-
-        # Analyze sentence structure
-        structure_info = analyze_sentence_structure(grammar_sequence, word_analyses)
-
-        # Rearrange translation based on Chuukese grammar
-        rearranged = rearrange_translation(word_analyses, grammar_sequence)
-
-        # Find phrases in the sentence
-        phrases = find_phrases_in_sentence(sentence, words)
-
+        analysis = _analyze_text(sentence)
         return jsonify(
             {
-                "original_sentence": sentence,
-                "word_by_word": word_analyses,
-                "phrases": phrases,
-                "rearranged_translation": rearranged,
-                "structure_info": structure_info,
+                "sentence": sentence,
+                "words": [{"word": w, "key": w.lower()} for w in tokens],
+                **analysis,
             }
         )
-
     except Exception as e:
-        print(f"Error analyzing sentence: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sentences/translate", methods=["POST"])
+@login_required
+def api_sentence_translate():
+    """Translate one Chuukese sentence with the neural engine alone.
+
+    Kept apart from /api/translate, which also calls Google and Ollama: the
+    analysis page wants the model's reading of the sentence and nothing else.
+    """
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+    if len(text) > 2000:
+        return jsonify({"error": "Text is too long (2000 characters max)"}), 400
+    if not helsinki_translator:
+        return jsonify({"translation": None, "available": False, "engine_name": TRANSLATION_ENGINE_NAME})
+    try:
+        translation = helsinki_translator.translate_chuukese_to_english(text)
+    except Exception as e:
+        return jsonify({"error": f"Translation failed: {e}"}), 500
+    return jsonify(
+        {
+            "translation": (translation or "").strip(),
+            "available": True,
+            "engine": TRANSLATION_ENGINE,
+            "engine_name": TRANSLATION_ENGINE_NAME,
+        }
+    )
+
+
+@app.route("/api/sentences/source", methods=["POST"])
+@login_required
+def api_sentence_source():
+    """Find the sentence itself on wol.jw.org and return its real English.
+
+    The model's translation is only a guess; a sentence pasted from a
+    publication has an exact English counterpart on WOL. Tries the whole
+    sentence as a quoted phrase, then shorter windows of it, and lines up the
+    English of the best hit. ``match`` is null when nothing close is found.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        sentence = (data.get("sentence") or "").strip()
+        if not sentence:
+            return jsonify({"error": "sentence is required"}), 400
+        if len(sentence) > 2000:
+            return jsonify({"error": "Sentence is too long (2000 characters max)"}), 400
+
+        searcher = _get_wol_search()
+        tried = []
+        results = []
+        for query in _sa.source_queries(sentence):
+            tried.append(query)
+            res = searcher.search(query, pages=1, sort="relevance", limit=6)
+            results = res.get("results", [])
+            if results:
+                break
+        if not results:
+            return jsonify({"sentence": sentence, "match": None, "queries": tried})
+
+        english = searcher.english_for_many(results)
+        match = _sa.pick_source(sentence, results, english)
+        return jsonify({"sentence": sentence, "match": match, "queries": tried, "total": len(results)})
+    except requests.RequestException as e:
+        return jsonify({"error": f"Could not reach wol.jw.org: {e}"}), 502
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sentences/pairs", methods=["POST"])
+@login_required
+def api_sentence_save_pair():
+    """Save a confirmed sentence translation as a training pair.
+
+    Stored in the phrases collection in the same shape the Translation Game
+    uses for confirmed matches, so the pair collector and both retraining
+    scripts pick it up without further wiring. ``source`` records where the
+    English came from: "wol.jw.org" for an exact source text, "user" when
+    typed in.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        chuukese = (data.get("chuukese") or "").strip()
+        english = (data.get("english") or "").strip()
+        if not chuukese or not english:
+            return jsonify({"error": "chuukese and english are required"}), 400
+        if len(chuukese) > 2000 or len(english) > 2000:
+            return jsonify({"error": "Text is too long (2000 characters max)"}), 400
+        if dict_db is None or getattr(dict_db, "phrases_collection", None) is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        source = (data.get("source") or "user").strip()
+        if source not in ("wol.jw.org", "user"):
+            source = "user"
+        now = datetime.now(timezone.utc)
+        doc_id = f"sentence_{hash(chuukese) & 0x7FFFFFFF}_{hash(english) & 0x7FFFFFFF}"
+        doc = {
+            "_id": doc_id,
+            "chuukese_sentence": chuukese,
+            "chuukese_word": chuukese,
+            "english_translation": english,
+            "type": "sentence",
+            "confidence": 1.0,
+            "confidence_score": 100,
+            "grammar": "phrase",
+            "search_direction": "chk_to_en",
+            "definition": "",
+            "source": source,
+            "source_type": "sentence_analysis",
+            "citation": (data.get("citation") or "").strip() or None,
+            "link": (data.get("link") or "").strip() or None,
+            "title": (data.get("title") or "").strip() or None,
+            "date_added": now,
+            "date_modified": now,
+            "created_date": now,
+            "user_confirmed": True,
+            "added_by": session.get("user_email", ""),
+            "edited_by": _get_user_initials(),
+        }
+        try:
+            _cosmos_retry(dict_db.phrases_collection.insert_one, doc)
+            created = True
+        except DuplicateKeyError:
+            _cosmos_retry(
+                dict_db.phrases_collection.update_one,
+                {"_id": doc_id},
+                {"$set": {"english_translation": english, "date_modified": now, "user_confirmed": True, "confidence": 1.0, "confidence_score": 100, "source": source}},
+            )
+            created = False
+        return jsonify({"success": True, "phrase_id": doc_id, "created": created}), 201 if created else 200
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sentences/suggest", methods=["POST"])
+@login_required
+def api_sentence_suggest():
+    """Propose a dictionary entry for a word, from every source we have.
+
+    Gathers: the same word under other accents, related entries by stem, the
+    translation model's gloss of the word (and of the sentence, unless an
+    English sentence is supplied), and how wol.jw.org renders the word across
+    real sentence pairs. ``proposal`` is the best-supported English, grammar and
+    definition; the evidence comes back too so the user can judge it.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        word = (data.get("word") or "").strip()
+        sentence = (data.get("sentence") or "").strip()
+        english_given = (data.get("english") or "").strip() or None
+        # English from a parallel article is evidence; the model's own
+        # translation is only context, and saves translating again.
+        english_is_model = (data.get("english_source") or "article") == "model"
+        context_english = None if english_is_model else english_given
+        use_wol = bool(data.get("wol", True))
+        if not word:
+            return jsonify({"error": "word is required"}), 400
+        if len(word) > 100:
+            return jsonify({"error": "Word is too long (100 characters max)"}), 400
+
+        key = word.lower()
+        index = _get_similarity_index()
+
+        variants = []
+        heads = sorted(h for h in (index.get("by_norm") or {}).get(_sa.norm_word(key), ()) if h.lower() != key)
+        if heads:
+            found = _lookup_words_bulk(set(heads))
+            for h in heads:
+                entry = found.get(h.lower()) or {}
+                variants.append(
+                    {
+                        "headword": h,
+                        "english": entry.get("english", ""),
+                        "grammar": entry.get("grammar", ""),
+                        "definition": entry.get("definition", ""),
+                        "entry_id": entry.get("entry_id"),
+                    }
+                )
+        similar = _similar_words(key, index) if index.get("by_prefix") else []
+
+        model_word = ""
+        model_sentence = english_given if english_is_model else None
+        if helsinki_translator:
+            try:
+                model_word = (helsinki_translator.translate_chuukese_to_english(word) or "").strip()
+            except Exception as e:
+                print(f"⚠️ Model gloss failed for {word!r}: {e}")
+            if sentence and not context_english and not model_sentence:
+                try:
+                    model_sentence = (helsinki_translator.translate_chuukese_to_english(sentence) or "").strip()
+                except Exception as e:
+                    print(f"⚠️ Model translation failed: {e}")
+
+        wol = {"pairs": [], "renderings": [], "total": 0, "error": None}
+        if use_wol:
+            try:
+                searcher = _get_wol_search()
+                res = searcher.search(word, pages=1, sort="relevance", limit=8)
+                results = res.get("results", [])
+                english = searcher.english_for_many(results) if results else []
+                pairs = _sa.wol_pairs(results, english)
+                wol = {
+                    "pairs": pairs,
+                    "renderings": _sa.wol_renderings(pairs),
+                    "total": res.get("totalFound", 0),
+                    "error": None,
+                }
+            except requests.RequestException as e:
+                wol["error"] = f"Could not reach wol.jw.org: {e}"
+            except Exception as e:
+                wol["error"] = str(e)
+
+        proposal = _sa.build_proposal(
+            word, variants, similar, wol["renderings"], model_word, context_english or model_sentence
+        )
+        return jsonify(
+            {
+                "word": word,
+                "variants": variants,
+                "similar": similar,
+                "model": {"word": model_word, "sentence": model_sentence, "engine_name": TRANSLATION_ENGINE_NAME},
+                "wol": wol,
+                "proposal": proposal,
+            }
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sentences/suggest/queue", methods=["POST"])
+@login_required
+def api_sentence_suggest_queue():
+    """File a proposed new entry in the review queue.
+
+    Anyone who can analyze sentences may propose; an admin accepts or rejects
+    the row on the Translation Review page, and only then does the dictionary
+    change. One pending row per headword — a second proposal replaces it.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        word = (data.get("word") or "").strip()
+        english = (data.get("english") or "").strip()
+        if not word or not english:
+            return jsonify({"error": "word and english are required"}), 400
+        col = _reviews_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+
+        evidence = data.get("evidence") if isinstance(data.get("evidence"), dict) else {}
+        now = datetime.now(timezone.utc)
+        by = session.get("user_email", "")
+        doc = {
+            "kind": "new_word",
+            "headword": word,
+            "entry_id": None,
+            "outcome": "proposed",
+            "tier": "review",
+            "status": "pending",
+            "current": {},
+            "proposed": {
+                "chuukese_word": word,
+                "english_translation": english,
+                "grammar": (data.get("grammar") or "").strip(),
+                "definition": (data.get("definition") or "").strip(),
+                "example": (data.get("sentence") or "").strip(),
+                "example_english": (data.get("english_sentence") or "").strip(),
+            },
+            "evidence": {
+                "source": evidence.get("source") or "",
+                "variants": (evidence.get("variants") or [])[:6],
+                "similar": (evidence.get("similar") or [])[:12],
+                "renderings": (evidence.get("renderings") or [])[:8],
+                "pairs": (evidence.get("pairs") or [])[:8],
+                "pair_count": len(evidence.get("pairs") or []),
+                "model": evidence.get("model") or {},
+            },
+            "proposed_by": by,
+            "updated_at": now,
+        }
+        col.update_one(
+            {"kind": "new_word", "headword": word, "status": "pending"},
+            {"$set": doc, "$setOnInsert": {"created_at": now}},
+            upsert=True,
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -5870,8 +6213,6 @@ def analyze_article_url():
         return jsonify({"error": "URL is required"}), 400
     if not url.startswith(("http://", "https://")):
         return jsonify({"error": "URL must start with http:// or https://"}), 400
-
-    _dict_db = dict_db
 
     def derive_english_url(chk_url):
         """Auto-derive English wol.jw.org URL from a Chuukese one."""
@@ -5944,81 +6285,47 @@ def analyze_article_url():
             from difflib import SequenceMatcher
             return SequenceMatcher(None, tok_clean, trans_word).ratio() >= 0.82
 
-        def _find_dict_entry(word: str):
-            """Return best-matching dictionary entry for a Chuukese word."""
-            # 1. Exact case-insensitive match
-            result = _cosmos_retry(
-                _dict_db.dictionary_collection.find_one,
-                {"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}},
-            )
-            if result:
-                return result
-
-            # 2. Fuzzy fallback: fetch candidates sharing the first 4 chars, score with difflib
-            if len(word) >= 4:
-                from difflib import SequenceMatcher
-                prefix = word[:4]
-                candidates = list(
-                    _cosmos_retry(
-                        lambda: list(
-                            _dict_db.dictionary_collection.find(
-                                {"chuukese_word": {"$regex": f"^{re.escape(prefix)}", "$options": "i"}},
-                                {"chuukese_word": 1, "english_translation": 1, "grammar": 1,
-                                 "grammar_modifier": 1, "definition": 1},
-                            ).limit(30)
-                        )
-                    )
-                )
-                if candidates:
-                    best = max(
-                        candidates,
-                        key=lambda c: SequenceMatcher(None, word.lower(), c["chuukese_word"].lower()).ratio(),
-                    )
-                    if SequenceMatcher(None, word.lower(), best["chuukese_word"].lower()).ratio() >= 0.75:
-                        return best
-            return None
-
-        def analyze_words(sentence_text, eng_tokens=None):
-            """Look up each word in the dictionary; optionally compute token alignment."""
-            words = re.findall(r"\b[\w\u00C0-\u024F]+\b", sentence_text)
+        def analyze_words(sentence_text, dictionary, eng_tokens=None):
+            """Each word of the sentence with its entry from the paragraph's
+            dictionary map, and which English tokens it lines up with."""
             analyses = []
-            english_parts = []
-            # Pre-clean English tokens once for alignment
             clean_eng = [re.sub(r"[^\w]", "", t.lower()) for t in (eng_tokens or [])]
 
-            for word in words:
-                result = _find_dict_entry(word)
-                if result:
-                    english = result.get("english_translation", "")
-                    # Token alignment: fuzzy-match each translation word against English tokens
+            for word in _sa.words_in(sentence_text):
+                key = word.lower()
+                entry = dictionary.get(key)
+                if entry:
+                    english = entry.get("english") or ""
                     token_indices = []
-                    if clean_eng:
+                    if clean_eng and english:
                         trans_words = re.sub(r"[^\w\s]", "", english.lower()).split()
                         for i, tok_clean in enumerate(clean_eng):
                             if tok_clean and any(_fuzzy_token_match(tok_clean, tw) for tw in trans_words if tw):
                                 token_indices.append(i)
                     analyses.append({
                         "original": word,
+                        "key": key,
                         "english": english,
-                        "grammar": result.get("grammar", ""),
-                        "grammar_modifier": result.get("grammar_modifier"),
-                        "definition": result.get("definition", ""),
+                        "grammar": entry.get("grammar", ""),
+                        "grammar_modifier": entry.get("grammar_modifier"),
+                        "definition": entry.get("definition", ""),
                         "found": True,
-                        "entry_id": str(result["_id"]),
+                        "entry_id": entry.get("entry_id"),
+                        "source": entry.get("source"),
+                        "variant_of": entry.get("variant_of"),
                         "english_token_indices": token_indices,
                     })
-                    english_parts.append(english)
                 else:
                     analyses.append({
                         "original": word,
-                        "english": word,
+                        "key": key,
+                        "english": "",
                         "grammar": "",
                         "found": False,
                         "entry_id": None,
                         "english_token_indices": [],
                     })
-                    english_parts.append(word)
-            return analyses, " ".join(english_parts)
+            return analyses
 
         try:
             # ── Fetch Chuukese article ───────────────────────────────────────
@@ -6079,6 +6386,8 @@ def analyze_article_url():
                 is_heading = tag in ("h2", "h3")
                 chk_sent_texts = split_sentences(raw_text, scripture_pattern)
                 eng_sent_texts = english_para_sentences.get(idx, [])
+                # One dictionary pass per paragraph, shared by its sentences.
+                maps = _analyze_text(raw_text) if not is_heading else {"dictionary": {}, "similar": {}, "phrases": {}}
 
                 sentences = []
                 for si, part in enumerate(chk_sent_texts):
@@ -6091,12 +6400,11 @@ def analyze_article_url():
                     # Tokenize English for word-level highlighting (split on whitespace)
                     english_tokens = english_text.split() if english_text else None
 
-                    word_analyses, english_assembled = analyze_words(text_only, english_tokens)
+                    word_analyses = analyze_words(text_only, maps["dictionary"], english_tokens)
                     sentences.append({
                         "chuukese": part,
                         "text_only": text_only,
                         "words": word_analyses,
-                        "english_assembled": english_assembled,
                         "english_text": english_text,
                         "english_tokens": english_tokens,
                         "scriptures": inline_refs,
@@ -6110,6 +6418,9 @@ def analyze_article_url():
                     "raw_text": raw_text,
                     "sentences": sentences,
                     "sentence_count": len(sentences),
+                    "dictionary": maps["dictionary"],
+                    "similar": maps["similar"],
+                    "phrases": maps["phrases"],
                 })
 
             yield emit({"type": "done", "total_sentences": total_sentences})
@@ -6490,188 +6801,10 @@ def update_dictionary_word():
         return jsonify({"error": str(e)}), 500
 
 
-def analyze_sentence_structure(grammar_sequence: list[str], word_analyses: list[dict]) -> str:
-    """Analyze the grammatical structure of the sentence"""
-    # Count grammar types
-    grammar_counts = {}
-    for grammar in grammar_sequence:
-        grammar_counts[grammar] = grammar_counts.get(grammar, 0) + 1
+# Saved sentence analyses live in their own blueprint (src/api/sentence_analyses.py).
+from src.api.sentence_analyses import create_blueprint as _sentence_analyses_blueprint  # noqa: E402
 
-    # Build structure description
-    parts = []
-    has_verb = "verb" in grammar_sequence
-    has_noun = "noun" in grammar_sequence
-    has_subject_marker = any(w.get("grammar") == "pronoun" for w in word_analyses)
-
-    if has_verb and has_noun:
-        verb_pos = grammar_sequence.index("verb")
-        noun_positions = [i for i, g in enumerate(grammar_sequence) if g == "noun"]
-
-        if noun_positions and verb_pos < noun_positions[0]:
-            parts.append("Verb-Object-Subject (VOS) order typical of Chuukese")
-        else:
-            parts.append("Non-standard word order detected")
-    elif has_verb:
-        parts.append("Contains verb")
-
-    # Add grammar composition
-    grammar_list = [
-        f"{count} {grammar}{'s' if count > 1 else ''}"
-        for grammar, count in grammar_counts.items()
-        if grammar != "unknown"
-    ]
-    if grammar_list:
-        parts.append(f"Composition: {', '.join(grammar_list)}")
-
-    return ". ".join(parts) if parts else "Unable to determine sentence structure"
-
-
-def rearrange_translation(word_analyses: list[dict], grammar_sequence: list[str]) -> str:
-    """Rearrange word-by-word translation to grammatical English"""
-    words = [w["english"] for w in word_analyses]
-
-    # If no grammatical information, return as-is
-    if "verb" not in grammar_sequence:
-        return " ".join(words).capitalize()
-
-    # Try to identify VOS pattern and convert to SVO
-    try:
-        verb_idx = grammar_sequence.index("verb")
-
-        # Look for object (noun after verb)
-        object_idx = None
-        subject_idx = None
-
-        for i in range(verb_idx + 1, len(grammar_sequence)):
-            if grammar_sequence[i] == "noun" and object_idx is None:
-                object_idx = i
-            elif grammar_sequence[i] in ["noun", "pronoun"] and object_idx is not None:
-                subject_idx = i
-                break
-
-        # Rearrange if we found VOS pattern
-        if verb_idx is not None and object_idx is not None and subject_idx is not None:
-            # Subject - Verb - Object
-            rearranged = [words[subject_idx], words[verb_idx], words[object_idx]]  # Subject  # Verb  # Object
-
-            # Add other words
-            for i, word in enumerate(words):
-                if i not in [verb_idx, object_idx, subject_idx]:
-                    rearranged.append(word)
-
-            result = " ".join(rearranged)
-            return result.capitalize()
-    except Exception:
-        pass
-
-    # Default: return words in original order
-    return " ".join(words).capitalize()
-
-
-def find_phrases_in_sentence(sentence: str, words: list[str]) -> list[dict]:
-    """Logically break down the sentence into meaningful phrases based on grammar"""
-    phrases_found = []
-
-    try:
-        # Re-lookup words with their grammar to build phrases
-        word_data = []
-        for word in words:
-            result = dict_db.collection.find_one({"chuukese_word": {"$regex": f"^{re.escape(word)}$", "$options": "i"}})
-            if result:
-                word_data.append(
-                    {
-                        "word": word,
-                        "english": result.get("english_translation", word),
-                        "grammar": result.get("grammar", "unknown"),
-                        "grammar_modifier": result.get("grammar_modifier"),
-                    }
-                )
-            else:
-                word_data.append({"word": word, "english": word, "grammar": "unknown", "grammar_modifier": None})
-
-        # Pattern 1: Verb + Object (Noun) - VOS pattern
-        for i in range(len(word_data) - 1):
-            if word_data[i]["grammar"] == "verb":
-                # Look for noun after verb
-                for j in range(i + 1, min(i + 4, len(word_data))):
-                    if word_data[j]["grammar"] == "noun":
-                        phrase_words = word_data[i : j + 1]
-                        phrase = " ".join([w["word"] for w in phrase_words])
-                        english = " ".join([w["english"] for w in phrase_words])
-                        phrases_found.append(
-                            {
-                                "phrase": phrase,
-                                "english": english,
-                                "type": "Verb + Object",
-                                "explanation": f'Action phrase: "{word_data[i]["english"]}" acting on "{word_data[j]["english"]}"',
-                            }
-                        )
-                        break
-
-        # Pattern 2: Adjective + Noun
-        for i in range(len(word_data) - 1):
-            if word_data[i]["grammar"] == "adjective" and word_data[i + 1]["grammar"] == "noun":
-                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
-                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
-                phrases_found.append(
-                    {
-                        "phrase": phrase,
-                        "english": english,
-                        "type": "Descriptive Phrase",
-                        "explanation": f'Describes a noun: "{word_data[i]["english"]}" modifying "{word_data[i+1]["english"]}"',
-                    }
-                )
-
-        # Pattern 3: Preposition + Noun (Locational phrase)
-        for i in range(len(word_data) - 1):
-            if word_data[i]["grammar"] == "preposition" and word_data[i + 1]["grammar"] == "noun":
-                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
-                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
-                phrases_found.append(
-                    {
-                        "phrase": phrase,
-                        "english": english,
-                        "type": "Locational Phrase",
-                        "explanation": f'Location or direction: "{word_data[i]["english"]}" with "{word_data[i+1]["english"]}"',
-                    }
-                )
-
-        # Pattern 4: Pronoun + Verb (Subject-Verb)
-        for i in range(len(word_data) - 1):
-            if word_data[i]["grammar"] == "pronoun" and word_data[i + 1]["grammar"] == "verb":
-                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']}"
-                english = f"{word_data[i]['english']} {word_data[i+1]['english']}"
-                phrases_found.append(
-                    {
-                        "phrase": phrase,
-                        "english": english,
-                        "type": "Subject-Verb",
-                        "explanation": f'Who does what: "{word_data[i]["english"]}" performs "{word_data[i+1]["english"]}"',
-                    }
-                )
-
-        # Pattern 5: Number + Classifier + Noun
-        for i in range(len(word_data) - 2):
-            if (
-                word_data[i]["grammar"] in ["numeral", "number"]
-                and word_data[i + 1]["grammar"] == "classifier"
-                and word_data[i + 2]["grammar"] == "noun"
-            ):
-                phrase = f"{word_data[i]['word']} {word_data[i+1]['word']} {word_data[i+2]['word']}"
-                english = f"{word_data[i]['english']} {word_data[i+1]['english']} {word_data[i+2]['english']}"
-                phrases_found.append(
-                    {
-                        "phrase": phrase,
-                        "english": english,
-                        "type": "Counting Phrase",
-                        "explanation": f'Counting with classifier: "{word_data[i]["english"]}" of "{word_data[i+2]["english"]}"',
-                    }
-                )
-
-    except Exception as e:
-        print(f"Error finding phrases: {str(e)}")
-
-    return phrases_found
+app.register_blueprint(_sentence_analyses_blueprint(lambda: dict_db, login_required, _cosmos_retry))
 
 
 # Catch-all route for React (must be last)

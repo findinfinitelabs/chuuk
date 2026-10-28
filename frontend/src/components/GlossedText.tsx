@@ -31,6 +31,15 @@ export interface DictEntry {
   /** Confirmed by a person (translation game or review), not just imported. */
   verified?: boolean
   appearances?: Appearance[]
+  /** Database id, so the analysis pages can edit the entry. */
+  entry_id?: string | null
+  /** Which collection holds it; only "dictionary" rows are editable in place. */
+  source?: 'dictionary' | 'phrases' | 'words'
+  /** Set when the text's spelling differs from the headword only in accents:
+   *  the headword the entry was matched under. */
+  variant_of?: string
+  /** Every headword matching once accents are ignored. */
+  variants?: string[]
 }
 
 export type Dictionary = Record<string, DictEntry>
@@ -80,7 +89,7 @@ function groupAppearances(appearances: Appearance[]): Appearance[] {
 /** Every word of `text` tinted by dictionary status; hovering a known or
  *  near-known word reports a Gloss through `onGloss` (null on leave). */
 export function GlossedWords({
-  text, dictionary, similar, phrases = {}, onGloss, keyPrefix = '',
+  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '',
 }: {
   text: string
   dictionary: Dictionary
@@ -88,6 +97,8 @@ export function GlossedWords({
   /** Multi-word headwords to underline as one unit when they occur. */
   phrases?: PhraseMap
   onGloss: (g: Gloss | null) => void
+  /** Clicking any word (known or not) reports it, for pages that edit entries. */
+  onWordClick?: (word: string) => void
   keyPrefix?: string
 }): ReactNode {
   const tokens = text.split(TOKENS)
@@ -124,7 +135,8 @@ export function GlossedWords({
     return (
       <span
         key={key}
-        className={`${styles.word}${tint ? ` ${tint}` : ''}${phraseClass}`}
+        className={`${styles.word}${tint ? ` ${tint}` : ''}${phraseClass}${onWordClick ? ` ${styles.clickable}` : ''}`}
+        onClick={onWordClick ? () => onWordClick(tok) : undefined}
         onMouseEnter={
           hoverable
             ? (e: MouseEvent<HTMLSpanElement>) =>
@@ -181,6 +193,14 @@ export function GlossCard({ gloss }: { gloss: Gloss }) {
 
       {entry ? (
         <>
+          {entry.variant_of && (
+            <div className={styles.glossVariant}>
+              In the dictionary as <strong>{entry.variant_of}</strong>
+              {entry.variants && entry.variants.length > 1
+                ? ` (also ${entry.variants.filter((v) => v !== entry.variant_of).join(', ')})`
+                : ''}
+            </div>
+          )}
           {entry.status === 'translated' ? (
             <div className={styles.glossEnglish}>{entry.english}</div>
           ) : (
@@ -244,6 +264,10 @@ export function GlossLegend() {
       <Text size="xs" c="dimmed">
         <span className={styles.swatch} style={{ background: '#ffdeeb' }} />
         in dictionary, no translation
+      </Text>
+      <Text size="xs" c="dimmed">
+        <span className={styles.swatch} style={{ background: '#d0ebff' }} />
+        in dictionary under other accents
       </Text>
       <Text size="xs" c="dimmed">
         <span className={styles.swatch} style={{ background: '#fff3bf' }} />

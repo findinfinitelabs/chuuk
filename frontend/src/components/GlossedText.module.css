@@ -33,6 +33,21 @@
   background-color: #fcc2d7;
 }
 
+/* In the dictionary, but spelled with different accents there. */
+.accent {
+  background-color: #d0ebff;
+  cursor: help;
+}
+
+.accent:hover {
+  background-color: #a5d8ff;
+}
+
+/* Pages that edit entries make every word clickable. */
+.clickable {
+  cursor: pointer;
+}
+
 /* Not in the dictionary, but we hold words that look related. */
 .similar {
   background-color: #fff3bf;
@@ -116,6 +131,13 @@
   color: #ced4da;
   font-size: 0.72rem;
   font-style: italic;
+}
+
+/* The headword a word was matched under when only the accents differ */
+.glossVariant {
+  color: #a5d8ff;
+  font-size: 0.74rem;
+  margin-bottom: 2px;
 }
 
 /* The translation model's proposal, kept apart from the dictionary's answer */

@@ -111,6 +111,11 @@ def auth_headers(client, flask_app) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Captured before `builtins.open` is patched: _safe_open must call the real
+# one, or a test that imports app.py while the patch is active recurses.
+_real_open = open
+
+
 def _safe_open(path, *args, **kwargs):
     """Allow opening config JSON files; block everything else during testing."""
     allowed_prefixes = (
@@ -119,7 +124,7 @@ def _safe_open(path, *args, **kwargs):
     )
     path_str = str(path)
     if any(path_str.startswith(p) for p in allowed_prefixes):
-        return open(path, *args, **kwargs)  # noqa: WPS515
+        return _real_open(path, *args, **kwargs)  # noqa: WPS515
     mock_fh = MagicMock()
     mock_fh.__enter__ = lambda s: s
     mock_fh.__exit__ = MagicMock(return_value=False)
