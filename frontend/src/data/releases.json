@@ -12,6 +12,7 @@
         "Sentence and Article Analysis rebuilt on the Watchtower Online Library dictionary layer, with source lookup and saved analyses.",
         "Translation Game: clues, glosses, phrase matching and saved-match colours.",
         "Admin: translation review queue and dictionary de-duplication.",
+        "AI Training page: automatic retraining is switched off on the hosted site (it has no GPU); models are trained offline and uploaded. Manual runs remain available.",
         "Training pipeline: memory-guarded local training, checkpoint resume, and retry on database throttling."
       ]
     }

@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants (overridable by env)
 # ---------------------------------------------------------------------------
+# TRAINING_SCHEDULER_ENABLED=false stops the periodic auto-retrain entirely.
+# Manual runs from the AI Training page still work. Set it to false wherever
+# the app has no GPU (the Azure container): a full fine-tune there would run
+# on 2 CPUs inside 4 GB and overwrite the weights uploaded to the model share.
+TRAINING_SCHEDULER_ENABLED = os.getenv("TRAINING_SCHEDULER_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 TRAINING_INTERVAL_MINUTES = int(os.getenv("TRAINING_INTERVAL_MINUTES", "30"))
 TRAINING_MIN_NEW_PAIRS = int(os.getenv("TRAINING_MIN_NEW_PAIRS", "10"))
 LORA_MERGE_THRESHOLD = int(os.getenv("LORA_MERGE_THRESHOLD", "50"))
@@ -369,6 +374,9 @@ class ContinuousTrainer:
         """Start the background scheduling thread (call once at app boot)."""
         if self._running:
             return
+        if not TRAINING_SCHEDULER_ENABLED:
+            logger.info("Continuous trainer scheduler disabled (TRAINING_SCHEDULER_ENABLED=false); manual runs only")
+            return
         self._running = True
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop, daemon=True, name="continuous-trainer"
@@ -415,6 +423,7 @@ class ContinuousTrainer:
             "current_run": current,
             "lora_update_count": self._lora_update_count,
             "lora_merge_threshold": LORA_MERGE_THRESHOLD,
+            "scheduler_enabled": TRAINING_SCHEDULER_ENABLED and self._running,
             "scheduler_interval_minutes": TRAINING_INTERVAL_MINUTES,
             "scheduler_min_new_pairs": TRAINING_MIN_NEW_PAIRS,
             "recent_runs": history[:10],

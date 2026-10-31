@@ -313,6 +313,9 @@ deploy_main() {
     # Fine-tuned model weights are written here (Azure File Share mount).
     # Baked-in base weights remain in /app/models/ as fallback.
     "MODEL_STORE_PATH=${MODEL_MOUNT_PATH}"
+    # No GPU in the container: never auto-retrain there. Models are trained
+    # locally and uploaded to the chuuk-models share (see docs/ or memory).
+    "TRAINING_SCHEDULER_ENABLED=false"
   )
   if [ -n "$google_key" ]; then
     ENV_ARGS+=("GOOGLE_CLOUD_API_KEY=${google_key}")

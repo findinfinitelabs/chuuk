@@ -59,6 +59,7 @@ interface TrainingStatus {
   current_run: TrainingRun | null
   lora_update_count: number
   lora_merge_threshold: number
+  scheduler_enabled?: boolean
   scheduler_interval_minutes: number
   scheduler_min_new_pairs: number
   recent_runs: TrainingRun[]
@@ -351,6 +352,12 @@ export default function AITraining() {
             <Group gap="xs"><IconClock size={16} />Scheduler</Group>
           </Title>
           <Stack gap={6}>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Automatic retraining</Text>
+              <Badge color={status?.scheduler_enabled === false ? 'gray' : 'green'} variant="light">
+                {status?.scheduler_enabled === false ? 'Off (manual runs only)' : 'On'}
+              </Badge>
+            </Group>
             <Group justify="space-between">
               <Text size="sm" c="dimmed">Interval</Text>
               <Text size="sm" fw={500}>{status?.scheduler_interval_minutes ?? 30} min</Text>
