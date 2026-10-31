@@ -10,7 +10,7 @@
  * maps covering its words; completed analyses are saved and listed in the
  * sidebar.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Container, Title, Text, TextInput, Button, Stack, Card, Group, Badge, Divider, Loader, Alert, Paper,
   Anchor, Progress, Box, ScrollArea, ActionIcon, NavLink as MantineNavLink, Tooltip,
@@ -130,13 +130,21 @@ function paragraphMaps(p: StreamedParagraph): { dictionary: Dictionary; similar:
   return { dictionary, similar: {}, phrases: {} }
 }
 
+/** Paragraph number as printed in the article (leading digits of the text),
+ *  or the running count of body paragraphs when the text has none. */
+function paragraphNumber(para: StreamedParagraph, fallback: number): number {
+  const m = /^\s*(\d{1,3})\b/.exec(para.raw_text || '')
+  return m ? parseInt(m[1], 10) : fallback
+}
+
 // ── Sentence ──────────────────────────────────────────────────────────────────
 
 function SentenceRow({
-  sentence, index, maps, onGloss, onSelect, selectedKey,
+  sentence, label, maps, onGloss, onSelect, selectedKey,
 }: {
   sentence: AnalyzedSentence
-  index: number
+  /** "paragraph.sentence", e.g. "3.2" for the second sentence of paragraph 3. */
+  label: string
   maps: { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
   onGloss: (g: Gloss | null) => void
   onSelect: (sel: Selection) => void
@@ -159,7 +167,7 @@ function SentenceRow({
   return (
     <Card withBorder padding="md" className={styles.result}>
       <Group gap="xs" mb={6} wrap="wrap">
-        <Badge size="xs" variant="outline" color="gray">#{index + 1}</Badge>
+        <Badge size="sm" variant="outline" color="violet" fw={700}>{label}</Badge>
         <Badge size="xs" variant="light" color={pct >= 80 ? 'green' : pct >= 50 ? 'yellow' : 'red'}>
           {known}/{words.length} in dictionary
         </Badge>
@@ -657,26 +665,46 @@ export default function ArticleAnalysis() {
 
           {paragraphs.length > 0 && (
             <Stack gap="sm">
-              {paragraphs.map((para, pi) => para.is_heading ? (
-                <Paper key={para.index} withBorder radius="md" p="sm" className={styles.heading}>
-                  <Group gap="xs">
-                    <Text fw={700} c="violet.9">{para.raw_text}</Text>
-                    <Badge size="xs" variant="outline" color="violet" ml="auto">§{pi + 1}</Badge>
-                  </Group>
-                </Paper>
-              ) : (
-                para.sentences.map((s, si) => (
-                  <SentenceRow
-                    key={`${para.index}-${si}`}
-                    sentence={s}
-                    index={si}
-                    maps={maps[pi]}
-                    onGloss={setGloss}
-                    onSelect={setSelection}
-                    selectedKey={selection?.sentence === s ? selection.key : null}
-                  />
-                ))
-              ))}
+              {(() => {
+                let bodyCount = 0
+                return paragraphs.map((para, pi) => {
+                  if (para.is_heading) {
+                    return (
+                      <Paper key={para.index} withBorder radius="md" p="sm" className={styles.heading}>
+                        <Group gap="xs">
+                          <Text fw={700} c="violet.9">{para.raw_text}</Text>
+                          <Badge size="xs" variant="outline" color="violet" ml="auto">§{pi + 1}</Badge>
+                        </Group>
+                      </Paper>
+                    )
+                  }
+                  bodyCount += 1
+                  const pn = paragraphNumber(para, bodyCount)
+                  return (
+                    <Fragment key={para.index}>
+                      <Group gap="sm" align="center" wrap="nowrap" className={styles.paraMarker} mt={pi === 0 ? 0 : 'sm'}>
+                        <Text className={styles.paraNumber}>{pn}</Text>
+                        <Text size="sm" fw={600} c="violet.9" style={{ whiteSpace: 'nowrap' }}>
+                          Paragraph {pn}
+                        </Text>
+                        <Divider style={{ flex: 1 }} color="violet.2" />
+                        <Text size="xs" c="dimmed">{para.sentences.length} sentence{para.sentences.length === 1 ? '' : 's'}</Text>
+                      </Group>
+                      {para.sentences.map((s, si) => (
+                        <SentenceRow
+                          key={`${para.index}-${si}`}
+                          sentence={s}
+                          label={`${pn}.${si + 1}`}
+                          maps={maps[pi]}
+                          onGloss={setGloss}
+                          onSelect={setSelection}
+                          selectedKey={selection?.sentence === s ? selection.key : null}
+                        />
+                      ))}
+                    </Fragment>
+                  )
+                })
+              })()}
             </Stack>
           )}
 

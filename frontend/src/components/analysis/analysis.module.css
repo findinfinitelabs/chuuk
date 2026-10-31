@@ -118,3 +118,21 @@
     display: none;
   }
 }
+
+/* Paragraph marker row in Article Analysis: a big number so paragraph breaks stand out */
+.paraMarker {
+  padding: 4px 0 2px;
+}
+
+.paraNumber {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #5f3dc4;
+  background: #f3f0ff;
+  border: 2px solid #d0bfff;
+  border-radius: 12px;
+  min-width: 52px;
+  padding: 6px 10px;
+  text-align: center;
+}
