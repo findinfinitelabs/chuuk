@@ -2,6 +2,8 @@ import { Box, Text, Group, Anchor, Modal } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { useRef } from 'react'
 import { Stack, ScrollArea, Divider, Button, Title } from '@mantine/core'
+import { Link } from 'react-router-dom'
+import { CURRENT_VERSION } from '../pages/ReleaseNotes'
 
 export default function Footer() {
   const [termsOpened, { open: openTerms, close: closeTerms }] = useDisclosure(false)
@@ -25,7 +27,14 @@ export default function Footer() {
           <Anchor size="xs" c="black" component="button" type="button" onClick={openTerms}>
             AI Ethical Use
           </Anchor>
+          <Text size="xs" c="black">•</Text>
+          <Anchor size="xs" c="black" component={Link} to="/release-notes">
+            Release Notes
+          </Anchor>
         </Group>
+        <Text size="xs" c="gray.6" mt={4}>
+          Version {CURRENT_VERSION}
+        </Text>
       </Box>
 
       {/* Terms and Conditions Modal */}

@@ -24,6 +24,7 @@ import ReviewQueue from './pages/ReviewQueue'
 import AITraining from './pages/AITraining'
 import Login from './pages/Login'
 import Footer from './components/Footer'
+import ReleaseNotes from './pages/ReleaseNotes'
 import { chuukTheme } from './theme'
 import { UserContext } from './contexts/UserContext'
 import './App.css'
@@ -206,6 +207,17 @@ function App() {
                 onClick={() => { toggleNav(); setShowHighlights(false); }}
               />
             )}
+            {hasPermission('lookup') && (
+              <NavLink 
+                label="Word Lookup" 
+                leftSection={<IconSearch size="1.2rem" />} 
+                component={Link}
+                to="/lookup"
+                active={location.pathname === '/lookup'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             {hasPermission('translate') && (
               <NavLink 
                 label="AI Translation" 
@@ -239,13 +251,13 @@ function App() {
                 onClick={toggleNav}
               />
             )}
-            {hasPermission('lookup') && (
+            {hasPermission('game') && (
               <NavLink 
-                label="Word Lookup" 
-                leftSection={<IconSearch size="1.2rem" />} 
+                label="Translation Game" 
+                leftSection={<IconPuzzle size="1.2rem" />} 
                 component={Link}
-                to="/lookup"
-                active={location.pathname === '/lookup'}
+                to="/game"
+                active={location.pathname === '/game'}
                 className="nav-link"
                 onClick={toggleNav}
               />
@@ -282,17 +294,6 @@ function App() {
                 component={Link}
                 to="/publications"
                 active={location.pathname === '/publications'}
-                className="nav-link"
-                onClick={toggleNav}
-              />
-            )}
-            {hasPermission('game') && (
-              <NavLink 
-                label="Translation Game" 
-                leftSection={<IconPuzzle size="1.2rem" />} 
-                component={Link}
-                to="/game"
-                active={location.pathname === '/game'}
                 className="nav-link"
                 onClick={toggleNav}
               />
@@ -412,6 +413,7 @@ function App() {
               <Route path="/admin/users" element={hasPermission('admin_users') ? <AdminUsers /> : <AccessDenied />} />
               <Route path="/admin/reviews" element={hasPermission('reviews') ? <ReviewQueue /> : <AccessDenied />} />
               <Route path="/ai-training" element={hasPermission('ai_training') ? <AITraining /> : <AccessDenied />} />
+              <Route path="/release-notes" element={<ReleaseNotes />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </UserContext.Provider>

@@ -1,0 +1,19 @@
+{
+  "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
+  "releases": [
+    {
+      "version": "1.0.0.1",
+      "date": "2026-10-31",
+      "title": "First numbered release",
+      "notes": [
+        "Version number and this release notes page added to the site footer.",
+        "Left navigation reordered: Word Lookup now sits above AI Translation, and Translation Game follows Article Analysis.",
+        "AI Translator: Helsinki-NLP models retrained on 45,000 Chuukese–English pairs, including sentences distilled from the larger MADLAD-400 model. Translations in both directions are markedly more accurate than the previous model.",
+        "Sentence and Article Analysis rebuilt on the Watchtower Online Library dictionary layer, with source lookup and saved analyses.",
+        "Translation Game: clues, glosses, phrase matching and saved-match colours.",
+        "Admin: translation review queue and dictionary de-duplication.",
+        "Training pipeline: memory-guarded local training, checkpoint resume, and retry on database throttling."
+      ]
+    }
+  ]
+}
