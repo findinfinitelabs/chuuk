@@ -37,7 +37,18 @@ class FakeCollection:
         self.docs = []
 
     def _match(self, q):
-        return [d for d in self.docs if all(d.get(k) == v for k, v in q.items())]
+        def ok(d, k, v):
+            if isinstance(v, dict) and "$in" in v:
+                return d.get(k) in v["$in"]
+            return d.get(k) == v
+
+        return [d for d in self.docs if all(ok(d, k, v) for k, v in q.items())]
+
+    def count_documents(self, q=None):
+        return len(self._match(q or {}))
+
+    def create_index(self, *a, **kw):
+        return None
 
     def find(self, q=None, projection=None):
         rows = [dict(d) for d in self._match(q or {})]
@@ -68,7 +79,7 @@ class FakeCollection:
 def harness():
     col = FakeCollection()
     db = MagicMock()
-    db.db = {"sentence_analyses": col}
+    db.db = {"sentence_analyses": col, "user_library": FakeCollection()}
     app = Flask(__name__)
     app.config.update(TESTING=True, SECRET_KEY="t")
     app.register_blueprint(create_blueprint(lambda: db, _login_required, lambda fn: fn()))
@@ -130,14 +141,24 @@ def test_save_list_get_roundtrip_and_upsert(harness):
     assert isinstance(full["updated_at"], str)
 
 
-def test_delete_only_owner_or_admin(harness):
+def test_delete_removes_from_own_library_and_content_when_unreferenced(harness):
     _, client, col = harness
     _login(client, email="owner@example.com")
     saved_id = client.post("/api/sentence-analyses", json={"sentence": "Ese wor.", "words": []}).get_json()["id"]
 
+    # Another user who never saved it: nothing to unlink, the content stays.
     _login(client, email="other@example.com")
-    assert client.delete(f"/api/sentence-analyses/{saved_id}").status_code == 403
-    _login(client, email="admin@example.com", role="admin")
+    assert client.delete(f"/api/sentence-analyses/{saved_id}").status_code == 200
+    assert len(col.docs) == 1
+    assert client.get("/api/sentence-analyses").get_json() == []
+
+    # The lookup files it in this user's library too; now two libraries hold it.
+    assert client.get("/api/sentence-analyses/lookup", query_string={"sentence": "Ese wor."}).status_code == 200
+    assert [d["id"] for d in client.get("/api/sentence-analyses").get_json()] == [saved_id]
+    assert client.delete(f"/api/sentence-analyses/{saved_id}").status_code == 200
+    assert len(col.docs) == 1  # the owner still has it
+
+    _login(client, email="owner@example.com")
     assert client.delete(f"/api/sentence-analyses/{saved_id}").status_code == 200
     assert col.docs == []
 

@@ -2,6 +2,19 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.2",
+      "date": "2026-10-31",
+      "title": "Article Analysis pairing and per-user libraries",
+      "notes": [
+        "Article Analysis: Chuukese and English sentences are now paired by content (scripture citations, numbers, list markers, question marks, dictionary glosses and length) instead of by position. Sentences the translator reordered, split or merged now line up, and paragraphs are matched even when one edition has an extra footnote.",
+        "Article Analysis: a footnote letter after a full stop no longer glues two English sentences together, and study-question labels such as 2. (a) and (b) stay with the question they introduce.",
+        "Article Analysis: Re-analyze fetches the article afresh instead of returning the stored copy.",
+        "Saved searches, article analyses and sentence analyses are now per user: each person's sidebar lists only what they saved. The underlying content is shared, so when someone requests an article or search another user already pulled, it is served from the stored copy instead of fetching wol.jw.org again.",
+        "Article Analysis: sentences are numbered paragraph.sentence (1.1, 1.2, 2.1 …) and each paragraph opens with a large paragraph number so breaks are easy to spot.",
+        "Dictionary: 1,247 headwords that were stored with a suffix hyphen (wis-ach) are now whole words (wisach) with the stem, suffix and suffix meaning recorded, so sentence analysis no longer reports them as missing."
+      ]
+    },
+    {
       "version": "1.0.0.1",
       "date": "2026-10-31",
       "title": "First numbered release",
@@ -10,10 +23,7 @@
         "Left navigation reordered: Word Lookup now sits above AI Translation, and Translation Game follows Article Analysis.",
         "AI Translator: Helsinki-NLP models retrained on 45,000 Chuukese–English pairs, including sentences distilled from the larger MADLAD-400 model. Translations in both directions are markedly more accurate than the previous model.",
         "Sentence and Article Analysis rebuilt on the Watchtower Online Library dictionary layer, with source lookup and saved analyses.",
-        "Saved searches, article analyses and sentence analyses are now per user: each person's sidebar lists only what they saved. The underlying content is shared, so when someone requests an article or search another user already pulled, it is served from the stored copy instead of fetching wol.jw.org again.",
-        "Article Analysis: sentences are numbered paragraph.sentence (1.1, 1.2, 2.1 …) and each paragraph opens with a large paragraph number so breaks are easy to spot.",
         "Translation Game: clues, glosses, phrase matching and saved-match colours.",
-        "Dictionary: 1,247 headwords that were stored with a suffix hyphen (wis-ach) are now whole words (wisach) with the stem, suffix and suffix meaning recorded, so sentence analysis no longer reports them as missing.",
         "Admin: translation review queue and dictionary de-duplication.",
         "AI Training page: automatic retraining is switched off on the hosted site (it has no GPU); models are trained offline and uploaded. Manual runs remain available.",
         "Training pipeline: memory-guarded local training, checkpoint resume, and retry on database throttling."

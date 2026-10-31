@@ -78,6 +78,12 @@ class FakeCollection:
         deleted = self.delete_many(query).deleted_count
         return FakeDeleteResult(1 if deleted else 0)
 
+    def count_documents(self, query=None):
+        return len(self.find(query))
+
+    def create_index(self, *args, **kwargs):
+        return None
+
 
 def test_article_analysis_list_falls_back_when_cosmos_rejects_sort():
     os.environ.setdefault("FLASK_ENV", "testing")
@@ -109,7 +115,7 @@ def test_article_analysis_list_falls_back_when_cosmos_rejects_sort():
 
         collection = MagicMock()
         collection.find.side_effect = [sort_cursor, unsorted_cursor]
-        flask_module.dict_db.db = {"article_analyses": collection}
+        flask_module.dict_db.db = {"article_analyses": collection, "user_library": FakeCollection()}
 
         client = flask_module.app.test_client()
         with client.session_transaction() as session:
@@ -140,6 +146,7 @@ def test_article_analysis_save_and_get_use_split_paragraph_storage():
         flask_module.dict_db.db = {
             "article_analyses": metadata,
             "article_analysis_paragraphs": paragraphs,
+            "user_library": FakeCollection(),
         }
 
         client = flask_module.app.test_client()

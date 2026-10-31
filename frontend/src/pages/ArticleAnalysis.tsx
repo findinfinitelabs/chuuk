@@ -52,6 +52,8 @@ interface AnalyzedSentence {
   words: WordAnalysis[]
   english_text?: string | null
   english_tokens?: string[] | null
+  /** Indices into the paragraph's english_sentences this sentence translates. */
+  english_indices?: number[]
   scriptures: string[]
 }
 
@@ -61,6 +63,8 @@ interface StreamedParagraph {
   raw_text: string
   sentences: AnalyzedSentence[]
   sentence_count: number
+  /** Every English sentence of the paired paragraph, in order. */
+  english_sentences?: string[]
   /** Present on analyses made since the rebuild; older saved ones lack them. */
   dictionary?: Dictionary
   similar?: SimilarMap
@@ -459,7 +463,7 @@ export default function ArticleAnalysis() {
     setDone(true)
   }
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (opts: { force?: boolean } = {}) => {
     if (!url.trim()) { setError('Enter the article URL first'); return }
     setLoading(true); setDone(false); setError('')
     setMeta(null); setParagraphs([]); setProgress(0); setActiveId(null); setSelection(null); setGloss(null)
@@ -467,7 +471,8 @@ export default function ArticleAnalysis() {
 
     // Someone may already have analysed this article: reuse that instead of
     // fetching wol.jw.org again. The lookup also files it in this user's list.
-    try {
+    // Re-analyze skips this and fetches afresh.
+    if (!opts.force) try {
       const existing = await axios.get('/api/article-analyses/lookup', { params: { url: url.trim() } })
       if (existing.data?.found) {
         applySavedDoc(existing.data)
@@ -598,9 +603,9 @@ export default function ArticleAnalysis() {
                 <Group gap="xs">
                   {loading && <Button color="red" variant="light" onClick={handleStop}>Stop</Button>}
                   {done && activeId && (
-                    <Button variant="light" leftSection={<IconRefresh size={16} />} onClick={handleAnalyze}>Re-analyze</Button>
+                    <Button variant="light" leftSection={<IconRefresh size={16} />} onClick={() => handleAnalyze({ force: true })}>Re-analyze</Button>
                   )}
-                  <Button onClick={handleAnalyze} loading={loading} leftSection={<IconSearch size={16} />} disabled={!url.trim()}>
+                  <Button onClick={() => handleAnalyze()} loading={loading} leftSection={<IconSearch size={16} />} disabled={!url.trim()}>
                     Fetch & analyze
                   </Button>
                 </Group>

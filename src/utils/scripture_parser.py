@@ -143,8 +143,11 @@ _INVISIBLE = re.compile(r"[​‌‍­﻿⁠]")
 # protected citation.
 _SENTENCE_END = re.compile(
     r"[.!?][”’\"')\]]*(?:\s*\((?:[^()<]|<<<REF_\d+>>>){1,160}\))?"
+    r"(?:\s[a-z](?=\s))?"  # a footnote letter stuck to the sentence end: "do. a As we"
     r"(?=\s+[“‘\"'(\[]?(?:[A-ZÀ-Þ]|\d|<<<REF_))"
 )
+# A lone footnote letter left on a sentence end, e.g. "would do. a".
+_TRAILING_FOOTNOTE = re.compile(r"(?<=[.!?”’\"')\]])\s[a-z]$")
 
 
 def normalize_text(text):
@@ -177,7 +180,39 @@ def split_sentences(text):
         out.append(protected[start : m.end()].strip())
         start = m.end()
     out.append(protected[start:].strip())
+    out = [_TRAILING_FOOTNOTE.sub("", s) for s in out]
+    out = _rebalance_markers([s for s in out if s])
     return [restore_scripture_references(s, refs) for s in out if s]
+
+
+_LABEL_ONLY = re.compile(r"^\d{1,3}(?:[-–]\d{1,3})?\.?(?:\s*\([a-z]\))?$")
+_TRAILING_MARKER = re.compile(r"\s*\([a-z]\)$")
+
+
+def _rebalance_markers(parts):
+    """Study-question pieces come out as "2. (a)", "…? (b)", "…?": the label
+    and the (a)/(b) markers belong at the start of the question they
+    introduce, so move them there."""
+    out = []
+    carry = ""
+    for part in parts:
+        if carry:
+            part = f"{carry} {part}"
+            carry = ""
+        if _LABEL_ONLY.match(part):
+            carry = part
+            continue
+        m = _TRAILING_MARKER.search(part)
+        if m and part[: m.start()].rstrip()[-1:] in ".!?”’\"')]":
+            carry = m.group(0).strip()
+            part = part[: m.start()]
+        out.append(part)
+    if carry:
+        if out:
+            out[-1] = f"{out[-1]} {carry}"
+        else:
+            out.append(carry)
+    return out
 
 
 # For backwards compatibility and direct import

@@ -67,6 +67,7 @@ from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
 from src.api import user_library as _lib
 from src.core import sentence_analysis as _sa
+from src.core import sentence_align as _align
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
 from scripts.processing_logger import processing_logger
@@ -6275,7 +6276,9 @@ def analyze_article_url():
                 return None, str(e)
 
         def parse_paragraphs(html):
-            """Return list of (tag, cleaned_text) for meaningful elements."""
+            """Return list of (tag, cleaned_text, pid) for meaningful elements.
+            ``pid`` is wol.jw.org's data-pid, shared by the language editions
+            of an article where their paragraphs correspond."""
             soup = BeautifulSoup(html, "html.parser")
             article = (
                 soup.find("article")
@@ -6291,7 +6294,7 @@ def analyze_article_url():
                 raw = re.sub(r"[\u200b\u200c\u200d\u00ad\ufeff\u2060]", "", raw)
                 raw = re.sub(r"\s+", " ", raw).strip()
                 if len(raw) >= 10:
-                    result.append((elem.name, raw))
+                    result.append((elem.name, raw, elem.get("data-pid")))
             return result, soup
 
         def split_sentences(raw_text, scripture_pattern=None):
@@ -6378,6 +6381,10 @@ def analyze_article_url():
 
             # ── Fetch English article (optional) ────────────────────────────
             resolved_english_url = english_url_param or derive_english_url(url)
+            # Chuukese paragraph index → that paragraph's English sentences.
+            # Paragraphs are paired by content (shared pid, label, length),
+            # not by position: the editions differ in footnotes and so in
+            # paragraph count.
             english_para_sentences: dict[int, list[str]] = {}
             english_title = None
 
@@ -6388,8 +6395,13 @@ def analyze_article_url():
                     eng_title_elem = eng_soup.find("h1")
                     english_title = eng_title_elem.get_text(strip=True) if eng_title_elem else None
                     scripture_pattern_en = get_scripture_reference_pattern()
-                    for i, (tag, raw) in enumerate(eng_paragraphs):
-                        english_para_sentences[i] = split_sentences(raw, scripture_pattern_en)
+                    para_map = _align.align_paragraphs(
+                        [{"tag": t, "text": r, "pid": p} for t, r, p in chk_paragraphs],
+                        [{"tag": t, "text": r, "pid": p} for t, r, p in eng_paragraphs],
+                    )
+                    for i, j in enumerate(para_map):
+                        if j is not None:
+                            english_para_sentences[i] = split_sentences(eng_paragraphs[j][1], scripture_pattern_en)
                 else:
                     resolved_english_url = None  # couldn't fetch — treat as unavailable
 
@@ -6409,12 +6421,21 @@ def analyze_article_url():
             scripture_pattern = get_scripture_reference_pattern()
             total_sentences = 0
 
-            for idx, (tag, raw_text) in enumerate(chk_paragraphs):
+            for idx, (tag, raw_text, _pid) in enumerate(chk_paragraphs):
                 is_heading = tag in ("h2", "h3")
                 chk_sent_texts = split_sentences(raw_text, scripture_pattern)
                 eng_sent_texts = english_para_sentences.get(idx, [])
                 # One dictionary pass per paragraph, shared by its sentences.
                 maps = _analyze_text(raw_text) if not is_heading else {"dictionary": {}, "similar": {}, "phrases": {}}
+
+                # Pair sentences by content (citations, numbers, punctuation,
+                # dictionary glosses, length), not by position: a translator
+                # may reorder, split or merge sentences.
+                def gloss(word, _d=maps["dictionary"]):
+                    entry = _d.get(word)
+                    return _sa.words_in(entry.get("english") or "") if entry else []
+
+                eng_for = _align.align_sentences(chk_sent_texts, eng_sent_texts, gloss) if eng_sent_texts else [[] for _ in chk_sent_texts]
 
                 sentences = []
                 for si, part in enumerate(chk_sent_texts):
@@ -6422,8 +6443,8 @@ def analyze_article_url():
                     text_only = re.sub(scripture_pattern, "", part)
                     text_only = re.sub(r"[\u2014\u2013—–-]\s*$", "", text_only).strip()
 
-                    # Aligned English sentence (positional)
-                    english_text = eng_sent_texts[si] if si < len(eng_sent_texts) else None
+                    english_indices = eng_for[si]
+                    english_text = " ".join(eng_sent_texts[k] for k in english_indices) or None
                     # Tokenize English for word-level highlighting (split on whitespace)
                     english_tokens = english_text.split() if english_text else None
 
@@ -6434,6 +6455,7 @@ def analyze_article_url():
                         "words": word_analyses,
                         "english_text": english_text,
                         "english_tokens": english_tokens,
+                        "english_indices": english_indices,
                         "scriptures": inline_refs,
                     })
 
@@ -6445,6 +6467,7 @@ def analyze_article_url():
                     "raw_text": raw_text,
                     "sentences": sentences,
                     "sentence_count": len(sentences),
+                    "english_sentences": eng_sent_texts,
                     "dictionary": maps["dictionary"],
                     "similar": maps["similar"],
                     "phrases": maps["phrases"],
