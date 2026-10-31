@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -45,6 +46,32 @@ PAIR_HASH_FILE = "training_data/data_hash.txt"
 # ---------------------------------------------------------------------------
 # Data-pair collector
 # ---------------------------------------------------------------------------
+
+
+# Cosmos throttling (429 / error 16500) used to make an extractor silently return
+# an empty list, so a whole collection vanished from a training run. Retry with
+# the server's RetryAfterMs instead; anything else still logs and skips.
+_THROTTLE_MARKERS = ("16500", "TooManyRequests", "429")
+
+
+def _is_throttle(exc: Exception) -> bool:
+    text = str(exc)
+    return any(m in text for m in _THROTTLE_MARKERS)
+
+
+def _retry_throttled(fn, attempts: int = 8):
+    """Call fn(); on a Cosmos throttle error wait RetryAfterMs (plus backoff) and retry."""
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            if not _is_throttle(e) or i == attempts - 1:
+                raise
+            m = re.search(r"RetryAfterMs=(\d+)", str(e))
+            wait = (int(m.group(1)) / 1000.0 if m else 1.0) + 2.0 * i
+            logger.warning("Cosmos throttled (%s); retry %d/%d in %.1fs", fn.__name__, i + 1, attempts, wait)
+            time.sleep(wait)
+
 
 class TrainingPairCollector:
     """Pulls CHK↔EN pairs from every available DB source."""
@@ -87,6 +114,8 @@ class TrainingPairCollector:
                         "word_type": (r.get("word_type") or "").strip(),
                     })
         except Exception as e:
+            if _is_throttle(e):
+                raise
             logger.warning("dictionary collection error: %s", e)
         return pairs
 
@@ -111,6 +140,8 @@ class TrainingPairCollector:
                         "confidence": r.get("confidence_score", 70),
                     })
         except Exception as e:
+            if _is_throttle(e):
+                raise
             logger.warning("phrases collection error: %s", e)
         return pairs
 
@@ -134,6 +165,8 @@ class TrainingPairCollector:
                         "confidence": 65,
                     })
         except Exception as e:
+            if _is_throttle(e):
+                raise
             logger.warning("paragraphs collection error: %s", e)
         return pairs
 
@@ -169,6 +202,8 @@ class TrainingPairCollector:
                             "confidence": 75,
                         })
         except Exception as e:
+            if _is_throttle(e):
+                raise
             logger.warning("article analysis collection error: %s", e)
         return pairs
 
@@ -179,10 +214,11 @@ class TrainingPairCollector:
     def collect_all(self, min_confidence: float = 50) -> list[dict]:
         """Return de-duplicated pairs from all sources above min_confidence."""
         all_pairs: list[dict] = []
-        all_pairs.extend(self._from_dictionary())
-        all_pairs.extend(self._from_phrases())
-        all_pairs.extend(self._from_paragraphs())
-        all_pairs.extend(self._from_article_analyses())
+        for extractor in (self._from_dictionary, self._from_phrases,
+                          self._from_paragraphs, self._from_article_analyses):
+            rows = _retry_throttled(extractor)
+            logger.info("%s: %d pairs", extractor.__name__, len(rows))
+            all_pairs.extend(rows)
 
         # De-duplicate on (chuukese, english) key, keeping highest confidence
         seen: dict[tuple, dict] = {}

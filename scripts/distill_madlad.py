@@ -205,6 +205,8 @@ def overlap(a: str, b: str) -> float:
 
 
 def main() -> int:
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Distil MADLAD translations into synthetic Helsinki training pairs")
     parser.add_argument("--input", action="append", default=[], metavar="FILE", help="Text file, one Chuukese sentence per line (repeatable)")
     parser.add_argument("--no-db", action="store_true", help="Do not read sentences from Cosmos")
@@ -240,7 +242,7 @@ def main() -> int:
 
     log("Loading MADLAD…")
     translator = MadladChuukeseTranslator()
-    if not translator.available:
+    if not translator.setup_models():
         log("❌ MADLAD is not available (base model download or adapter failed). See logs above.")
         return 1
     log(f"   loaded from: {translator.loaded_from}")

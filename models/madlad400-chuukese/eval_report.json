@@ -1,16 +1,18 @@
 {
   "config": {
-    "epochs": 1,
-    "batch_size": 16,
-    "grad_accum": 1,
+    "epochs": 2,
+    "batch_size": 4,
+    "grad_accum": 4,
     "learning_rate": 0.0002,
     "lora_r": 16,
     "lora_alpha": 32,
     "train_ffn": false,
     "direction": "both",
     "save_steps": 500,
-    "fresh": true,
+    "fresh": false,
     "merge": false,
+    "resume_checkpoint": "latest",
+    "reuse_run": false,
     "snapshot": null,
     "bible_file": "training_data/bible_parallel.json",
     "min_confidence": 50,
@@ -18,11 +20,57 @@
     "max_pairs": 0,
     "eval_size": 300,
     "seed": 42,
-    "eval_baseline": true,
+    "eval_baseline": false,
     "eval_only": false,
     "phase": null
   },
-  "pairs": 29125,
+  "pairs": 44683,
   "eval_pairs": 300,
-  "started_at": "2026-10-23T07:22:13"
+  "started_at": "2026-10-30T05:06:30",
+  "baseline": {
+    "chuukese_to_english_bleu": 9.84,
+    "chuukese_to_english_chrf": 26.49,
+    "english_to_chuukese_bleu": 4.18,
+    "english_to_chuukese_chrf": 20.96,
+    "test_samples": 300,
+    "loaded_from": "base"
+  },
+  "resumed_at": "2026-10-30T07:48:46",
+  "training_ok": true,
+  "training_metrics": {
+    "train_runtime": 8497.8984,
+    "train_samples_per_second": 20.797,
+    "train_steps_per_second": 1.3,
+    "total_flos": 8.564412216901632e+16,
+    "train_loss": 1.2042596814599176,
+    "epoch": 2.0,
+    "eval_loss": 2.0004141330718994,
+    "eval_runtime": 18.4146,
+    "eval_samples_per_second": 54.305,
+    "eval_steps_per_second": 13.576,
+    "direction": "both",
+    "pairs": 44683,
+    "train_examples": 88366,
+    "eval_examples": 1000,
+    "base_model": "google/madlad400-3b-mt",
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "target_modules": [
+      "q",
+      "k",
+      "v",
+      "o"
+    ],
+    "device": "mps",
+    "wall_seconds": 8531.9,
+    "finished_at": "2026-10-30T10:11:01"
+  },
+  "finetuned": {
+    "chuukese_to_english_bleu": 28.91,
+    "chuukese_to_english_chrf": 44.36,
+    "english_to_chuukese_bleu": 22.44,
+    "english_to_chuukese_chrf": 40.76,
+    "test_samples": 300,
+    "loaded_from": "base+lora"
+  }
 }

@@ -13,6 +13,7 @@ Run from the project root (Apple Silicon uses the Metal GPU automatically):
     .venv/bin/python scripts/train_madlad.py --epochs 3 --batch-size 8
     .venv/bin/python scripts/train_madlad.py --snapshot training_data/latest_snapshot.json   # offline, no DB
     .venv/bin/python scripts/train_madlad.py --eval-only                                      # score current weights
+    .venv/bin/python scripts/train_madlad.py --resume-checkpoint latest --epochs 2 ...         # continue an interrupted run
 
 Outputs:
     models/madlad400-chuukese/lora/                 adapter + tokenizer
@@ -28,6 +29,15 @@ import random
 import sys
 import time
 from pathlib import Path
+
+# Metal allocator guard: by default PyTorch lets MPS grab up to 1.7× the GPU
+# working set (~47 GB on a 36 GB Mac), which starves macOS and locks the machine
+# instead of failing. Cap it before torch is imported anywhere; every phase
+# subprocess inherits the value. Override with the env var if you know better.
+import os  # noqa: E402
+
+os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.6")
+os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.5")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -193,6 +203,19 @@ def phase_baseline(args):
     return bool(res)
 
 
+def resolve_checkpoint(value: str | None) -> str | None:
+    """'latest' → newest lora/checkpoints/checkpoint-N; a path is returned as-is."""
+    if not value:
+        return None
+    if value != "latest":
+        return value
+    ckpts = sorted(Path(model_root()).glob("lora/checkpoints/checkpoint-*"),
+                   key=lambda d: int(d.name.split("-")[-1]))
+    if not ckpts:
+        raise SystemExit("--resume-checkpoint latest: no checkpoints found")
+    return str(ckpts[-1])
+
+
 def phase_train(args):
     from src.training.madlad_trainer import MadladFineTuner
 
@@ -216,6 +239,7 @@ def phase_train(args):
         save_steps=args.save_steps,
         resume_adapter=not args.fresh,
         merge=args.merge,
+        resume_from_checkpoint=resolve_checkpoint(args.resume_checkpoint),
     )
     metrics_file = Path(tuner.lora_path) / "training_metrics.json"
     merge_report(training_ok=ok, training_metrics=json.load(open(metrics_file)) if metrics_file.exists() else None)
@@ -264,6 +288,10 @@ def main():
     ap.add_argument("--save-steps", type=int, default=500)
     ap.add_argument("--fresh", action="store_true", help="ignore an existing adapter and start a new one")
     ap.add_argument("--merge", action="store_true", help="also write a merged full checkpoint (~6 GB)")
+    ap.add_argument("--resume-checkpoint", metavar="PATH|latest",
+                    help="continue an interrupted run from a Trainer checkpoint (implies --reuse-run)")
+    ap.add_argument("--reuse-run", action="store_true",
+                    help="reuse run/train_pairs.json and eval_pairs.json from the previous run instead of re-collecting")
 
     ap.add_argument("--snapshot", help="JSON pairs file to use instead of the database")
     ap.add_argument("--bible-file", default="training_data/bible_parallel.json")
@@ -285,11 +313,20 @@ def main():
     log("🚀 MADLAD-400 LoRA — Chuukese ⇄ English")
     log("=" * 70)
 
-    train_pairs, eval_pairs = assemble(args)
-    json.dump(train_pairs, open(run_dir() / "train_pairs.json", "w"), ensure_ascii=False)
-    json.dump(eval_pairs, open(run_dir() / "eval_pairs.json", "w"), ensure_ascii=False)
-    write_report({"config": vars(args), "pairs": len(train_pairs), "eval_pairs": len(eval_pairs),
-                  "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    if args.resume_checkpoint or args.reuse_run:
+        # Same pairs as the interrupted run, so the checkpoint's data position and
+        # the held-out eval sample stay valid; keep that run's baseline score too.
+        train_pairs = json.load(open(run_dir() / "train_pairs.json"))
+        eval_pairs = json.load(open(run_dir() / "eval_pairs.json"))
+        log(f"Reusing previous run: {len(train_pairs):,} train / {len(eval_pairs):,} eval pairs"
+            + (f", resuming from {resolve_checkpoint(args.resume_checkpoint)}" if args.resume_checkpoint else ""))
+        merge_report(config=vars(args), resumed_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    else:
+        train_pairs, eval_pairs = assemble(args)
+        json.dump(train_pairs, open(run_dir() / "train_pairs.json", "w"), ensure_ascii=False)
+        json.dump(eval_pairs, open(run_dir() / "eval_pairs.json", "w"), ensure_ascii=False)
+        write_report({"config": vars(args), "pairs": len(train_pairs), "eval_pairs": len(eval_pairs),
+                      "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
 
     argv = sys.argv[1:]
     if args.eval_only:

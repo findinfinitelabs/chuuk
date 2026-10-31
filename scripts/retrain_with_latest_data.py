@@ -123,6 +123,20 @@ def load_distilled_pairs(paths: list, weight: int = 1) -> list:
     return pairs
 
 
+def load_shared_pairs(data_file: Path) -> list:
+    """Generic [{'chuukese': ..., 'english': ...}] file, used for both directions as-is."""
+    print(f"📂 Loading shared pairs from: {data_file}")
+    with open(data_file, encoding="utf-8") as f:
+        raw = json.load(f)
+    pairs = [
+        {"chuukese": (e.get("chuukese") or "").strip(), "english": (e.get("english") or "").strip()}
+        for e in raw
+    ]
+    pairs = [p for p in pairs if p["chuukese"] and p["english"]]
+    print(f"   Final pairs : {len(pairs):,}")
+    return pairs
+
+
 def load_en_to_chk_pairs(data_file: Path) -> list:
     """
     Load english_to_chuukese_validated.json.
@@ -231,6 +245,11 @@ def main():
     )
 
     parser.add_argument(
+        "--pairs-file",
+        help="Generic [{chuukese, english}] JSON used for BOTH directions instead of the validated files "
+             "(e.g. models/madlad400-chuukese/run/train_pairs.json)",
+    )
+    parser.add_argument(
         "--distilled",
         action="append",
         default=[],
@@ -245,6 +264,12 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # One generic pairs file for both directions (e.g. the MADLAD run's
+    # models/madlad400-chuukese/run/train_pairs.json, already cleaned, deduped
+    # against its eval sample and sentence-weighted). Replaces the per-direction
+    # validated files, which are not always present.
+    shared_pairs = load_shared_pairs(PROJECT_ROOT / args.pairs_file) if args.pairs_file else None
 
     chk_en_path = PROJECT_ROOT / args.chk_en_file
     distilled = load_distilled_pairs(args.distilled, args.distilled_weight) if args.distilled else []
@@ -266,11 +291,11 @@ def main():
 
     # ---- Chuukese → English ------------------------------------------------
     if args.direction in ("chk_to_en", "both"):
-        if not chk_en_path.exists():
-            print(f"❌ File not found: {chk_en_path}")
+        if shared_pairs is None and not chk_en_path.exists():
+            print(f"❌ File not found: {chk_en_path} (or pass --pairs-file)")
             sys.exit(1)
 
-        pairs = load_chk_to_en_pairs(chk_en_path) + distilled
+        pairs = (shared_pairs if shared_pairs is not None else load_chk_to_en_pairs(chk_en_path)) + distilled
         print()
 
         success = trainer.fine_tune_model(
@@ -286,11 +311,11 @@ def main():
 
     # ---- English → Chuukese ------------------------------------------------
     if args.direction in ("en_to_chk", "both"):
-        if not en_chk_path.exists():
-            print(f"❌ File not found: {en_chk_path}")
+        if shared_pairs is None and not en_chk_path.exists():
+            print(f"❌ File not found: {en_chk_path} (or pass --pairs-file)")
             sys.exit(1)
 
-        pairs = load_en_to_chk_pairs(en_chk_path) + distilled
+        pairs = (shared_pairs if shared_pairs is not None else load_en_to_chk_pairs(en_chk_path)) + distilled
         print()
 
         success = trainer.fine_tune_model(

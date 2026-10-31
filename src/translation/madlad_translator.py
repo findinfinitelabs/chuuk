@@ -64,8 +64,27 @@ def select_device() -> str:
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        _cap_mps_memory()
         return "mps"
     return "cpu"
+
+
+def _cap_mps_memory() -> None:
+    """Keep Metal allocations inside RAM, before the first MPS allocation.
+
+    PyTorch's defaults (high 1.7, low 1.4 of the GPU working set) let one 3B
+    process ask for more than the machine has and freeze macOS. Both ratios
+    must be set together: the allocator rejects a low watermark above the high
+    one ("invalid low watermark ratio").
+    """
+    high = os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.6")
+    try:
+        high_f = float(high)
+    except ValueError:
+        return
+    low = os.environ.get("PYTORCH_MPS_LOW_WATERMARK_RATIO")
+    if low is None or float(low) > high_f:
+        os.environ["PYTORCH_MPS_LOW_WATERMARK_RATIO"] = str(min(0.5, high_f))
 
 
 def model_root() -> str:

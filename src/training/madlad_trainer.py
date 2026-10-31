@@ -97,6 +97,11 @@ class MadladFineTuner:
         elif self.device == "mps":
             # Let PyTorch fall back to CPU for the handful of ops Metal lacks
             os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+            # Cap Metal allocations at 60% of the GPU working set (set before the
+            # first MPS allocation). The default ratio, 1.7, lets one training
+            # process exhaust system RAM and freeze the Mac rather than erroring.
+            os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.6")
+            os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.5")
             print("🍎 Using Apple Silicon GPU (Metal / MPS)")
         else:
             torch.set_num_threads(min(8, os.cpu_count() or 4))
@@ -181,6 +186,7 @@ class MadladFineTuner:
         adapter_output_dir: str | None = None,
         resume_adapter: bool = True,
         merge: bool = False,
+        resume_from_checkpoint: str | None = None,
         **_ignored,
     ) -> bool:
         """
@@ -190,6 +196,9 @@ class MadladFineTuner:
             direction: 'both' (recommended), 'chk_to_en' or 'en_to_chk'
             training_pairs: [{'chuukese': str, 'english': str}, ...]; loads from DB if None
             resume_adapter: continue from the existing adapter in ``lora/`` if present
+            resume_from_checkpoint: a Trainer checkpoint dir (``lora/checkpoints/checkpoint-N``) to
+                continue an interrupted run from — restores adapter, optimizer, scheduler and data
+                position, so the training pairs must be the same ones that run used
             train_ffn: also adapt the T5 feed-forward layers (more capacity, more memory)
             merge: additionally write a fully merged checkpoint to ``merged/``
         """
@@ -285,7 +294,9 @@ class MadladFineTuner:
 
             self._progress(f"Training LoRA ({stage})", 30)
             print(f"🚀 LoRA training: {num_epochs} epochs, batch {batch_size}×{gradient_accumulation_steps}, lr {learning_rate}")
-            result = trainer.train()
+            if resume_from_checkpoint:
+                print(f"⏯  Resuming from checkpoint: {resume_from_checkpoint}")
+            result = trainer.train(resume_from_checkpoint=resume_from_checkpoint or None)
 
             # ---- Save ---------------------------------------------------
             self._progress(f"Saving adapter ({stage})", 90)
