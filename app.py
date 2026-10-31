@@ -530,7 +530,7 @@ def role_required(*allowed_roles):
 
 # Role permissions mapping
 ROLE_PERMISSIONS = {
-    "user": ["home", "lookup", "sentences", "translate", "grammar"],
+    "user": ["home", "lookup", "sentences", "translate", "grammar", "game"],
     "translator": ["home", "lookup", "sentences", "translate", "database", "game", "grammar", "ai_training"],
     "admin": [
         "home",

@@ -15,6 +15,7 @@ import re
 
 from bs4 import BeautifulSoup
 
+from src.core.sentence_align import align_paragraphs, align_sentences, paragraph_label
 from src.core.wol_search import _plain as plain_text
 from src.utils.scripture_parser import get_scripture_reference_pattern, split_sentences
 
@@ -153,26 +154,57 @@ def align_hints(english: list[dict], chuukese: list[dict], min_overlap: float = 
     by position, but only if both have the same number of paragraphs.
     """
 
-    def key_for(sentences, use_index):
-        return (lambda s: f"idx:{s['paragraph_index']}") if use_index else (lambda s: s.get("pid"))
+    def grouped(sentences):
+        groups: dict[int, list[dict]] = {}
+        for s in sentences:
+            groups.setdefault(s["paragraph_index"], []).append(s)
+        return [groups[i] for i in sorted(groups)]
 
+    en_groups, chk_groups = grouped(english), grouped(chuukese)
     en_has_pids = any(s.get("pid") for s in english)
     chk_has_pids = any(s.get("pid") for s in chuukese)
-    if en_has_pids and chk_has_pids:
-        use_index = False
-    else:
-        en_paras = {s["paragraph_index"] for s in english}
-        chk_paras = {s["paragraph_index"] for s in chuukese}
-        if len(en_paras) != len(chk_paras):
-            return {}
-        use_index = True
-    en_key, chk_key = key_for(english, use_index), key_for(chuukese, use_index)
+    if not (en_has_pids and chk_has_pids) and len(en_groups) != len(chk_groups):
+        return {}
 
-    by_para: dict[str, list[dict]] = {}
-    for s in chuukese:
-        k = chk_key(s)
-        if k is not None:
-            by_para.setdefault(k, []).append(s)
+    # Pair the paragraph lists as a whole: ids are shared between editions
+    # only until one has an extra footnote, after which the same id names
+    # different paragraphs. A pair is trusted when its id or its study-question
+    # label agrees, or when neither edition has ids and the counts match.
+    def para_dict(group):
+        return {"pid": group[0].get("pid"), "text": " ".join(s["text"] for s in group)}
+
+    pairs = align_paragraphs([para_dict(g) for g in chk_groups], [para_dict(g) for g in en_groups])
+    en_key = lambda s: s["paragraph_index"]  # noqa: E731
+    by_para: dict[int, list[dict]] = {}
+    en_by_para: dict[int, list[dict]] = {}
+    for ci, ei in enumerate(pairs):
+        if ei is None:
+            continue
+        chk_g, en_g = chk_groups[ci], en_groups[ei]
+        chk_pid, en_pid = chk_g[0].get("pid"), en_g[0].get("pid")
+        chk_text, en_text = para_dict(chk_g)["text"], para_dict(en_g)["text"]
+        ok = (
+            (chk_pid and chk_pid == en_pid)
+            or (paragraph_label(chk_text) and paragraph_label(chk_text) == paragraph_label(en_text))
+            or not (en_has_pids and chk_has_pids)
+        )
+        if not ok:
+            continue
+        key = en_g[0]["paragraph_index"]
+        by_para[key] = chk_g
+        en_by_para[key] = en_g
+
+    # Content-based pairing per paragraph: which Chuukese sentence(s) each
+    # English sentence translates (citations, numbers, punctuation, length).
+    paired: dict[int, list[dict]] = {}
+    for k, en_group in en_by_para.items():
+        candidates = by_para.get(k)
+        if not candidates:
+            continue
+        mapping = align_sentences([c["text"] for c in candidates], [e["text"] for e in en_group])
+        for ci, en_indices in enumerate(mapping):
+            for ei in en_indices:
+                paired.setdefault(en_group[ei]["id"], []).append(candidates[ci])
 
     hints: dict[int, dict] = {}
     for e in english:
@@ -181,12 +213,11 @@ def align_hints(english: list[dict], chuukese: list[dict], min_overlap: float = 
         if not candidates:
             continue
         if e.get("is_scripture_ref"):
-            likely = [c for c in candidates if c.get("is_scripture_ref")]
-        elif len(candidates) == e["sentence_count"] and e["sentence_index"] < len(candidates):
-            # Same sentence count on both sides: the n-th sentence is the n-th.
-            likely = [candidates[e["sentence_index"]]]
+            likely = [c for c in candidates if c.get("is_scripture_ref")] or paired.get(e["id"], [])
         else:
-            # Otherwise the sentence(s) occupying the same stretch of the paragraph.
+            likely = paired.get(e["id"], [])
+        if not likely:
+            # Nothing paired: the sentence(s) occupying the same stretch of the paragraph.
             width = max(e["span"][1] - e["span"][0], 1e-6)
             scored = [(c, _overlap(e["span"], c["span"]) / width) for c in candidates]
             likely = [c for c, score in scored if score >= min_overlap]

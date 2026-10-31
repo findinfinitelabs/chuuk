@@ -375,3 +375,37 @@ class TestEnglishEquivalents:
         results = WOLSearch()._parse(SAMPLE_HTML, "chapur")
         assert results[0]["docId"] == "2000884"
         assert results[0]["verseIds"] == []
+
+
+class TestEnglishParagraphPairing:
+    """Ids drift between editions once one has an extra footnote: Chuukese
+    paragraph 39 is question 3 while English 39 is question 2."""
+
+    CHK = [("7", "ATUN Sekaraia me Elisapet ra fókkun chinnap, Jiowa a féri eú manaman pwe repwe néúni emén át itan, Jon."),
+           ("37", "2. (a) Me ren Luk 1:67-73, ifa ewe liffang Kot a pwonei ussun ngeni néún kewe aramas?"),
+           ("39", "3. Pwata a lamot an epwe wor emén epwe seláni ekkewe chón Jus?"),
+           ("70", "a ÁWEWEEN SASING: Ewe ewin sasing, sasingin rúúemén pwúpwúlú fefin ra afalafal.")]
+    EN = [("7", "“WHAT will this young child turn out to be?” The neighbors and the relatives were curious about John."),
+          ("35", "a See the excerpt containing Zechariah’s prophecy."),
+          ("37", "2. (a) According to Luke 1:67-73, what gift is promised to God’s people?"),
+          ("39", "3. From whom or from what did first-century Jews need to be saved?"),
+          ("72", "b PICTURE DESCRIPTION: In the first photo, two sisters witness informally in a busy place.")]
+
+    def test_shared_id_wins_when_labels_agree(self):
+        from src.core.wol_search import _english_paragraph
+
+        assert _english_paragraph(self.CHK, self.EN, "7")[0] == "7"
+
+    def test_label_wins_over_a_drifted_id(self):
+        from src.core.wol_search import _english_paragraph
+
+        pid, text = _english_paragraph(self.CHK, self.EN, "39")
+        assert pid == "39" and text.startswith("3. From whom")
+        pid, text = _english_paragraph(self.CHK, self.EN, "37")
+        assert pid == "37" and text.startswith("2. (a)")
+
+    def test_unlabelled_paragraph_with_other_id_is_not_trusted(self):
+        from src.core.wol_search import _english_paragraph
+
+        assert _english_paragraph(self.CHK, self.EN, "70") == (None, None)
+        assert _english_paragraph(self.CHK, self.EN, "nope") == (None, None)

@@ -9,6 +9,9 @@
         "Article Analysis: Chuukese and English sentences are now paired by content (scripture citations, numbers, list markers, question marks, dictionary glosses and length) instead of by position. Sentences the translator reordered, split or merged now line up, and paragraphs are matched even when one edition has an extra footnote.",
         "Article Analysis: a footnote letter after a full stop no longer glues two English sentences together, and study-question labels such as 2. (a) and (b) stay with the question they introduce.",
         "Article Analysis: Re-analyze fetches the article afresh instead of returning the stored copy.",
+        "Watchtower Library and Sentence Analysis: the English for a search hit is found with the same content-based pairing, so a reordered or merged sentence is matched and a question paragraph is no longer confused with its neighbour when the editions' paragraph ids drift.",
+        "Translation Game: clues use the same content-based pairing.",
+        "Basic users can now open the Translation Game; every link above the divider in the left navigation is available to all roles.",
         "Saved searches, article analyses and sentence analyses are now per user: each person's sidebar lists only what they saved. The underlying content is shared, so when someone requests an article or search another user already pulled, it is served from the stored copy instead of fetching wol.jw.org again.",
         "Article Analysis: sentences are numbered paragraph.sentence (1.1, 1.2, 2.1 …) and each paragraph opens with a large paragraph number so breaks are easy to spot.",
         "Dictionary: 1,247 headwords that were stored with a suffix hyphen (wis-ach) are now whole words (wisach) with the stem, suffix and suffix meaning recorded, so sentence analysis no longer reports them as missing."

@@ -28,6 +28,9 @@ from urllib.parse import quote, urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from src.core.sentence_align import align_paragraphs, align_sentences, paragraph_label
+from src.utils.scripture_parser import split_sentences as _shared_split
+
 WOL_BASE = "https://wol.jw.org"
 WOL_SEARCH = WOL_BASE + "/{lang}/wol/s/r303/lp-te"
 
@@ -321,25 +324,29 @@ def _norm(text: str) -> str:
 
 
 def _split_sentences(text: str) -> list[str]:
-    out, start = [], 0
-    for m in _SENTENCE_END.finditer(text):
-        out.append(text[start: m.end()].strip())
-        start = m.end()
-    out.append(text[start:].strip())
-    return [x for x in out if x]
+    """Sentences with scripture citations kept whole (shared splitter)."""
+    return _shared_split(text)
 
 
-def _same_place(a: list[str], b: list[str], first: int, last: int, slack: float = 0.2) -> bool:
-    """True when sentences first..last start and end at about the same relative
-    position (by character count) in paragraph a as in paragraph b."""
-    def span(sentences):
-        total = sum(len(x) for x in sentences) or 1
-        start = sum(len(x) for x in sentences[:first]) / total
-        end = sum(len(x) for x in sentences[: last + 1]) / total
-        return start, end
 
-    (s1, e1), (s2, e2) = span(a), span(b)
-    return abs(s1 - s2) <= slack and abs(e1 - e2) <= slack
+
+def _english_paragraph(chk_paragraphs: list[tuple], en_paragraphs: list[tuple], chk_pid) -> tuple:
+    """(pid, text) of the English paragraph paired with Chuukese `chk_pid`,
+    or (None, None)."""
+    idx = next((i for i, (pid, _) in enumerate(chk_paragraphs) if pid == chk_pid), None)
+    if idx is None:
+        return None, None
+    paired = align_paragraphs(
+        [{"pid": pid, "text": t} for pid, t in chk_paragraphs],
+        [{"pid": pid, "text": t} for pid, t in en_paragraphs],
+    )[idx]
+    if paired is None:
+        return None, None
+    en_pid, en_text = en_paragraphs[paired]
+    chk_text = chk_paragraphs[idx][1]
+    if en_pid == chk_pid or (paragraph_label(chk_text) and paragraph_label(chk_text) == paragraph_label(en_text)):
+        return en_pid, en_text
+    return None, None
 
 
 def _plain(el) -> str:
@@ -537,20 +544,24 @@ class WOLSearch:
         if best_pid is None or best_score < 0.6:
             return None
 
-        en_para = next((t for pid, t in english["paragraphs"] if pid == best_pid), None)
+        # The English paragraph. Ids are shared between editions only until
+        # one of them has an extra footnote, after which the same id names
+        # different paragraphs; so the two paragraph lists are aligned as a
+        # whole and a pair is trusted when its id or its study-question label
+        # agrees.
+        en_pid, en_para = _english_paragraph(chuukese["paragraphs"], english["paragraphs"], best_pid)
         if not en_para:
             return None
-        meta["link"] += f"#h={best_pid}"
+        meta["link"] += f"#h={en_pid}"
 
         # The English is returned as the whole paragraph, with the sentence(s)
-        # that line up with the snippet flagged. Lining up is only attempted
-        # when both sides split into the same number of sentences, and a pair is
-        # trusted only if it sits at roughly the same place in its paragraph —
-        # a wrong guess must not hide the real context.
+        # that translate the snippet flagged. Sentences are paired by content
+        # (citations, numbers, punctuation, length), so a reordered, split or
+        # merged sentence still lands; with no pairing the whole paragraph shows.
         chk_sentences = _split_sentences(best_text)
         en_sentences = _split_sentences(en_para)
         match = None
-        if len(chk_sentences) > 1 and len(chk_sentences) == len(en_sentences):
+        if chk_sentences and en_sentences:
             hits = []
             for i, sentence in enumerate(chk_sentences):
                 norm = _norm(sentence)
@@ -559,8 +570,14 @@ class WOLSearch:
                     hits.append(i)
                 elif words and len(words & target_words) / len(words) >= 0.85:
                     hits.append(i)
-            if hits and _same_place(chk_sentences, en_sentences, hits[0], hits[-1]):
-                match = [hits[0], hits[-1]]
+            if hits:
+                if len(chk_sentences) == 1 and len(en_sentences) == 1:
+                    match = [0, 0]
+                else:
+                    paired = align_sentences(chk_sentences, en_sentences)
+                    en_hits = sorted({e for i in hits for e in paired[i]})
+                    if en_hits and en_hits != list(range(len(en_sentences))):
+                        match = [en_hits[0], en_hits[-1]]
 
         return {
             **meta,
