@@ -5313,7 +5313,9 @@ def _norm_word(word: str) -> str:
     """Lowercase and strip diacritics, so 'pwáseló' and 'pwaselo' compare equal."""
     import unicodedata  # noqa: PLC0415
 
-    decomposed = unicodedata.normalize("NFD", (word or "").lower())
+    # Hyphens mark bound suffixes in the source dictionary ("wis-ach"); they
+    # are never written in running text, so they do not take part in matching.
+    decomposed = unicodedata.normalize("NFD", (word or "").lower().replace("-", ""))
     return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
 
 

@@ -12,6 +12,7 @@
         "Sentence and Article Analysis rebuilt on the Watchtower Online Library dictionary layer, with source lookup and saved analyses.",
         "Article Analysis: sentences are numbered paragraph.sentence (1.1, 1.2, 2.1 …) and each paragraph opens with a large paragraph number so breaks are easy to spot.",
         "Translation Game: clues, glosses, phrase matching and saved-match colours.",
+        "Dictionary: 1,247 headwords that were stored with a suffix hyphen (wis-ach) are now whole words (wisach) with the stem, suffix and suffix meaning recorded, so sentence analysis no longer reports them as missing.",
         "Admin: translation review queue and dictionary de-duplication.",
         "AI Training page: automatic retraining is switched off on the hosted site (it has no GPU); models are trained offline and uploaded. Manual runs remain available.",
         "Training pipeline: memory-guarded local training, checkpoint resume, and retry on database throttling."
