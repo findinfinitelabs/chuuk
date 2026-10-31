@@ -22,6 +22,8 @@ from typing import Callable
 
 from flask import Blueprint, jsonify, request, session
 
+from src.api import user_library as _lib
+
 COLLECTION = "sentence_analyses"
 MAX_SENTENCE = 2000
 
@@ -72,13 +74,14 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         col = collection()
         if col is None:
             return jsonify({"error": "Database unavailable"}), 503
+        mine = _lib.user_filter(get_db(), "sentence")
         try:
             try:
-                docs = list(col.find({}, _META_FIELDS).sort("updated_at", -1).limit(200))
+                docs = list(col.find(mine, _META_FIELDS).sort("updated_at", -1).limit(200))
             except Exception as exc:  # Cosmos refuses to sort on an unindexed field
                 if "order-by" not in str(exc).lower():
                     raise
-                docs = sorted(col.find({}, _META_FIELDS), key=lambda d: d.get("updated_at") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)[:200]
+                docs = sorted(col.find(mine, _META_FIELDS), key=lambda d: d.get("updated_at") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)[:200]
             return jsonify([serialize(d) for d in docs])
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -161,14 +164,34 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             if saved_id is None:
                 existing = col.find_one({"query_key": key}, {"_id": 1})
                 saved_id = existing["_id"] if existing else None
+            _lib.link(get_db(), "sentence", saved_id)
             return jsonify({"success": True, "id": str(saved_id) if saved_id else None})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @bp.route("/api/sentence-analyses/lookup", methods=["GET"])
+    @login_required
+    def lookup_analysis():
+        """An analysis of this sentence that anyone already ran, returned in
+        full and added to the caller's library, so no lookups run again."""
+        col = collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        sentence = (request.args.get("sentence") or "").strip()
+        if not sentence:
+            return jsonify({"error": "sentence is required"}), 400
+        doc = col.find_one({"query_key": query_key(sentence)})
+        if not doc:
+            return jsonify({"found": False}), 404
+        _lib.link(get_db(), "sentence", doc["_id"])
+        out = serialize(doc)
+        out["found"] = True
+        return jsonify(out)
+
     @bp.route("/api/sentence-analyses/<analysis_id>", methods=["DELETE"])
     @login_required
     def delete_analysis(analysis_id):
-        """Owners delete their own; admins delete any."""
+        """Remove from my library; the content goes only when no one else has it."""
         from bson import ObjectId
         from bson.errors import InvalidId
 
@@ -179,14 +202,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             oid = ObjectId(analysis_id)
         except InvalidId:
             return jsonify({"error": "Invalid ID"}), 400
-        doc = col.find_one({"_id": oid}, {"created_by": 1})
-        if not doc:
-            return jsonify({"error": "Not found"}), 404
-        is_admin = session.get("user_role") == "admin"
-        is_owner = (doc.get("created_by") or "") == session.get("user_email", "")
-        if not (is_admin or is_owner):
-            return jsonify({"error": "You can only delete your own saved analyses"}), 403
-        col.delete_one({"_id": oid})
+        if _lib.unlink(get_db(), "sentence", oid) == 0:
+            col.delete_one({"_id": oid})
         return jsonify({"success": True})
 
     return bp

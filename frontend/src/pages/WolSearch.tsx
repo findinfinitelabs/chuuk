@@ -482,11 +482,30 @@ function WolSearch() {
     }
   }
 
+  /** A search someone already ran: reuse it (and file it in my list)
+   *  instead of going to wol.jw.org again. */
+  const reuseSaved = async (mode: 'sentences' | 'verbs', term: string): Promise<boolean> => {
+    try {
+      const res = await axios.get('/api/wol/searches/lookup', { params: { query: term, mode } })
+      if (!res.data?.found) return false
+      englishRun.current++
+      if (mode === 'verbs') { setVerbData(res.data); setSubjectFilter(null) } else setData(res.data)
+      setFromSaved(true)
+      setActiveId(res.data.id || null)
+      refreshSaved()
+      fillEnglish(mode, res.data, term, { sort: res.data.sort, pages: res.data.pages })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const runSearch = async () => {
     if (!query.trim()) return
     englishRun.current++
     setLoading(true); setError(''); setData(null)
     try {
+      if (await reuseSaved('sentences', query.trim())) return
       const res = await axios.post('/api/wol/search', {
         query: query.trim(),
         sort,
@@ -512,6 +531,7 @@ function WolSearch() {
     englishRun.current++
     setVerbLoading(true); setVerbError(''); setVerbData(null); setSubjectFilter(null)
     try {
+      if (await reuseSaved('verbs', verb.trim())) return
       const res = await axios.post('/api/wol/verb-examples', {
         verb: verb.trim(),
         pages: Number(pages) || 2,

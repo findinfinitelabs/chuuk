@@ -353,6 +353,23 @@ export default function ArticleAnalysis() {
     }
   }, [loadSaved])
 
+  /** Show a stored analysis document (from the sidebar or a lookup). */
+  const applySavedDoc = (doc: any) => {
+    setMeta({
+      title: doc.chuukese_title,
+      url: doc.url,
+      source_label: doc.source_label || '',
+      paragraph_count: doc.paragraph_count,
+      english_url: doc.english_url,
+      english_title: doc.english_title,
+      has_english: doc.has_english,
+    })
+    setParagraphs(doc.paragraphs || [])
+    setUrl(doc.url)
+    setEnglishUrl(doc.english_url || '')
+    setDone(true)
+  }
+
   const loadAnalysis = async (a: SavedAnalysis) => {
     setActiveId(a._id)
     setError('')
@@ -361,20 +378,7 @@ export default function ArticleAnalysis() {
     setGloss(null)
     try {
       const res = await axios.get(`/api/article-analyses/${a._id}`)
-      const doc = res.data
-      setMeta({
-        title: doc.chuukese_title,
-        url: doc.url,
-        source_label: doc.source_label || '',
-        paragraph_count: doc.paragraph_count,
-        english_url: doc.english_url,
-        english_title: doc.english_title,
-        has_english: doc.has_english,
-      })
-      setParagraphs(doc.paragraphs || [])
-      setUrl(doc.url)
-      setEnglishUrl(doc.english_url || '')
-      setDone(true)
+      applySavedDoc(res.data)
     } catch (e) {
       setError(errorMessage(e, 'Could not open that saved analysis'))
     } finally {
@@ -460,6 +464,21 @@ export default function ArticleAnalysis() {
     setLoading(true); setDone(false); setError('')
     setMeta(null); setParagraphs([]); setProgress(0); setActiveId(null); setSelection(null); setGloss(null)
     abortRef.current = new AbortController()
+
+    // Someone may already have analysed this article: reuse that instead of
+    // fetching wol.jw.org again. The lookup also files it in this user's list.
+    try {
+      const existing = await axios.get('/api/article-analyses/lookup', { params: { url: url.trim() } })
+      if (existing.data?.found) {
+        applySavedDoc(existing.data)
+        setActiveId(existing.data._id)
+        setLoading(false)
+        await loadSaved()
+        return
+      }
+    } catch {
+      // 404 means nobody has it yet; anything else falls through to a fresh fetch.
+    }
 
     let finalMeta: ArticleMeta | null = null
     let finalParas: StreamedParagraph[] = []

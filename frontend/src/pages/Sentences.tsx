@@ -278,6 +278,24 @@ function Sentences() {
     setLoading(true); setError('')
     setTranslation({ state: 'loading' }); setSource({ state: 'loading' })
     setUserTranslation(null); setActiveId(null); setFromSaved(false)
+    // Already analysed by someone? Reuse it (and file it in my list) rather
+    // than running the dictionary, WOL and model lookups again.
+    try {
+      const res = await axios.get('/api/sentence-analyses/lookup', { params: { sentence: text } })
+      if (res.data?.found) {
+        const doc = res.data
+        setSentence(doc.sentence)
+        setAnalysis({ sentence: doc.sentence, words: doc.words || [], dictionary: doc.dictionary || {}, similar: doc.similar || {}, phrases: doc.phrases || {} })
+        setTranslation(doc.translation?.text !== undefined ? { state: 'done', text: doc.translation.text, engine: doc.translation.engine || 'model' } : { state: 'idle' })
+        setSource(doc.source ? { state: 'found', match: doc.source } : { state: 'none' })
+        setUserTranslation(doc.user_translation || null)
+        setActiveId(doc.id); setFromSaved(true); setLoading(false)
+        refreshSaved()
+        return
+      }
+    } catch {
+      // Not saved yet (404) or lookup failed: analyse afresh.
+    }
     const sourceP = findSource(text).then((s) => { setSource(s); return s })
     const translationP = translate(text).then((t) => { setTranslation(t); return t })
     let a: SentenceAnalysis | null = null
@@ -294,7 +312,7 @@ function Sentences() {
     if (!a) return
     const [s, t] = await Promise.all([sourceP, translationP])
     persist(a, t, s, null)
-  }, [persist])
+  }, [persist, refreshSaved])
 
   /** After an add or edit, re-read the dictionary so the tints update. */
   const refresh = async () => {

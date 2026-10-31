@@ -65,6 +65,7 @@ def get_nwt_chuukese_parser():
 
 from src.ocr.ocr_processor import OCRProcessor
 from src.core.jworg_lookup import JWOrgLookup
+from src.api import user_library as _lib
 from src.core import sentence_analysis as _sa
 from src.database.publication_manager import PublicationManager
 from src.database.dictionary_db import DictionaryDB
@@ -5725,15 +5726,40 @@ def api_wol_list_searches():
         if col is None:
             return jsonify([])
         try:
-            docs = list(col.find({}, _WOL_SEARCH_META).sort("updated_at", -1).limit(100))
+            mine = _lib.user_filter(dict_db, "wol_search")
+            docs = list(col.find(mine, _WOL_SEARCH_META).sort("updated_at", -1).limit(100))
         except Exception as exc:
             if not _is_cosmos_excluded_order_by_error(exc):
                 raise
             # Cosmos can reject order-by on excluded index paths; sort the small
             # result set in memory instead.
-            docs = list(col.find({}, _WOL_SEARCH_META).limit(100))
+            docs = list(col.find(mine, _WOL_SEARCH_META).limit(100))
             docs.sort(key=lambda d: str(d.get("updated_at") or ""), reverse=True)
         return jsonify([_serialize_wol_search(d) for d in docs])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/wol/searches/lookup", methods=["GET"])
+@login_required
+def api_wol_lookup_search():
+    """A search someone already ran, if any: returned in full and added to
+    the caller's library, so the same query never goes to wol.jw.org twice."""
+    try:
+        query = (request.args.get("query") or "").strip()
+        mode = request.args.get("mode") if request.args.get("mode") in ("sentences", "verbs") else "sentences"
+        if not query:
+            return jsonify({"error": "query is required"}), 400
+        col = _get_wol_searches_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        doc = col.find_one({"query_key": query.lower(), "mode": mode})
+        if not doc:
+            return jsonify({"found": False}), 404
+        _lib.link(dict_db, "wol_search", doc["_id"])
+        out = _serialize_wol_search(doc)
+        out["found"] = True
+        return jsonify(out)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -5811,6 +5837,7 @@ def api_wol_save_search():
         if saved_id is None:
             existing = col.find_one({"query_key": query.lower(), "mode": mode}, {"_id": 1})
             saved_id = existing["_id"] if existing else None
+        _lib.link(dict_db, "wol_search", saved_id)
 
         return jsonify({"success": True, "id": str(saved_id) if saved_id else None}), 200
     except Exception as e:
@@ -5840,12 +5867,10 @@ def api_wol_delete_search(search_id):
         if not doc:
             return jsonify({"error": "Not found"}), 404
 
-        is_admin = session.get("user_role") == "admin"
-        is_owner = (doc.get("created_by") or "") == session.get("user_email", "")
-        if not (is_admin or is_owner):
-            return jsonify({"error": "You can only delete your own saved searches"}), 403
-
-        col.delete_one({"_id": oid})
+        # Removing from my library; the shared content goes only when no one
+        # else still has it saved.
+        if _lib.unlink(dict_db, "wol_search", oid) == 0:
+            col.delete_one({"_id": oid})
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -6522,14 +6547,15 @@ def list_article_analyses():
             "has_english": 1,
         }
 
+        mine = _lib.user_filter(dict_db, "article")
         try:
-            docs = list(col.find({}, projection).sort("created_at", -1).limit(100))
+            docs = list(col.find(mine, projection).sort("created_at", -1).limit(100))
         except Exception as exc:
             if not _is_cosmos_excluded_order_by_error(exc):
                 raise
             # Cosmos Mongo can reject order-by on excluded index paths; fall back to
             # an unsorted query and order the small result set in memory.
-            docs = list(col.find({}, projection).limit(100))
+            docs = list(col.find(mine, projection).limit(100))
             docs.sort(key=_article_analysis_created_at_sort_key, reverse=True)
 
         return jsonify(_serialize_article_analysis_metadata(docs))
@@ -6616,6 +6642,7 @@ def save_article_analysis():
 
         if analysis_oid is None:
             return jsonify({"error": "Failed to resolve saved analysis ID"}), 500
+        _lib.link(dict_db, "article", analysis_oid)
 
         paragraphs_col.delete_many({"analysis_id": analysis_oid})
         if paragraphs:
@@ -6636,14 +6663,39 @@ def save_article_analysis():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/article-analyses/lookup", methods=["GET"])
+@login_required
+def lookup_article_analysis():
+    """An analysis of this URL that anyone already ran, returned in full and
+    added to the caller's library, so the article is not fetched again."""
+    try:
+        url = (request.args.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "url is required"}), 400
+        col = _get_article_analyses_collection()
+        if col is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        doc = col.find_one({"url": url})
+        if not doc:
+            return jsonify({"found": False}), 404
+        _lib.link(dict_db, "article", doc["_id"])
+        doc["paragraphs"] = _load_article_analysis_paragraphs(doc["_id"], fallback_doc=doc)
+        doc["_id"] = str(doc["_id"])
+        for field in ("created_at", "updated_at"):
+            if isinstance(doc.get(field), datetime):
+                doc[field] = doc[field].isoformat()
+        doc["found"] = True
+        return jsonify(doc)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/article-analyses/<analysis_id>", methods=["DELETE"])
 @login_required
 def delete_article_analysis(analysis_id):
-    """Delete a saved analysis (admin only)."""
+    """Remove the analysis from my library; the shared content is deleted
+    only when no other user still has it saved."""
     try:
-        if session.get("user_role") != "admin":
-            return jsonify({"error": "Admin access required"}), 403
-
         from bson import ObjectId
         from bson.errors import InvalidId
 
@@ -6656,13 +6708,13 @@ def delete_article_analysis(analysis_id):
         except InvalidId:
             return jsonify({"error": "Invalid ID"}), 400
 
+        if _lib.unlink(dict_db, "article", oid) > 0:
+            return jsonify({"success": True, "kept_for_others": True})
+
         paragraphs_col = _get_article_analysis_paragraphs_collection()
         if paragraphs_col is not None:
             paragraphs_col.delete_many({"analysis_id": oid})
-
-        result = col.delete_one({"_id": oid})
-        if result.deleted_count == 0:
-            return jsonify({"error": "Not found"}), 404
+        col.delete_one({"_id": oid})
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
