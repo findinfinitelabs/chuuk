@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from flask import session
 
 COLLECTION = "user_library"
-KINDS = ("article", "wol_search", "sentence", "conversation")
+KINDS = ("article", "wol_search", "sentence", "conversation", "talk")
 _index_done = False
 
 

@@ -29,6 +29,7 @@ import '@xyflow/react/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import axios from 'axios'
 import styles from './Conversation.module.css'
+import AddToTalk from '../components/AddToTalk'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -213,11 +214,14 @@ function Line({ phrase, selected, showEnglish, onSelect, onCorrected }: {
               {!phrase.mt && phrase.source === 'authored' && phrase.chk && <Badge size="xs" variant="outline" color="green">corrected</Badge>}
             </Group>
           </Box>
-          {editable && (
-            <ActionIcon variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); setChk(phrase.chk); setEn(phrase.en); setEditing(true) }} title="Correct this line">
-              <IconEdit size={16} />
-            </ActionIcon>
-          )}
+          <Group gap={2} wrap="nowrap">
+            {phrase.chk && <AddToTalk chk={phrase.chk} en={phrase.en} source="conversation" reference={phrase.source && phrase.source !== 'authored' ? phrase.source : ''} />}
+            {editable && (
+              <ActionIcon variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); setChk(phrase.chk); setEn(phrase.en); setEditing(true) }} title="Correct this line">
+                <IconEdit size={16} />
+              </ActionIcon>
+            )}
+          </Group>
         </Group>
       )}
     </Paper>

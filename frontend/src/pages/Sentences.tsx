@@ -30,6 +30,7 @@ import { WolExamplesDrawer } from '../components/analysis/WolExamples'
 import { SavePairModal } from '../components/analysis/SavePairModal'
 import type { PairSource } from '../components/analysis/SavePairModal'
 import styles from '../components/analysis/analysis.module.css'
+import AddToTalk from '../components/AddToTalk'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -454,6 +455,7 @@ function Sentences() {
                     onWordClick={(w) => openEditor(w)}
                   />
                 </Text>
+                <Group justify="flex-end" mt={4}><AddToTalk chk={analysis.sentence} en={bestEnglish || ''} source="sentence analysis" variant="button" size="xs" /></Group>
 
                 {/* The translation the user added: replaces the model's */}
                 {userTranslation && (

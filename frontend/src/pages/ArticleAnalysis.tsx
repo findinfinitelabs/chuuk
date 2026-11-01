@@ -29,6 +29,7 @@ import type { EntryPrefill, EntrySaved } from '../components/analysis/EntryEdito
 import { SuggestModal } from '../components/analysis/SuggestModal'
 import { WolExamplesDrawer } from '../components/analysis/WolExamples'
 import styles from '../components/analysis/analysis.module.css'
+import AddToTalk from '../components/AddToTalk'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -144,9 +145,11 @@ function paragraphNumber(para: StreamedParagraph, fallback: number): number {
 // ── Sentence ──────────────────────────────────────────────────────────────────
 
 function SentenceRow({
-  sentence, label, maps, onGloss, onSelect, selectedKey,
+  sentence, label, maps, onGloss, onSelect, selectedKey, articleRef = '',
 }: {
   sentence: AnalyzedSentence
+  /** Article title or URL, kept with lines sent to a talk. */
+  articleRef?: string
   /** "paragraph.sentence", e.g. "3.2" for the second sentence of paragraph 3. */
   label: string
   maps: { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
@@ -181,6 +184,7 @@ function SentenceRow({
             <Text size="xs" fw={600} c="violet.7">{cleanScripture(ref)}</Text>
           </Group>
         ))}
+        <Box ml="auto"><AddToTalk chk={sentence.text_only} en={sentence.english_text || ''} source="article" reference={articleRef} /></Box>
       </Group>
       <Text className={styles.sentence}>
         <GlossedWords
@@ -723,6 +727,7 @@ export default function ArticleAnalysis() {
                           onGloss={setGloss}
                           onSelect={setSelection}
                           selectedKey={selection?.sentence === s ? selection.key : null}
+                          articleRef={meta?.title || meta?.url || ''}
                         />
                       ))}
                     </Fragment>

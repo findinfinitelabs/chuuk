@@ -1,0 +1,36 @@
+/* Talk Builder */
+.page { max-width: 1500px; }
+.layout { display: grid; grid-template-columns: 280px 1fr; gap: var(--mantine-spacing-md); align-items: start; }
+@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+.side { position: sticky; top: 70px; }
+@media (max-width: 1000px) { .side { position: static; } }
+.talkRow { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.talkRow:hover { background: var(--mantine-color-gray-light); }
+.talkRowActive { background: var(--mantine-color-violet-light); }
+
+.point { border-left: 5px solid var(--mantine-color-violet-5); }
+.pointEmpty { border-left-color: var(--mantine-color-orange-4); }
+.pointLabel { font-size: 1.3rem; font-weight: 800; color: var(--mantine-color-violet-6); min-width: 2rem; }
+.child { margin-left: 1.4rem; border-left: 3px solid var(--mantine-color-gray-3); padding-left: 0.8rem; }
+.line { border-left: 3px solid transparent; }
+.lineConfirmed { border-left-color: var(--mantine-color-green-5); }
+.chk { font-size: 1.1rem; font-weight: 600; line-height: 1.35; }
+.verse { background: var(--mantine-color-violet-light); border-radius: 8px; padding: 8px 10px; }
+.verseChk { font-size: 1.05rem; line-height: 1.4; }
+
+/* Delivery */
+.deliver { position: fixed; inset: 0; z-index: 1000; background: var(--mantine-color-body); overflow: auto; padding: 24px clamp(16px, 5vw, 80px); }
+.deliverHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.deliverTitle { font-size: clamp(1.3rem, 2.5vw, 2rem); font-weight: 800; color: var(--mantine-color-violet-7); }
+.deliverLine { font-size: clamp(1.4rem, 2.8vw, 2.4rem); font-weight: 700; line-height: 1.3; margin: 10px 0 2px; }
+.deliverEn { font-size: clamp(0.95rem, 1.6vw, 1.25rem); color: var(--mantine-color-dimmed); margin-bottom: 10px; }
+.deliverVerse { font-size: clamp(1.1rem, 2vw, 1.6rem); line-height: 1.45; background: var(--mantine-color-violet-light); border-radius: 10px; padding: 12px 16px; margin: 10px 0; }
+.deliverSub { font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; margin-top: 18px; color: var(--mantine-color-gray-7); }
+.timer { font-variant-numeric: tabular-nums; font-size: 1.4rem; font-weight: 800; }
+.timerOver { color: var(--mantine-color-red-6); }
+
+@media print {
+  :global(.mantine-AppShell-navbar), :global(.mantine-AppShell-header), .side, :global(button), :global(input), :global(textarea) { display: none !important; }
+  .layout { grid-template-columns: 1fr; }
+  .page { max-width: none; }
+}

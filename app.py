@@ -6885,6 +6885,9 @@ app.register_blueprint(_sentence_analyses_blueprint(lambda: dict_db, login_requi
 from src.api.conversation import create_blueprint as _conversation_blueprint  # noqa: E402
 
 app.register_blueprint(_conversation_blueprint(lambda: dict_db, login_required, _cosmos_retry))
+from src.api.talks import create_blueprint as _talks_blueprint  # noqa: E402
+
+app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos_retry, fetch_scripture_from_jworg))
 
 
 # Catch-all route for React (must be last)

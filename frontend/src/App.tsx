@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconPresentation, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -25,6 +25,7 @@ import AITraining from './pages/AITraining'
 import Login from './pages/Login'
 import Footer from './components/Footer'
 import Conversation from './pages/Conversation'
+import TalkBuilder from './pages/Talk'
 import ReleaseNotes from './pages/ReleaseNotes'
 import { chuukTheme } from './theme'
 import { UserContext } from './contexts/UserContext'
@@ -274,6 +275,17 @@ function App() {
                 onClick={toggleNav}
               />
             )}
+            {hasPermission('sentences') && (
+              <NavLink 
+                label="Talk Builder" 
+                leftSection={<IconPresentation size="1.2rem" />} 
+                component={Link}
+                to="/talks"
+                active={location.pathname === '/talks'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
             {hasPermission('lookup') && (
               <NavLink 
                 label="Watchtower Library" 
@@ -426,6 +438,7 @@ function App() {
               <Route path="/admin/reviews" element={hasPermission('reviews') ? <ReviewQueue /> : <AccessDenied />} />
               <Route path="/ai-training" element={hasPermission('ai_training') ? <AITraining /> : <AccessDenied />} />
               <Route path="/conversation" element={hasPermission('sentences') ? <Conversation /> : <AccessDenied />} />
+              <Route path="/talks" element={hasPermission('sentences') ? <TalkBuilder /> : <AccessDenied />} />
               <Route path="/release-notes" element={<ReleaseNotes />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

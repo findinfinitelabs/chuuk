@@ -13,6 +13,7 @@ import { GlossedWords, GlossCard, GlossLegend } from '../components/GlossedText'
 import type { Dictionary, SimilarMap, Gloss } from '../components/GlossedText'
 import type { PhraseMap } from '../components/glossUtils'
 import styles from './WolSearch.module.css'
+import AddToTalk from '../components/AddToTalk'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -667,6 +668,7 @@ function WolSearch() {
                       onGloss={setGloss}
                     />
                     <EnglishBlock english={r.english} />
+                    <Group justify="flex-end" mt={2}><AddToTalk chk={r.text} en={r.english?.text || ''} source="watchtower library" reference={[r.citation, r.title].filter(Boolean).join(' · ')} /></Group>
                     <ResultMeta result={r} />
                   </Card>
                 ))}
@@ -790,6 +792,7 @@ function WolSearch() {
                       onGloss={setGloss}
                     />
                     <EnglishBlock english={r.english} />
+                    <Group justify="flex-end" mt={2}><AddToTalk chk={r.text} en={r.english?.text || ''} source="watchtower library" reference={[r.citation, r.title].filter(Boolean).join(' · ')} /></Group>
                     <ResultMeta result={r} />
                   </Card>
                 ))}
