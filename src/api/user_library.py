@@ -8,7 +8,7 @@ produced it. What is per user is the *library*: which of those documents show
 in each person's sidebar. This collection holds that link.
 
     user_library: { user_email, kind, item_id, saved_at }
-    kind: "article" | "wol_search" | "sentence"
+    kind: "article" | "wol_search" | "sentence" | "conversation"
 
 When a second person asks for an article that is already analysed, the lookup
 endpoints hand them the stored document and add it to their library; nothing
@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from flask import session
 
 COLLECTION = "user_library"
-KINDS = ("article", "wol_search", "sentence")
+KINDS = ("article", "wol_search", "sentence", "conversation")
 _index_done = False
 
 

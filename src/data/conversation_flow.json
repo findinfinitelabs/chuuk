@@ -1,0 +1,274 @@
+{
+  "_format": "Branching conversation flow for the Conversation Builder. Nodes are steps; each has lines you can say (`say`), what the person may answer (`responses`) and where each answer leads (`next`). `{{...}}` slots are filled from the chosen subject and statement. Lines without `chk` are machine translated by scripts/fill_conversation_phrases.py and flagged until someone corrects them. `lessons` lists the Love People lessons whose quoted lines are offered as extra options at that step.",
+  "start": "greet",
+  "subject_openers": {
+    "the-future": [
+      {"id": "open-future-1", "en": "Do you think the world will ever become a better place?"},
+      {"id": "open-future-2", "en": "Many people worry about the future. Does it worry you too?"}
+    ],
+    "family": [
+      {"id": "open-family-1", "en": "What do you think helps a family to stay happy?"},
+      {"id": "open-family-2", "en": "Raising children is not easy today. Where do you think parents can find good advice?"}
+    ],
+    "god": [
+      {"id": "open-god-1", "en": "Do you think it is possible to really know God?"},
+      {"id": "open-god-2", "en": "Have you ever wondered whether God has a personal name?"}
+    ],
+    "prayer": [
+      {"id": "open-prayer-1", "en": "Do you think God listens when we pray?"},
+      {"id": "open-prayer-2", "en": "Some people feel their prayers are not heard. Have you ever felt that way?"}
+    ],
+    "jesus": [
+      {"id": "open-jesus-1", "en": "Why do you think Jesus is still so well known today?"},
+      {"id": "open-jesus-2", "en": "Do you think the advice Jesus gave still works in our time?"}
+    ],
+    "god-s-kingdom": [
+      {"id": "open-kingdom-1", "en": "Many people pray for God's Kingdom to come. What do you think that Kingdom is?"},
+      {"id": "open-kingdom-2", "en": "Do you think any government can solve the problems people face today?"}
+    ],
+    "suffering": [
+      {"id": "open-suffering-1", "en": "Why do you think there is so much suffering in the world?"},
+      {"id": "open-suffering-2", "en": "Do you think God cares when people suffer?"}
+    ],
+    "death": [
+      {"id": "open-death-1", "en": "Do you think we will ever see our loved ones who have died again?"},
+      {"id": "open-death-2", "en": "What do you think happens to us when we die?"}
+    ],
+    "religion": [
+      {"id": "open-religion-1", "en": "Do you think all religions are acceptable to God?"},
+      {"id": "open-religion-2", "en": "There are so many religions. How do you think a person can find the true one?"}
+    ]
+  },
+  "nodes": {
+    "greet": {
+      "title": {"en": "Greet and open"},
+      "stage": "start",
+      "lessons": [1, 2, 6],
+      "guidance": {"en": "Start with the person, not your subject. Notice what they are doing and speak naturally, as you would to a friend. (Love People, lessons 1 and 2)"},
+      "think": [
+        {"id": "think-1", "en": "What is the person doing right now? What might they be thinking about?", "from": "lesson:1:pid:17"},
+        {"id": "think-2", "en": "Is this a good time to talk to this person?", "from": "lesson:1:pid:19"}
+      ],
+      "say": [
+        {"id": "greet-1", "en": "Hello! How are you today?"},
+        {"id": "greet-2", "en": "Good morning. My name is {{me}}. What is your name?"},
+        {"id": "greet-3", "en": "It is good to see you. Do you have a few minutes to talk?"},
+        {"id": "greet-4", "en": "I noticed you are busy with your children. They are beautiful."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They respond warmly"}, "they": [{"id": "they-greet-yes", "en": "I am fine, thank you. And you?"}], "next": "opener"},
+        {"kind": "busy", "label": {"en": "They are busy"}, "they": [{"id": "they-greet-busy", "en": "I am sorry, I do not have time right now."}], "next": "busy"},
+        {"kind": "no", "label": {"en": "They are not interested"}, "they": [{"id": "they-greet-no", "en": "I am not interested, thank you."}], "next": "decline"}
+      ]
+    },
+    "opener": {
+      "title": {"en": "Raise the subject with a question"},
+      "stage": "start",
+      "lessons": [1, 2, 9],
+      "guidance": {"en": "Ask a question the person can have an opinion about, then listen. Do not correct them yet; you are learning what they think. (Lessons 1, 2 and 9)"},
+      "say": [{"id": "opener-slot", "slot": "subject_opener"}],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They agree or are curious"}, "they": [{"id": "they-open-yes", "en": "Yes, I have thought about that."}, {"id": "they-open-curious", "en": "I am not sure. What do you think?"}], "next": "bridge"},
+        {"kind": "no", "label": {"en": "They disagree or hold a different belief"}, "they": [{"id": "they-open-no", "en": "No, I do not believe that."}, {"id": "they-open-church", "en": "My church teaches something different."}], "next": "tact"},
+        {"kind": "question", "label": {"en": "They ask a question"}, "they": [{"id": "they-open-q", "en": "Why does God allow it, then?"}], "next": "answer"},
+        {"kind": "unsure", "label": {"en": "They are unsure"}, "they": [{"id": "they-open-unsure", "en": "I do not know. Nobody really knows."}], "next": "bridge"}
+      ]
+    },
+    "bridge": {
+      "title": {"en": "Offer the Bible's view"},
+      "stage": "start",
+      "lessons": [3, 11],
+      "guidance": {"en": "Acknowledge what they said, then offer one verse, not a sermon. Keep it short and simple. (Lessons 3 and 11)"},
+      "say": [
+        {"id": "bridge-1", "en": "Thank you for sharing that. Many people feel the same way."},
+        {"id": "bridge-2", "en": "The Bible gives a comforting answer to that. May I show you one short verse?"},
+        {"id": "bridge-3", "en": "That is an interesting view. May I read you what the Bible says about it?"},
+        {"id": "bridge-4", "en": "I would like to show you one verse. It will take only a minute."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "Yes, show me"}, "they": [{"id": "they-bridge-yes", "en": "All right, go ahead."}], "next": "scripture"},
+        {"kind": "no", "label": {"en": "No, not now"}, "they": [{"id": "they-bridge-no", "en": "No, I do not want to read the Bible right now."}], "next": "leave-thought"},
+        {"kind": "busy", "label": {"en": "They have to go"}, "they": [{"id": "they-bridge-busy", "en": "I really must go now."}], "next": "busy"}
+      ]
+    },
+    "scripture": {
+      "title": {"en": "State the truth and read the scripture"},
+      "stage": "teach",
+      "lessons": [11],
+      "guidance": {"en": "Say the Bible truth in one sentence, read the verse, then ask what they think. Let the verse do the teaching. (Truths We Love to Teach; lesson 11)"},
+      "say": [
+        {"id": "truth-slot", "slot": "statement"},
+        {"id": "scripture-1", "en": "Let us read {{scripture}}. Would you like to read it, or shall I?"},
+        {"id": "scripture-2", "en": "Notice what this verse says."},
+        {"id": "scripture-3", "en": "What do you think this means?"},
+        {"id": "scripture-4", "en": "How do you feel about that promise?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They agree or are touched"}, "they": [{"id": "they-scr-yes", "en": "That is beautiful. I did not know the Bible said that."}], "next": "deepen"},
+        {"kind": "no", "label": {"en": "They disagree"}, "they": [{"id": "they-scr-no", "en": "I do not think that is what it means."}], "next": "tact"},
+        {"kind": "question", "label": {"en": "They ask a question"}, "they": [{"id": "they-scr-q", "en": "But when will that happen?"}], "next": "answer"},
+        {"kind": "unsure", "label": {"en": "They are quiet or unsure"}, "they": [{"id": "they-scr-unsure", "en": "Hmm. I have to think about that."}], "next": "illustrate"}
+      ]
+    },
+    "illustrate": {
+      "title": {"en": "Make it clear with a question or illustration"},
+      "stage": "teach",
+      "lessons": [8, 11],
+      "guidance": {"en": "Give them time. Use a simple question or a picture from daily life to make the point clear, then return to the verse. (Lessons 8 and 11)"},
+      "say": [
+        {"id": "illus-1", "en": "Think of it this way. When a father promises his child something good, does the child doubt it?"},
+        {"id": "illus-2", "en": "God made this promise, and God cannot lie."},
+        {"id": "illus-3", "en": "May I ask, what part is hard to accept?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "Now they see it"}, "they": [{"id": "they-illus-yes", "en": "I see what you mean."}], "next": "deepen"},
+        {"kind": "no", "label": {"en": "Still not convinced"}, "they": [{"id": "they-illus-no", "en": "I still do not think so."}], "next": "close"}
+      ]
+    },
+    "answer": {
+      "title": {"en": "Answer their question with empathy"},
+      "stage": "teach",
+      "lessons": [9, 5],
+      "guidance": {"en": "Commend the question, show you understand the feeling behind it, and answer from the Bible. If it leads away from the subject, offer to come back to it. (Lessons 9 and 5)"},
+      "say": [
+        {"id": "answer-1", "en": "That is a very good question. Many people ask it."},
+        {"id": "answer-2", "en": "I understand why you feel that way."},
+        {"id": "answer-3", "en": "The Bible answers that. May I show you?"},
+        {"id": "answer-4", "en": "That is a big question. May I come back and answer it properly next time?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "Yes, show me"}, "they": [{"id": "they-ans-yes", "en": "Yes, please."}], "next": "scripture"},
+        {"kind": "later", "label": {"en": "They accept a return visit"}, "they": [{"id": "they-ans-later", "en": "All right, you can come back."}], "next": "arrange"},
+        {"kind": "no", "label": {"en": "They do not want more"}, "they": [{"id": "they-ans-no", "en": "No, that is enough for today."}], "next": "close"}
+      ]
+    },
+    "tact": {
+      "title": {"en": "When they disagree: stay calm and kind"},
+      "stage": "teach",
+      "lessons": [5, 12],
+      "guidance": {"en": "Do not argue. Find something to agree with, ask why they believe it, and offer the Bible's view only if they are willing. A calm manner teaches more than winning a point. (Lessons 5 and 12; Should You End the Conversation?)"},
+      "say": [
+        {"id": "tact-1", "en": "I respect your belief. May I ask why you believe that?"},
+        {"id": "tact-2", "en": "You are right that many people believe that."},
+        {"id": "tact-3", "en": "I am not here to argue. I only want to share what I found in the Bible."},
+        {"id": "tact-4", "en": "Would you be willing to look at one verse and tell me what you think?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They soften and are willing"}, "they": [{"id": "they-tact-yes", "en": "All right, show me the verse."}], "next": "scripture"},
+        {"kind": "no", "label": {"en": "They remain firm"}, "they": [{"id": "they-tact-no", "en": "I have my own beliefs, thank you."}], "next": "close"},
+        {"kind": "angry", "label": {"en": "They become upset"}, "they": [{"id": "they-tact-angry", "en": "I do not want to talk about religion."}], "next": "decline"}
+      ]
+    },
+    "deepen": {
+      "title": {"en": "Go one step further"},
+      "stage": "teach",
+      "lessons": [7, 10],
+      "guidance": {"en": "Build on their interest: share a second truth on the same subject, or offer a free Bible lesson. Decide together on the next step. (Lessons 7 and 10)"},
+      "say": [
+        {"id": "deepen-slot", "slot": "next_statement"},
+        {"id": "deepen-1", "en": "There is more the Bible says about this. Would you like to learn more?"},
+        {"id": "deepen-2", "en": "We have a free Bible course that answers questions like this. Would you like to try one lesson?"},
+        {"id": "deepen-3", "en": "You can also find this on jw.org in Chuukese."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "Yes, they want more"}, "they": [{"id": "they-deep-yes", "en": "Yes, I would like that."}], "next": "arrange"},
+        {"kind": "no", "label": {"en": "Not now"}, "they": [{"id": "they-deep-no", "en": "Not now, but thank you."}], "next": "close"}
+      ]
+    },
+    "busy": {
+      "title": {"en": "When they are busy"},
+      "stage": "start",
+      "lessons": [7, 3],
+      "guidance": {"en": "Respect their time. Leave one thought and ask for a better time. (Lessons 3 and 7)"},
+      "say": [
+        {"id": "busy-1", "en": "I can see you are busy. I will not keep you."},
+        {"id": "busy-2", "en": "May I come back another time? When would be good for you?"},
+        {"id": "busy-3", "en": "Before I go, may I leave you with one short thought?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "Yes, come back"}, "they": [{"id": "they-busy-yes", "en": "Yes, come back on Saturday morning."}], "next": "arrange"},
+        {"kind": "no", "label": {"en": "No, do not come back"}, "they": [{"id": "they-busy-no", "en": "No, please do not come back."}], "next": "decline"},
+        {"kind": "unsure", "label": {"en": "They will listen for a moment"}, "they": [{"id": "they-busy-moment", "en": "All right, but only a minute."}], "next": "leave-thought"}
+      ]
+    },
+    "leave-thought": {
+      "title": {"en": "Leave one thought"},
+      "stage": "close",
+      "lessons": [11, 7],
+      "guidance": {"en": "One sentence of hope and one question to think about. Short is powerful. (Lesson 11)"},
+      "say": [
+        {"id": "truth-slot-2", "slot": "statement"},
+        {"id": "leave-1", "en": "I will leave you with this thought: {{statement}}"},
+        {"id": "leave-2", "en": "You can read more about it at {{scripture}} when you have time."},
+        {"id": "leave-3", "en": "Think about it, and next time tell me what you concluded."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They accept and are open to another visit"}, "they": [{"id": "they-leave-yes", "en": "Thank you. I will think about it."}], "next": "arrange"},
+        {"kind": "no", "label": {"en": "They just want to finish"}, "they": [{"id": "they-leave-no", "en": "All right. Goodbye."}], "next": "close"}
+      ]
+    },
+    "arrange": {
+      "title": {"en": "Arrange the next conversation"},
+      "stage": "close",
+      "lessons": [10],
+      "guidance": {"en": "Agree on a day and time, say what you will talk about, and leave a question to think about. Keep your word. (Lesson 10)"},
+      "say": [
+        {"id": "arrange-1", "en": "When would be a good time for me to come back?"},
+        {"id": "arrange-2", "en": "Next time we can look at this question: {{next_question}}"},
+        {"id": "arrange-3", "en": "May I have your phone number so I can let you know before I come?"},
+        {"id": "arrange-4", "en": "I will see you on {{day}} then. Thank you for your time."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They agree on a time"}, "they": [{"id": "they-arr-yes", "en": "Saturday morning is fine."}], "next": "close"},
+        {"kind": "unsure", "label": {"en": "They are not sure when"}, "they": [{"id": "they-arr-unsure", "en": "I do not know. Maybe another time."}], "next": "close"}
+      ]
+    },
+    "decline": {
+      "title": {"en": "When they say no"},
+      "stage": "close",
+      "lessons": [3, 12],
+      "guidance": {"en": "Stay kind. Thank them, leave on good terms, and leave the door open. How you leave is what they will remember. (Lesson 3; Should You End the Conversation?)"},
+      "say": [
+        {"id": "decline-1", "en": "I understand. Thank you for your time."},
+        {"id": "decline-2", "en": "I am sorry to have disturbed you. Have a good day."},
+        {"id": "decline-3", "en": "If you ever have a question about the Bible, you can find answers at jw.org in Chuukese."},
+        {"id": "decline-4", "en": "May I leave you with just one thought before I go?"}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They allow one thought"}, "they": [{"id": "they-dec-yes", "en": "All right, one thought."}], "next": "leave-thought"},
+        {"kind": "no", "label": {"en": "They want to end it"}, "they": [{"id": "they-dec-no", "en": "No, thank you. Goodbye."}], "next": "end"}
+      ]
+    },
+    "close": {
+      "title": {"en": "Close warmly"},
+      "stage": "close",
+      "lessons": [3, 10],
+      "guidance": {"en": "Thank them, repeat the main point in one sentence, and say goodbye warmly. (Lessons 3 and 10)"},
+      "say": [
+        {"id": "close-1", "en": "Thank you for talking with me today."},
+        {"id": "close-2", "en": "I enjoyed our conversation. Remember: {{statement}}"},
+        {"id": "close-3", "en": "May God bless you and your family. Goodbye."},
+        {"id": "close-4", "en": "I hope we can talk again."}
+      ],
+      "responses": [
+        {"kind": "yes", "label": {"en": "They say goodbye"}, "they": [{"id": "they-close", "en": "Thank you. Goodbye."}], "next": "end"}
+      ]
+    },
+    "end": {
+      "title": {"en": "End of conversation"},
+      "stage": "close",
+      "guidance": {"en": "Afterwards, note what they said and what you will bring next time."},
+      "say": [],
+      "responses": []
+    }
+  },
+  "response_labels": {
+    "yes": {"en": "Yes"},
+    "no": {"en": "No"},
+    "busy": {"en": "Busy"},
+    "question": {"en": "Question"},
+    "unsure": {"en": "Unsure"},
+    "later": {"en": "Later"},
+    "angry": {"en": "Upset"}
+  }
+}

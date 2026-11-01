@@ -6882,6 +6882,9 @@ def update_dictionary_word():
 from src.api.sentence_analyses import create_blueprint as _sentence_analyses_blueprint  # noqa: E402
 
 app.register_blueprint(_sentence_analyses_blueprint(lambda: dict_db, login_required, _cosmos_retry))
+from src.api.conversation import create_blueprint as _conversation_blueprint  # noqa: E402
+
+app.register_blueprint(_conversation_blueprint(lambda: dict_db, login_required, _cosmos_retry))
 
 
 # Catch-all route for React (must be last)

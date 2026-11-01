@@ -8,6 +8,7 @@
       "notes": [
         "Article Analysis: Chuukese and English sentences are now paired by content (scripture citations, numbers, list markers, question marks, dictionary glosses and length) instead of by position. Sentences the translator reordered, split or merged now line up, and paragraphs are matched even when one edition has an extra footnote.",
         "Article Analysis: a footnote letter after a full stop no longer glues two English sentences together, and study-question labels such as 2. (a) and (b) stay with the question they introduce.",
+        "New Conversation Builder page: choose a subject and statement from Truths We Love to Teach (Love People—Make Disciples) or this week's workbook part, then follow a branching conversation from the greeting down. Each step offers lines to say in Chuukese with English, shows what the person may answer, and each answer opens the next step. A map view shows every split. Lines quoted from the brochure are authentic; authored lines are machine translated, marked, and can be corrected in place. Conversations are saved per user.",
         "Article Analysis: Re-analyze fetches the article afresh instead of returning the stored copy.",
         "Watchtower Library and Sentence Analysis: the English for a search hit is found with the same content-based pairing, so a reordered or merged sentence is matched and a question paragraph is no longer confused with its neighbour when the editions' paragraph ids drift.",
         "Translation Game: clues use the same content-based pairing.",
