@@ -216,11 +216,26 @@ class TrainingPairCollector:
     # Main entry point
     # ------------------------------------------------------------------
 
+    def _from_conversation_phrases(self) -> list[dict]:
+        """Conversation Builder lines a person corrected (machine translations
+        are skipped): short, natural spoken Chuukese with its English."""
+        pairs: list[dict] = []
+        try:
+            col = self.db.client["chuuk_dictionary"]["conversation_phrases"]
+            for doc in col.find({"mt": False}, {"chk": 1, "en": 1}):
+                chk, eng = (doc.get("chk") or "").strip(), (doc.get("en") or "").strip()
+                if chk and eng and "{{" not in chk and "{{" not in eng:
+                    pairs.append({"chuukese": chk, "english": eng, "source": "conversation_builder", "confidence": 90, "type": "sentence"})
+        except Exception as e:
+            logger.warning("conversation_phrases: %s", e)
+        return pairs
+
     def collect_all(self, min_confidence: float = 50) -> list[dict]:
         """Return de-duplicated pairs from all sources above min_confidence."""
         all_pairs: list[dict] = []
         for extractor in (self._from_dictionary, self._from_phrases,
-                          self._from_paragraphs, self._from_article_analyses):
+                          self._from_paragraphs, self._from_article_analyses,
+                          self._from_conversation_phrases):
             rows = _retry_throttled(extractor)
             logger.info("%s: %d pairs", extractor.__name__, len(rows))
             all_pairs.extend(rows)
