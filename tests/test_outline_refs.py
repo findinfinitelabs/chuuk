@@ -16,9 +16,9 @@ def test_older_citation_forms():
     refs = find_references("See (w12 11/1 23) and (w10 3/15 12-13 ¶4-5), g 11/12 8, wp16 2/1 5, km 5/09 3")
     assert refs[0] == {"raw": "w12 11/1 23", "kind": "w", "pub": "w", "year": 2012, "month": 11, "day": 1, "page": 23, "paragraphs": []}
     assert refs[1]["year"] == 2010 and refs[1]["day"] == 15 and refs[1]["page"] == 12 and refs[1]["paragraphs"] == [4, 5]
-    assert refs[2]["pub"] == "g" and refs[2]["year"] == 2011 and refs[2]["month"] == 11 and refs[2]["day"] == 12 and refs[2]["page"] == 8
+    assert refs[2]["pub"] == "g" and refs[2]["year"] == 2012 and refs[2]["month"] == 11 and refs[2]["day"] is None and refs[2]["page"] == 8
     assert refs[3]["pub"] == "wp" and refs[3]["year"] == 2016
-    assert refs[4]["pub"] == "km" and refs[4]["year"] == 2005 and refs[4]["month"] == 5 and refs[4]["day"] == 9
+    assert refs[4]["pub"] == "km" and refs[4]["year"] == 2009 and refs[4]["month"] == 5 and refs[4]["day"] is None
 
 
 def test_key_words_skip_stopwords_and_citations():

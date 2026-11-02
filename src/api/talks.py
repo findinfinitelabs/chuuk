@@ -119,6 +119,18 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         outline = parse_outline(text, language)
         return jsonify({"outline": outline, "text": text})
 
+    @bp.route("/api/talks/gloss", methods=["POST"])
+    @login_required
+    def api_gloss():
+        """Dictionary / similar / phrases maps for a set of Chuukese lines, in
+        one dictionary pass, so collected and translated lines carry the same
+        hover gloss as verses and articles."""
+        data = request.get_json(silent=True) or {}
+        texts = [str(t) for t in (data.get("texts") or []) if str(t).strip()][:400]
+        if not texts:
+            return jsonify({"dictionary": {}, "similar": {}, "phrases": {}})
+        return jsonify(maps_for(" ".join(texts)))
+
     @bp.route("/api/talks/scriptures", methods=["POST"])
     @login_required
     def api_scriptures():

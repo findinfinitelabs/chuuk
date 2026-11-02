@@ -54,7 +54,10 @@ const allRefs = (o: Outline | null): string[] => Array.from(new Set([o?.theme_sc
 
 // ── A collected line ────────────────────────────────────────────────────────
 
-function LineCard({ line, showEnglish, onChange, onRemove, onMove }: { line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void }) {
+function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss }: {
+  line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void
+  maps?: Maps | null; onGloss?: (g: Gloss | null) => void
+}) {
   const [editing, setEditing] = useState(false)
   const [chk, setChk] = useState(line.chk)
   const [en, setEn] = useState(line.en)
@@ -84,7 +87,9 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove }: { line: Lin
       ) : (
         <Group align="flex-start" wrap="nowrap" justify="space-between">
           <Box style={{ flex: 1 }}>
-            <Text className={styles.chk}>{line.chk || <Text span c="dimmed" fs="italic">No Chuukese yet</Text>}</Text>
+            <Text className={styles.chk}>
+              {line.chk ? (maps && onGloss ? <GlossedWords text={line.chk} dictionary={maps.dictionary} similar={maps.similar} phrases={maps.phrases} onGloss={onGloss} keyPrefix={`${line.id}-`} /> : line.chk) : <Text span c="dimmed" fs="italic">No Chuukese yet</Text>}
+            </Text>
             {showEnglish && line.en && <Text size="sm" c="dimmed">{line.en}</Text>}
             <Group gap={6} mt={4}>
               <Badge size="xs" variant="light" color="violet">{line.source}</Badge>
@@ -105,7 +110,8 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove }: { line: Lin
   )
 }
 
-function AddLine({ onAdd }: { onAdd: (l: Omit<Line, 'id'>) => void }) {
+function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onGloss?: (g: Gloss | null) => void }) {
+  const [previewMaps, setPreviewMaps] = useState<Maps | null>(null)
   const [text, setText] = useState('')
   const [out, setOut] = useState<{ chk: string; en: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -115,7 +121,9 @@ function AddLine({ onAdd }: { onAdd: (l: Omit<Line, 'id'>) => void }) {
     try {
       const en = looksEnglish(text)
       const t = await machineTranslate(text.trim(), en ? 'en_to_chk' : 'chk_to_en')
-      setOut(en ? { en: text.trim(), chk: t } : { chk: text.trim(), en: t })
+      const next = en ? { en: text.trim(), chk: t } : { chk: text.trim(), en: t }
+      setOut(next)
+      if (next.chk) axios.post<Maps>('/api/talks/gloss', { texts: [next.chk] }).then((r) => setPreviewMaps(r.data)).catch(() => setPreviewMaps(null))
     } finally { setBusy(false) }
   }
   return (
@@ -126,7 +134,7 @@ function AddLine({ onAdd }: { onAdd: (l: Omit<Line, 'id'>) => void }) {
       </Group>
       {out && (
         <Paper withBorder p="sm" mt="xs" radius="md">
-          <Text className={styles.chk}>{out.chk || <Text span c="dimmed" fs="italic">No translation</Text>}</Text>
+          <Text className={styles.chk}>{out.chk ? (previewMaps && onGloss ? <GlossedWords text={out.chk} dictionary={previewMaps.dictionary} similar={previewMaps.similar} phrases={previewMaps.phrases} onGloss={onGloss} keyPrefix="preview-" /> : out.chk) : <Text span c="dimmed" fs="italic">No translation</Text>}</Text>
           <Text size="sm" c="dimmed">{out.en}</Text>
           <Group justify="flex-end" mt={4} gap="xs">
             <Button size="xs" variant="default" onClick={() => setOut(null)}>Discard</Button>
@@ -244,6 +252,16 @@ export default function TalkBuilder() {
   const [editOutline, setEditOutline] = useState(false)
   const [refOpen, setRefOpen] = useState<{ ref: string; context: string; label: string } | null>(null)
   const [gloss, setGloss] = useState<Gloss | null>(null)
+  const [lineMaps, setLineMaps] = useState<Maps | null>(null)
+  const lineTexts = useMemo(() => Array.from(new Set(Object.values(talk?.lines || {}).flat().map((l) => l.chk).filter(Boolean))).sort().join('\n'), [talk?.lines])
+  useEffect(() => {
+    if (!lineTexts) { setLineMaps(null); return }
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      axios.post<Maps>('/api/talks/gloss', { texts: lineTexts.split('\n') }).then((r) => !cancelled && setLineMaps(r.data)).catch(() => undefined)
+    }, 400)
+    return () => { cancelled = true; window.clearTimeout(t) }
+  }, [lineTexts])
 
   const loadTalks = useCallback(async () => { try { setTalks((await axios.get('/api/talks')).data) } catch { /* list only */ } }, [])
   useEffect(() => { loadTalks() }, [loadTalks])
@@ -353,12 +371,12 @@ export default function TalkBuilder() {
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
               <Box style={{ flex: 1 }}>
-                <LineCard line={l} showEnglish={showEnglish} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
+                <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
               </Box>
             </Group>
           ))}
         </Stack>
-        <AddLine onAdd={(l) => addLine(p.id, l)} />
+        <AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} />
         {(p.children || []).length > 0 && <Box mt="sm">{p.children!.map((c) => renderPoint(c, true))}</Box>}
       </Card>
     )
@@ -433,7 +451,7 @@ export default function TalkBuilder() {
                   <Stack gap="xs">
                     {unsorted.map((l, i) => (
                       <Group key={l.id} align="flex-start" wrap="nowrap">
-                        <Box style={{ flex: 1 }}><LineCard line={l} showEnglish={showEnglish} onChange={(nl) => setLines('unsorted', unsorted.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines('unsorted', unsorted.filter((x) => x.id !== l.id))} onMove={(d) => moveLine('unsorted', i, d)} /></Box>
+                        <Box style={{ flex: 1 }}><LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines('unsorted', unsorted.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines('unsorted', unsorted.filter((x) => x.id !== l.id))} onMove={(d) => moveLine('unsorted', i, d)} /></Box>
                         <select className="mantine-Input-input" style={{ maxWidth: 220 }} defaultValue="" onChange={(e) => e.target.value && moveLineTo('unsorted', i, e.target.value)}>
                           <option value="">Move under…</option>
                           {points.map((p) => <option key={p.id} value={p.id}>{p.label ? `${p.label}. ` : ''}{p.text.slice(0, 50)}</option>)}

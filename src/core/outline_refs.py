@@ -41,7 +41,7 @@ MONTHS = "january february march april may june july august september october no
 _PARA_LIST = r"(\d+(?:\s*[-–,]\s*\d+)*)"
 CITATION_RE = re.compile(
     r"(?P<w>\bw(?P<wy>\d{2})\.(?P<wm>\d{2})\s+(?P<wp>\d+)(?:-\d+)?\s*(?:¶\s*(?P<wpar>" + _PARA_LIST + r"))?)"
-    r"|(?P<wo>\b(?P<wopub>w|wp|g|km)(?P<woy>\d{2})\s+(?P<wom>\d{1,2})/(?P<wod>\d{1,2})\s+(?:pp?\.\s*)?(?P<wop>\d+)(?:-\d+)?\s*(?:(?:¶|par\.?|pars\.?)\s*(?P<wopar>" + _PARA_LIST + r"))?)"
+    r"|(?P<wo>\b(?P<wopub>wp|w|g|km)(?P<woy>\d{2})?\s+(?P<wom>\d{1,2})/(?P<wod>\d{1,2})\s+(?:pp?\.\s*)?(?P<wop>\d+)(?:-\d+)?\s*(?:(?:¶|par\.?|pars\.?)\s*(?P<wopar>" + _PARA_LIST + r"))?)"
     r"|(?P<lesson>\b(?P<lpub>lff|lmd|th)\s+(?:lesson|lesen|study|káé)\s+(?P<ln>\d+)(?:\s+(?:points?|nampa|point)\s+(?P<lpts>" + _PARA_LIST + r"))?)"
     r"|(?P<chap>\b(?P<cpub>bt|cl|jy|kr|rr|lfb|lvs|bhs|ia|od|cf|jr|lr|wp|sjj)\s+(?:chap\.|chapter|sópwun)\s*(?P<cn>\d+)(?:\s*¶\s*(?P<cpar>" + _PARA_LIST + r"))?)"
     r"|(?P<it>\bit-(?P<itv>[12])\s+(?P<itp>\d+)(?:-\d+)?)",
@@ -74,8 +74,16 @@ def find_references(text: str) -> list[dict]:
         if m.group("w"):
             out.append({"raw": m.group("w").strip(), "kind": "w", "pub": "w", "year": 2000 + int(m.group("wy")), "month": int(m.group("wm")), "day": None, "page": int(m.group("wp")), "paragraphs": numbers(m.group("wpar"))})
         elif m.group("wo"):
-            yy = int(m.group("woy"))
-            out.append({"raw": m.group("wo").strip(), "kind": "w", "pub": m.group("wopub").lower(), "year": (2000 if yy < 50 else 1900) + yy, "month": int(m.group("wom")), "day": int(m.group("wod")), "page": int(m.group("wop")), "paragraphs": numbers(m.group("wopar"))})
+            pub = m.group("wopub").lower()
+            if m.group("woy"):
+                # "w12 11/1 23": year on the symbol, then month/day of the issue.
+                yy = int(m.group("woy"))
+                year, month, day = (2000 if yy < 50 else 1900) + yy, int(m.group("wom")), int(m.group("wod"))
+            else:
+                # "g 11/12 8", "km 5/09 3": no year on the symbol, so month/year.
+                yy = int(m.group("wod"))
+                year, month, day = (2000 if yy < 50 else 1900) + yy, int(m.group("wom")), None
+            out.append({"raw": m.group("wo").strip(), "kind": "w", "pub": pub, "year": year, "month": month, "day": day, "page": int(m.group("wop")), "paragraphs": numbers(m.group("wopar"))})
         elif m.group("lesson"):
             out.append({"raw": m.group("lesson").strip(), "kind": "lesson", "pub": m.group("lpub").lower(), "lesson": int(m.group("ln")), "paragraphs": numbers(m.group("lpts"))})
         elif m.group("chap"):
