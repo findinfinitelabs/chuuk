@@ -41,6 +41,7 @@ MONTHS = "january february march april may june july august september october no
 _PARA_LIST = r"(\d+(?:\s*[-–,]\s*\d+)*)"
 CITATION_RE = re.compile(
     r"(?P<w>\bw(?P<wy>\d{2})\.(?P<wm>\d{2})\s+(?P<wp>\d+)(?:-\d+)?\s*(?:¶\s*(?P<wpar>" + _PARA_LIST + r"))?)"
+    r"|(?P<wo>\b(?P<wopub>w|wp|g|km)(?P<woy>\d{2})\s+(?P<wom>\d{1,2})/(?P<wod>\d{1,2})\s+(?:pp?\.\s*)?(?P<wop>\d+)(?:-\d+)?\s*(?:(?:¶|par\.?|pars\.?)\s*(?P<wopar>" + _PARA_LIST + r"))?)"
     r"|(?P<lesson>\b(?P<lpub>lff|lmd|th)\s+(?:lesson|lesen|study|káé)\s+(?P<ln>\d+)(?:\s+(?:points?|nampa|point)\s+(?P<lpts>" + _PARA_LIST + r"))?)"
     r"|(?P<chap>\b(?P<cpub>bt|cl|jy|kr|rr|lfb|lvs|bhs|ia|od|cf|jr|lr|wp|sjj)\s+(?:chap\.|chapter|sópwun)\s*(?P<cn>\d+)(?:\s*¶\s*(?P<cpar>" + _PARA_LIST + r"))?)"
     r"|(?P<it>\bit-(?P<itv>[12])\s+(?P<itp>\d+)(?:-\d+)?)",
@@ -71,7 +72,10 @@ def find_references(text: str) -> list[dict]:
     out = []
     for m in CITATION_RE.finditer(text or ""):
         if m.group("w"):
-            out.append({"raw": m.group("w").strip(), "kind": "w", "year": 2000 + int(m.group("wy")), "month": int(m.group("wm")), "page": int(m.group("wp")), "paragraphs": numbers(m.group("wpar"))})
+            out.append({"raw": m.group("w").strip(), "kind": "w", "pub": "w", "year": 2000 + int(m.group("wy")), "month": int(m.group("wm")), "day": None, "page": int(m.group("wp")), "paragraphs": numbers(m.group("wpar"))})
+        elif m.group("wo"):
+            yy = int(m.group("woy"))
+            out.append({"raw": m.group("wo").strip(), "kind": "w", "pub": m.group("wopub").lower(), "year": (2000 if yy < 50 else 1900) + yy, "month": int(m.group("wom")), "day": int(m.group("wod")), "page": int(m.group("wop")), "paragraphs": numbers(m.group("wopar"))})
         elif m.group("lesson"):
             out.append({"raw": m.group("lesson").strip(), "kind": "lesson", "pub": m.group("lpub").lower(), "lesson": int(m.group("ln")), "paragraphs": numbers(m.group("lpts"))})
         elif m.group("chap"):
@@ -211,6 +215,56 @@ class Resolver:
 
     # -- locating -----------------------------------------------------------
 
+    _EN_LIBRARY = "/en/wol/library/r1/lp-e/all-publications"
+    _EN_PUBS = {"w": "watchtower", "wp": "watchtower", "g": "awake", "km": "our-kingdom-ministry"}
+
+    def _english_issue_doc_ids(self, pub: str, year: int, month: int, day: int | None) -> list[str]:
+        """Articles of one issue through the English library index: publication →
+        year → (edition) → issue, matched by the text of the links so slugs
+        need not be known. For 2008–2015 Watchtowers the 15th is the study
+        edition and the 1st the public one."""
+        root = f"{self._EN_LIBRARY}/{self._EN_PUBS.get(pub, pub)}"
+        index = self.fetch(WOL_BASE + root)
+        if not index:
+            return []
+        year_href = next((h for h, _t in wh.child_links(index, root) if h.endswith(f"-{year}") or f"-{year}/" in h), None)
+        if not year_href:
+            return []
+        page = self.fetch(WOL_BASE + quote(year_href))
+        if not page:
+            return []
+        children = wh.child_links(page, year_href)
+        wanted_edition = None
+        if pub == "w" and day:
+            wanted_edition = "study" if day >= 15 else "public"
+        elif pub == "wp":
+            wanted_edition = "public"
+        elif pub == "w":
+            wanted_edition = "study"
+        editions = [(h, t) for h, t in children if re.search(r"study|public|simplified", t, re.I)]
+        if editions:
+            pick = next(((h, t) for h, t in editions if wanted_edition and wanted_edition in t.lower()), None) or editions[0]
+            page = self.fetch(WOL_BASE + quote(pick[0]))
+            if not page:
+                return []
+            children = wh.child_links(page, pick[0])
+        month_name = MONTHS[month - 1]
+        issue = None
+        for h, t in children:
+            text = t.strip().lower()
+            if text.startswith(month_name) and (day is None or re.search(rf"\b{day}\b", text) or not re.search(r"\d", text)):
+                issue = h
+                break
+        if issue is None:
+            for h, t in children:
+                if t.strip().lower().startswith(month_name[:3]):
+                    issue = h
+                    break
+        if issue is None:
+            return []
+        html = self.fetch(WOL_BASE + quote(issue))
+        return [doc_id for doc_id, _ in wh.doc_links(html)] if html else []
+
     def _watchtower_doc_ids(self, year: int, month: int) -> list[str]:
         index = self.fetch(WOL_BASE + f"{wh.CHK_LIBRARY}/{wh.PUBLICATIONS['watchtower']['slug']}")
         year_href = wh.year_link(index, "watchtower", year) if index else None
@@ -271,15 +325,21 @@ class Resolver:
 
     def resolve(self, ref: dict, context: str = "") -> dict:
         keys = key_words(context)
-        out = {"ref": ref["raw"], "kind": ref["kind"], "key_words": keys, "title": {"en": "", "chk": ""}, "links": {"en": None, "chk": None}, "chuukese_available": False, "paragraphs": [], "note": ""}
+        out = {"ref": ref["raw"], "kind": ref["kind"], "key_words": keys, "title": {"en": "", "chk": ""}, "links": {"en": None, "chk": None, "search": f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"}, "chuukese_available": False, "paragraphs": [], "note": ""}
         en_doc = chk_doc = None
         doc_id = None
         wanted = ref.get("paragraphs") or []
 
         if ref["kind"] == "w":
+            out["links"]["search"] = f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"
+            pub, day = ref.get("pub", "w"), ref.get("day")
+            study = pub == "w" and (day is None or day >= 15)
+            candidates = self._watchtower_doc_ids(ref["year"], ref["month"]) if study else []
+            if not candidates:
+                candidates = self._english_issue_doc_ids(pub, ref["year"], ref["month"], day)
             # The issue cover spans every page, so take the narrowest range holding the page.
             best = None
-            for cand in self._watchtower_doc_ids(ref["year"], ref["month"]):
+            for cand in candidates:
                 d = self._doc(cand, "en")
                 rng = page_range(d["citation"]) if d else None
                 if rng and rng[0] <= ref["page"] <= rng[1] and (best is None or rng[1] - rng[0] < best[0]):
@@ -287,8 +347,8 @@ class Resolver:
             if best:
                 _, doc_id, en_doc = best
             if not doc_id:
-                out["note"] = "Could not find the article for that page on wol.jw.org."
-                out["links"]["en"] = f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"
+                out["note"] = "Could not find that issue and page on wol.jw.org automatically; the search link opens the citation there."
+                out["links"]["en"] = out["links"]["search"]
                 return out
         elif ref["kind"] == "lesson":
             doc_id = self._lesson_doc_id(ref["pub"], ref["lesson"], "en") or self._lesson_doc_id(ref["pub"], ref["lesson"], "chk")

@@ -5,11 +5,20 @@ from src.core.outline_refs import find_references, highlight_paragraph, key_word
 def test_find_references():
     refs = find_references("Train each child (Ps 127:4; w19.12 26 ¶20) lff lesson 16 points 4-5, bt chap. 20 ¶13-15, it-1 543, lmd lesson 5 point 4")
     assert [r["kind"] for r in refs] == ["w", "lesson", "chapter", "it", "lesson"]
-    assert refs[0] == {"raw": "w19.12 26 ¶20", "kind": "w", "year": 2019, "month": 12, "page": 26, "paragraphs": [20]}
+    assert refs[0] == {"raw": "w19.12 26 ¶20", "kind": "w", "pub": "w", "year": 2019, "month": 12, "day": None, "page": 26, "paragraphs": [20]}
     assert refs[1]["pub"] == "lff" and refs[1]["lesson"] == 16 and refs[1]["paragraphs"] == [4, 5]
     assert refs[2]["chapter"] == 20 and refs[2]["paragraphs"] == [13, 14, 15]
     assert refs[3]["pub"] == "it-1" and refs[3]["page"] == 543
     assert refs[4]["pub"] == "lmd" and refs[4]["paragraphs"] == [4]
+
+
+def test_older_citation_forms():
+    refs = find_references("See (w12 11/1 23) and (w10 3/15 12-13 ¶4-5), g 11/12 8, wp16 2/1 5, km 5/09 3")
+    assert refs[0] == {"raw": "w12 11/1 23", "kind": "w", "pub": "w", "year": 2012, "month": 11, "day": 1, "page": 23, "paragraphs": []}
+    assert refs[1]["year"] == 2010 and refs[1]["day"] == 15 and refs[1]["page"] == 12 and refs[1]["paragraphs"] == [4, 5]
+    assert refs[2]["pub"] == "g" and refs[2]["year"] == 2011 and refs[2]["month"] == 11 and refs[2]["day"] == 12 and refs[2]["page"] == 8
+    assert refs[3]["pub"] == "wp" and refs[3]["year"] == 2016
+    assert refs[4]["pub"] == "km" and refs[4]["year"] == 2005 and refs[4]["month"] == 5 and refs[4]["day"] == 9
 
 
 def test_key_words_skip_stopwords_and_citations():

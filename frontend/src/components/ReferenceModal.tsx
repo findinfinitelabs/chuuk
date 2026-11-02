@@ -22,7 +22,7 @@ interface SentenceRow { text: string; hit: boolean; words: Word[]; english_indic
 interface Paragraph { number: number; pid: string; en: string | null; chk: string | null; en_sentences: SentenceRow[]; chk_sentences: SentenceRow[] | null }
 export interface ResolvedReference {
   ref: string; kind: string; key_words: string[]; title: { en: string; chk: string }
-  links: { en: string | null; chk: string | null }; chuukese_available: boolean; paragraphs: Paragraph[]; note: string; cached?: boolean; stored?: boolean
+  links: { en: string | null; chk: string | null; search?: string | null }; chuukese_available: boolean; paragraphs: Paragraph[]; note: string; cached?: boolean; stored?: boolean
   maps?: { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
 }
 
@@ -75,6 +75,7 @@ export default function ReferenceModal({ reference, context, opened, onClose, po
               <Switch size="sm" label="English" checked={showEnglish} onChange={(e) => setShowEnglish(e.currentTarget.checked)} />
               {data.links.chk && <Anchor href={data.links.chk} target="_blank" rel="noopener noreferrer"><Group gap={4}><IconExternalLink size={14} />Open Chuukese</Group></Anchor>}
               {data.links.en && <Anchor href={data.links.en} target="_blank" rel="noopener noreferrer"><Group gap={4}><IconExternalLink size={14} />Open English</Group></Anchor>}
+              {data.links.search && data.links.search !== data.links.en && <Anchor href={data.links.search} target="_blank" rel="noopener noreferrer" c="dimmed"><Group gap={4}><IconExternalLink size={14} />Search citation on WOL</Group></Anchor>}
               <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true)}>Refresh</Button>
             </Group>
           </Group>
