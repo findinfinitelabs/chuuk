@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 
+from src.core.outline_refs import find_references
 from src.utils.scripture_parser import get_scripture_reference_pattern
 
 _REF = re.compile(get_scripture_reference_pattern())
@@ -84,7 +85,7 @@ def parse_outline(text: str, language: str | None = None) -> dict:
     def new_point(label: str, body: str) -> dict:
         nonlocal counter
         counter += 1
-        return {"id": f"p{counter}", "label": label, "text": _clean(body), "scriptures": _scriptures(body), "minutes": _minutes(body), "children": []}
+        return {"id": f"p{counter}", "label": label, "text": _clean(body), "scriptures": _scriptures(body), "references": find_references(body), "minutes": _minutes(body), "children": []}
 
     for raw in lines:
         indented = raw.startswith((" ", "\t"))

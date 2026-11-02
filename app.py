@@ -6887,7 +6887,15 @@ from src.api.conversation import create_blueprint as _conversation_blueprint  # 
 app.register_blueprint(_conversation_blueprint(lambda: dict_db, login_required, _cosmos_retry))
 from src.api.talks import create_blueprint as _talks_blueprint  # noqa: E402
 
-app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos_retry, fetch_scripture_from_jworg))
+def _gloss_map(text: str) -> dict:
+    """{chuukese word: english gloss} for the words of `text` (Talk Builder highlights)."""
+    try:
+        return {k: (v.get("english") or "") for k, v in _analyze_text(text)["dictionary"].items()}
+    except Exception:
+        return {}
+
+
+app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos_retry, fetch_scripture_from_jworg, _gloss_map))
 
 
 # Catch-all route for React (must be last)

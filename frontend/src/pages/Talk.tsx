@@ -21,11 +21,13 @@ import {
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { invalidateTalks } from '../components/AddToTalk'
+import ReferenceModal from '../components/ReferenceModal'
 import styles from './Talk.module.css'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface Point { id: string; label: string; text: string; scriptures: string[]; minutes: number | null; children?: Point[] }
+interface Reference { raw: string; kind: string }
+interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
 interface Outline { title: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line { id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string }
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string }
@@ -232,6 +234,7 @@ export default function TalkBuilder() {
   const [preview, setPreview] = useState<Outline | null>(null)
   const [parsing, setParsing] = useState(false)
   const [editOutline, setEditOutline] = useState(false)
+  const [refOpen, setRefOpen] = useState<{ ref: string; context: string; label: string } | null>(null)
 
   const loadTalks = useCallback(async () => { try { setTalks((await axios.get('/api/talks')).data) } catch { /* list only */ } }, [])
   useEffect(() => { loadTalks() }, [loadTalks])
@@ -323,6 +326,14 @@ export default function TalkBuilder() {
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
           </Group>
         </Group>
+        {(p.references || []).length > 0 && (
+          <Group gap={6} mt={6}>
+            <Text size="xs" c="dimmed">References:</Text>
+            {p.references!.map((r) => (
+              <Badge key={r.raw} component="button" variant="light" color="violet" style={{ cursor: 'pointer' }} onClick={() => setRefOpen({ ref: r.raw, context: p.text, label: p.label || '' })}>{r.raw}</Badge>
+            ))}
+          </Group>
+        )}
         {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} />)}
         <Stack gap="xs" mt="sm">
           {rows.map((l, i) => (
@@ -425,6 +436,7 @@ export default function TalkBuilder() {
         </Box>
       </div>
 
+      <ReferenceModal reference={refOpen?.ref || null} context={refOpen?.context || ''} pointLabel={refOpen?.label} opened={!!refOpen} onClose={() => setRefOpen(null)} />
       {delivering && talk && <Deliver talk={talk} verses={verses} showEnglish={showEnglish} onClose={() => setDelivering(false)} />}
 
       <Modal opened={importOpen} onClose={() => { setImportOpen(false); setPreview(null) }} title="New talk from an outline" size="xl">
@@ -442,7 +454,7 @@ export default function TalkBuilder() {
               <Divider my="xs" />
               {preview.points.map((p) => (
                 <Box key={p.id} mb={4}>
-                  <Text size="sm"><b>{p.label ? `${p.label}. ` : ''}</b>{p.text}{p.minutes ? <Text span c="dimmed"> ({p.minutes} min)</Text> : null}{p.scriptures.length ? <Text span c="violet"> · {p.scriptures.join('; ')}</Text> : null}</Text>
+                  <Text size="sm"><b>{p.label ? `${p.label}. ` : ''}</b>{p.text}{p.minutes ? <Text span c="dimmed"> ({p.minutes} min)</Text> : null}{p.scriptures.length ? <Text span c="violet"> · {p.scriptures.join('; ')}</Text> : null}{(p.references || []).length ? <Text span c="grape"> · {p.references!.map((r) => r.raw).join('; ')}</Text> : null}</Text>
                   {(p.children || []).map((c) => <Text key={c.id} size="sm" pl="lg" c="dimmed">{c.label ? `${c.label}. ` : '· '}{c.text}{c.scriptures.length ? <Text span c="violet"> · {c.scriptures.join('; ')}</Text> : null}</Text>)}
                 </Box>
               ))}

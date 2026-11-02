@@ -47,7 +47,7 @@ def _line(data: dict) -> dict:
     }
 
 
-def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable) -> Blueprint:
+def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, glosser: Callable | None = None) -> Blueprint:
     bp = Blueprint("talks", __name__)
 
     def col():
@@ -138,6 +138,41 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 "verses": rows,
             }
         return jsonify(out)
+
+    # ---------------------------------------------------------- references
+
+    @bp.route("/api/talks/references/resolve", methods=["POST"])
+    @login_required
+    def api_resolve_reference():
+        """The article, paragraph(s) and Chuukese for one outline citation,
+        key phrases of the outline point marked. Resolved results are cached
+        in `outline_refs`; pages fetched from wol.jw.org are cached in
+        `wol_pages`, so a reference costs the site at most once."""
+        from src.core.outline_refs import Resolver, find_references
+        from src.core.wol_pages import PageFetcher
+
+        data = request.get_json(silent=True) or {}
+        raw = (data.get("ref") or "").strip()
+        context = (data.get("context") or "").strip()
+        refs = find_references(raw)
+        if not refs:
+            return jsonify({"error": "Not a reference I can resolve"}), 400
+        ref = refs[0]
+        db = getattr(get_db(), "db", None)
+        cache = db["outline_refs"] if db is not None else None
+        key = {"ref": ref["raw"].lower(), "context": context.lower()[:300]}
+        if cache is not None and not data.get("refresh"):
+            hit = cosmos_retry(lambda: cache.find_one(key, {"_id": 0, "result": 1}))
+            if hit:
+                return jsonify({**hit["result"], "cached": True})
+        resolver = Resolver(PageFetcher(db).get, glosser)
+        try:
+            result = resolver.resolve(ref, context)
+        except Exception as e:
+            return jsonify({"error": f"Could not resolve the reference: {e}"}), 502
+        if cache is not None and (result["paragraphs"] or result["links"]["en"]):
+            cosmos_retry(lambda: cache.update_one(key, {"$set": {**key, "result": result, "resolved_at": datetime.now(timezone.utc)}}, upsert=True))
+        return jsonify(result)
 
     # --------------------------------------------------------------- talks
 
