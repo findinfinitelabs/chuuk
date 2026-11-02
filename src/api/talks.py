@@ -47,7 +47,10 @@ def _line(data: dict) -> dict:
     }
 
 
-def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, glosser: Callable | None = None) -> Blueprint:
+def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, analyzer: Callable | None = None) -> Blueprint:
+    """`analyzer(text)` returns the dictionary / similar / phrases maps the
+    gloss hover uses on the other pages; stored with each verse and article
+    so the talk never needs the dictionary again to show them."""
     bp = Blueprint("talks", __name__)
 
     def col():
@@ -55,6 +58,25 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         if db is None or getattr(db, "db", None) is None:
             return None
         return db.db[COLLECTION]
+
+    def maps_for(chk_text: str) -> dict:
+        if not analyzer or not chk_text:
+            return {"dictionary": {}, "similar": {}, "phrases": {}}
+        try:
+            m = analyzer(chk_text)
+            return {"dictionary": m.get("dictionary", {}), "similar": m.get("similar", {}), "phrases": m.get("phrases", {})}
+        except Exception:
+            return {"dictionary": {}, "similar": {}, "phrases": {}}
+
+    def gloss_map(chk_text: str) -> dict:
+        return {k: (v.get("english") or "") for k, v in maps_for(chk_text)["dictionary"].items()}
+
+    def talk_doc(talk_id, projection=None):
+        c = col()
+        oid = oid_of(talk_id) if talk_id else None
+        if c is None or oid is None:
+            return None, None
+        return oid, cosmos_retry(lambda: c.find_one({"_id": oid}, projection))
 
     def oid_of(value):
         from bson import ObjectId
@@ -105,8 +127,14 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         from src.core import wol_bible
         from src.core.scripture_refs import BOOKS, expand
 
-        out = {}
+        # Verses already stored with the talk are returned as they are.
+        oid, talk = talk_doc(data.get("talk_id"), {"scriptures": 1})
+        stored = {s["ref"]: s for s in (talk or {}).get("scriptures") or []}
+        out = {ref: stored[ref] for ref in refs if ref in stored}
+        new_entries = []
         for ref in refs:
+            if ref in out:
+                continue
             verses = expand(ref)
             if not verses:
                 out[ref] = {"chuukese": "", "english": "", "error": "Could not read this citation", "verses": []}
@@ -131,12 +159,22 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 elif not chk:
                     errors.append(f"{label}: no Chuukese text (Hebrew Scriptures are not on WOL in Chuukese)")
                 rows.append({"ref": label, "chuukese": chk, "english": eng})
-            out[ref] = {
-                "chuukese": " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['chuukese']}".strip() for v in rows if v["chuukese"]),
+            chk_text = " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['chuukese']}".strip() for v in rows if v["chuukese"])
+            entry = {
+                "ref": ref,
+                "chuukese": chk_text,
                 "english": " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['english']}".strip() for v in rows if v["english"]),
                 "error": "; ".join(errors) or None,
                 "verses": rows,
+                "maps": maps_for(chk_text),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
             }
+            out[ref] = entry
+            if entry["chuukese"] or entry["english"]:
+                new_entries.append(entry)
+        if oid is not None and new_entries:
+            keep = [s for s in (talk or {}).get("scriptures") or [] if s["ref"] not in {e["ref"] for e in new_entries}]
+            cosmos_retry(lambda: col().update_one({"_id": oid}, {"$set": {"scriptures": keep + new_entries}}))
         return jsonify(out)
 
     # ---------------------------------------------------------- references
@@ -159,19 +197,33 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             return jsonify({"error": "Not a reference I can resolve"}), 400
         ref = refs[0]
         db = getattr(get_db(), "db", None)
-        cache = db["outline_refs"] if db is not None else None
         key = {"ref": ref["raw"].lower(), "context": context.lower()[:300]}
+        # First the copy stored with the talk, then the shared cache, then wol.jw.org.
+        oid, talk = talk_doc(data.get("talk_id"), {"references": 1})
+        if talk and not data.get("refresh"):
+            for r in talk.get("references") or []:
+                if r.get("key") == key:
+                    return jsonify({**r["result"], "cached": True, "stored": True})
+        cache = db["outline_refs"] if db is not None else None
+        result = None
         if cache is not None and not data.get("refresh"):
             hit = cosmos_retry(lambda: cache.find_one(key, {"_id": 0, "result": 1}))
             if hit:
-                return jsonify({**hit["result"], "cached": True})
-        resolver = Resolver(PageFetcher(db).get, glosser)
-        try:
-            result = resolver.resolve(ref, context)
-        except Exception as e:
-            return jsonify({"error": f"Could not resolve the reference: {e}"}), 502
-        if cache is not None and (result["paragraphs"] or result["links"]["en"]):
-            cosmos_retry(lambda: cache.update_one(key, {"$set": {**key, "result": result, "resolved_at": datetime.now(timezone.utc)}}, upsert=True))
+                result = {**hit["result"], "cached": True}
+        if result is None:
+            resolver = Resolver(PageFetcher(db).get, gloss_map)
+            try:
+                result = resolver.resolve(ref, context)
+            except Exception as e:
+                return jsonify({"error": f"Could not resolve the reference: {e}"}), 502
+            if cache is not None and (result["paragraphs"] or result["links"]["en"]):
+                cosmos_retry(lambda: cache.update_one(key, {"$set": {**key, "result": result, "resolved_at": datetime.now(timezone.utc)}}, upsert=True))
+        if "maps" not in result:
+            result["maps"] = maps_for(" ".join(p["chk"] for p in result["paragraphs"] if p.get("chk")))
+        if oid is not None and (result["paragraphs"] or result["links"]["en"]):
+            keep = [r for r in (talk or {}).get("references") or [] if r.get("key") != key]
+            stored = {k: v for k, v in result.items() if k not in ("cached", "stored")}
+            cosmos_retry(lambda: col().update_one({"_id": oid}, {"$set": {"references": keep + [{"key": key, "result": stored, "resolved_at": datetime.now(timezone.utc)}]}}))
         return jsonify(result)
 
     # --------------------------------------------------------------- talks

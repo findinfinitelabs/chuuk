@@ -89,9 +89,11 @@ function groupAppearances(appearances: Appearance[]): Appearance[] {
 /** Every word of `text` tinted by dictionary status; hovering a known or
  *  near-known word reports a Gloss through `onGloss` (null on leave). */
 export function GlossedWords({
-  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '',
+  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks,
 }: {
   text: string
+  /** Lowercase words to mark as key phrases (yellow), on top of the dictionary tint. */
+  marks?: Set<string>
   dictionary: Dictionary
   similar: SimilarMap
   /** Multi-word headwords to underline as one unit when they occur. */
@@ -132,10 +134,11 @@ export function GlossedWords({
     const tint = status ? styles[status] : undefined
 
     const hoverable = entry || near || span
+    const marked = marks?.has(lower.replace(/[^\p{L}\p{N}]/gu, '')) ? ` ${styles.mark}` : ''
     return (
       <span
         key={key}
-        className={`${styles.word}${tint ? ` ${tint}` : ''}${phraseClass}${onWordClick ? ` ${styles.clickable}` : ''}`}
+        className={`${styles.word}${tint ? ` ${tint}` : ''}${phraseClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}`}
         onClick={onWordClick ? () => onWordClick(tok) : undefined}
         onMouseEnter={
           hoverable

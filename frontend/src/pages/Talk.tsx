@@ -22,6 +22,9 @@ import {
 import axios from 'axios'
 import { invalidateTalks } from '../components/AddToTalk'
 import ReferenceModal from '../components/ReferenceModal'
+import { GlossCard, GlossLegend, GlossedWords } from '../components/GlossedText'
+import type { Dictionary, Gloss, SimilarMap } from '../components/GlossedText'
+import type { PhraseMap } from '../components/glossUtils'
 import styles from './Talk.module.css'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -30,9 +33,10 @@ interface Reference { raw: string; kind: string }
 interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
 interface Outline { title: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line { id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string }
-interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string }
+interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
-interface Verse { chuukese: string; english: string; error: string | null }
+interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
+interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps }
 
 const errorMessage = (e: unknown, fallback: string) =>
   (axios.isAxiosError(e) && (e.response?.data?.error as string)) || (e instanceof Error ? e.message : fallback)
@@ -136,13 +140,17 @@ function AddLine({ onAdd }: { onAdd: (l: Omit<Line, 'id'>) => void }) {
 
 // ── Verse box ───────────────────────────────────────────────────────────────
 
-function VerseBox({ cite, verse, showEnglish }: { cite: string; verse?: Verse; showEnglish: boolean }) {
+function VerseBox({ cite, verse, showEnglish, onGloss }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void }) {
   return (
     <Box className={styles.verse} mt={6}>
       <Text size="xs" fw={700} c="violet">{cite}</Text>
       {!verse ? <Text size="xs" c="dimmed">Loading…</Text> : (
         <>
-          {verse.chuukese && <Text className={styles.verseChk}>{verse.chuukese}</Text>}
+          {verse.chuukese && (
+            <Text className={styles.verseChk}>
+              {verse.maps && onGloss ? <GlossedWords text={verse.chuukese} dictionary={verse.maps.dictionary} similar={verse.maps.similar} phrases={verse.maps.phrases} onGloss={onGloss} keyPrefix={`${cite}-`} /> : verse.chuukese}
+            </Text>
+          )}
           {showEnglish && verse.english && <Text size="sm" c="dimmed">{verse.english}</Text>}
           {!verse.chuukese && !verse.english && <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>}
         </>
@@ -235,6 +243,7 @@ export default function TalkBuilder() {
   const [parsing, setParsing] = useState(false)
   const [editOutline, setEditOutline] = useState(false)
   const [refOpen, setRefOpen] = useState<{ ref: string; context: string; label: string } | null>(null)
+  const [gloss, setGloss] = useState<Gloss | null>(null)
 
   const loadTalks = useCallback(async () => { try { setTalks((await axios.get('/api/talks')).data) } catch { /* list only */ } }, [])
   useEffect(() => { loadTalks() }, [loadTalks])
@@ -243,12 +252,17 @@ export default function TalkBuilder() {
   const refs = useMemo(() => allRefs(talk?.outline || null), [talk?.outline])
   useEffect(() => {
     const missing = refs.filter((r) => !verses[r])
-    if (!missing.length) return
-    axios.post('/api/talks/scriptures', { refs: missing }).then((r) => setVerses((v) => ({ ...v, ...r.data }))).catch(() => undefined)
-  }, [refs, verses])
+    if (!missing.length || !talk) return
+    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id }).then((r) => setVerses((v) => ({ ...v, ...r.data }))).catch(() => undefined)
+  }, [refs, verses, talk])
 
   const open = async (id: string) => {
-    try { setTalk((await axios.get(`/api/talks/${id}`)).data); setDirty(false); setEditOutline(false) } catch (e) { setError(errorMessage(e, 'Could not open the talk')) }
+    try {
+      const doc: Talk = (await axios.get(`/api/talks/${id}`)).data
+      // Verses stored with the talk show at once; nothing is fetched again.
+      setVerses((v) => ({ ...v, ...Object.fromEntries((doc.scriptures || []).map((s) => [s.ref, s])) }))
+      setTalk(doc); setDirty(false); setEditOutline(false)
+    } catch (e) { setError(errorMessage(e, 'Could not open the talk')) }
   }
   const save = async () => {
     if (!talk) return
@@ -334,7 +348,7 @@ export default function TalkBuilder() {
             ))}
           </Group>
         )}
-        {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} />)}
+        {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} />)}
         <Stack gap="xs" mt="sm">
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
@@ -358,6 +372,7 @@ export default function TalkBuilder() {
           <Text c="dimmed" size="sm">Bring in an outline, collect Chuukese lines under each point as you find them, then deliver from the large-type view.</Text>
         </div>
         <Group gap="xs">
+          {talk && <GlossLegend />}
           <Switch label="English" checked={showEnglish} onChange={(e) => setShowEnglish(e.currentTarget.checked)} />
           <Button variant="default" leftSection={<IconUpload size={16} />} onClick={() => setImportOpen(true)}>New talk from outline</Button>
           {talk && <Button variant="light" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>Print</Button>}
@@ -396,7 +411,7 @@ export default function TalkBuilder() {
                   <Box style={{ flex: 1, minWidth: 260 }}>
                     {editOutline ? <TextInput label="Title" value={talk.title} onChange={(e) => mutate((t) => ({ ...t, title: e.currentTarget.value }))} /> : <Title order={3}>{talk.title}</Title>}
                     {talk.outline.theme_scripture && <Text c="violet" fw={600} mt={4}>Theme: {talk.outline.theme_scripture}</Text>}
-                    {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} />}
+                    {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} onGloss={setGloss} />}
                   </Box>
                   <Stack gap={4} align="flex-end">
                     <Group gap="xs">
@@ -436,7 +451,8 @@ export default function TalkBuilder() {
         </Box>
       </div>
 
-      <ReferenceModal reference={refOpen?.ref || null} context={refOpen?.context || ''} pointLabel={refOpen?.label} opened={!!refOpen} onClose={() => setRefOpen(null)} />
+      <ReferenceModal reference={refOpen?.ref || null} context={refOpen?.context || ''} pointLabel={refOpen?.label} opened={!!refOpen} onClose={() => setRefOpen(null)} talkId={talk?.id} />
+      {gloss && <GlossCard gloss={gloss} />}
       {delivering && talk && <Deliver talk={talk} verses={verses} showEnglish={showEnglish} onClose={() => setDelivering(false)} />}
 
       <Modal opened={importOpen} onClose={() => { setImportOpen(false); setPreview(null) }} title="New talk from an outline" size="xl">

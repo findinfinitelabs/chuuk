@@ -158,3 +158,6 @@
   margin-right: 5px;
   vertical-align: -1px;
 }
+
+/* A key phrase of the learner's outline, on top of the dictionary tint. */
+.mark { background: #ffd43b; border-radius: 3px; box-shadow: 0 0 0 1px #ffd43b; }

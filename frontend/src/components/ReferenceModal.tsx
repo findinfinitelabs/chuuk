@@ -13,13 +13,17 @@ import { Alert, Anchor, Badge, Box, Button, Divider, Group, Loader, Modal, Paper
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react'
 import axios from 'axios'
 import AddToTalk from './AddToTalk'
+import { GlossCard, GlossLegend, GlossedWords } from './GlossedText'
+import type { Dictionary, Gloss, SimilarMap } from './GlossedText'
+import type { PhraseMap } from './glossUtils'
 
 interface Word { text: string; hit: boolean }
 interface SentenceRow { text: string; hit: boolean; words: Word[]; english_indices?: number[] }
 interface Paragraph { number: number; pid: string; en: string | null; chk: string | null; en_sentences: SentenceRow[]; chk_sentences: SentenceRow[] | null }
 export interface ResolvedReference {
   ref: string; kind: string; key_words: string[]; title: { en: string; chk: string }
-  links: { en: string | null; chk: string | null }; chuukese_available: boolean; paragraphs: Paragraph[]; note: string; cached?: boolean
+  links: { en: string | null; chk: string | null }; chuukese_available: boolean; paragraphs: Paragraph[]; note: string; cached?: boolean; stored?: boolean
+  maps?: { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
 }
 
 const errorMessage = (e: unknown, fallback: string) =>
@@ -33,9 +37,10 @@ function Marked({ row, big }: { row: SentenceRow; big?: boolean }) {
   )
 }
 
-export default function ReferenceModal({ reference, context, opened, onClose, pointLabel }: {
-  reference: string | null; context: string; opened: boolean; onClose: () => void; pointLabel?: string
+export default function ReferenceModal({ reference, context, opened, onClose, pointLabel, talkId }: {
+  reference: string | null; context: string; opened: boolean; onClose: () => void; pointLabel?: string; talkId?: string
 }) {
+  const [gloss, setGloss] = useState<Gloss | null>(null)
   const [data, setData] = useState<ResolvedReference | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -45,7 +50,7 @@ export default function ReferenceModal({ reference, context, opened, onClose, po
     if (!reference) return
     setLoading(true); setError(''); if (refresh) setData(null)
     try {
-      const res = await axios.post<ResolvedReference>('/api/talks/references/resolve', { ref: reference, context, refresh })
+      const res = await axios.post<ResolvedReference>('/api/talks/references/resolve', { ref: reference, context, refresh, talk_id: talkId })
       setData(res.data)
     } catch (e) {
       setError(errorMessage(e, 'Could not resolve the reference'))
@@ -74,6 +79,7 @@ export default function ReferenceModal({ reference, context, opened, onClose, po
             </Group>
           </Group>
           {data.note && <Alert color={data.chuukese_available ? 'yellow' : 'orange'} py={6}><Text size="sm">{data.note}</Text></Alert>}
+          {data.maps && <Group justify="space-between" wrap="wrap"><GlossLegend /><Text size="xs" c="dimmed">Hover a Chuukese word for its dictionary gloss.{data.stored ? ' Stored with this talk.' : ''}</Text></Group>}
           {data.key_words.length > 0 && (
             <Text size="xs" c="dimmed">Key phrases from your outline: {data.key_words.map((k) => <Badge key={k} size="xs" variant="outline" color="yellow" mr={4}>{k}</Badge>)}</Text>
           )}
@@ -88,7 +94,12 @@ export default function ReferenceModal({ reference, context, opened, onClose, po
                       <Stack gap={4}>
                         {p.chk_sentences.map((row, i) => (
                           <Group key={i} gap={6} wrap="nowrap" align="flex-start">
-                            <Box style={{ flex: 1 }}><Marked row={row} big /></Box>
+                            <Box style={{ flex: 1, background: row.hit ? 'rgba(255, 212, 59, 0.25)' : undefined, borderRadius: 4, padding: '1px 3px', fontSize: '1.08rem', fontWeight: 600, lineHeight: 1.4 }}>
+                              {data.maps ? (
+                                <GlossedWords text={row.text} dictionary={data.maps.dictionary} similar={data.maps.similar} phrases={data.maps.phrases} onGloss={setGloss} keyPrefix={`${p.pid}-${i}-`}
+                                  marks={new Set(row.words.filter((w) => w.hit).map((w) => w.text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')))} />
+                              ) : <Marked row={row} big />}
+                            </Box>
                             <AddToTalk chk={row.text} en={(row.english_indices || []).map((k) => p.en_sentences[k]?.text).filter(Boolean).join(' ')} source="article" reference={`${data.ref} ¶${p.number}`} size="xs" />
                           </Group>
                         ))}
@@ -111,6 +122,7 @@ export default function ReferenceModal({ reference, context, opened, onClose, po
           {data.paragraphs.length === 0 && !data.note && <Text size="sm" c="dimmed">No paragraph text to show.</Text>}
         </Stack>
       )}
+      {gloss && <GlossCard gloss={gloss} />}
     </Modal>
   )
 }
