@@ -30,7 +30,7 @@ from typing import Callable
 from flask import Blueprint, current_app, jsonify, request
 
 from src.api import user_library as _lib
-from src.core.talk_outline import extract_text, parse_outline
+from src.core.talk_outline import extract_text, parse_outline, restructure
 
 COLLECTION = "talks"
 META = {"title": 1, "language": 1, "outline.title": 1, "outline.total_minutes": 1, "line_count": 1, "created_at": 1, "updated_at": 1, "created_by": 1}
@@ -106,6 +106,17 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         out = dict(doc)
         out["id"] = str(out.pop("_id"))
         refresh_references(out.get("outline"))
+        if out.get("outline"):
+            # Outlines imported before headings were recognised get their
+            # sections back; lines under a dropped note or footer go to unsorted.
+            out["outline"] = restructure(out["outline"])
+            lines = out.get("lines") or {}
+            for pid in out["outline"].pop("dropped", []):
+                if lines.get(pid):
+                    lines["unsorted"] = (lines.get("unsorted") or []) + lines.pop(pid)
+            out["lines"] = lines
+            if out["outline"].get("number") and (out.get("title") or "").startswith(out["outline"]["number"]):
+                out["title"] = out["outline"]["title"] or out["title"]
         for f in ("created_at", "updated_at"):
             if hasattr(out.get(f), "isoformat"):
                 out[f] = out[f].isoformat()

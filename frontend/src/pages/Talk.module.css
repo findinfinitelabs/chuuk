@@ -25,10 +25,12 @@
 .sectionCount { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
 
 /* A sub-point inside a section: white card, bold subheading and its own time. */
-.point { border-left: 5px solid var(--mantine-color-violet-5); background: var(--mantine-color-body); }
+.point { border-left: 5px solid var(--mantine-color-violet-5); background: var(--mantine-color-body); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .pointEmpty { border-left-color: var(--mantine-color-orange-4); }
 .pointLabel { font-size: 1.3rem; font-weight: 800; color: var(--mantine-color-violet-6); min-width: 2rem; }
-.pointTitle { font-size: 1.08rem; font-weight: 800; line-height: 1.3; }
+.pointTitle { font-size: 1.18rem; font-weight: 800; line-height: 1.3; color: var(--mantine-color-violet-9); }
+:global([data-mantine-color-scheme="dark"]) .pointTitle { color: var(--mantine-color-violet-2); }
+.note { font-size: 0.85rem; font-style: italic; color: var(--mantine-color-dimmed); margin-top: 4px; max-width: 70ch; }
 .child { margin-left: 0; }
 .line { border-left: 3px solid transparent; }
 .lineConfirmed { border-left-color: var(--mantine-color-green-5); }

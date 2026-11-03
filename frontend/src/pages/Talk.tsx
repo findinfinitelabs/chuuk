@@ -33,7 +33,7 @@ import styles from './Talk.module.css'
 
 interface Reference { raw: string; kind: string }
 interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
-interface Outline { title: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
+interface Outline { title: string; number?: string; note?: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line { id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string }
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
@@ -561,14 +561,15 @@ export default function TalkBuilder() {
               <Card withBorder radius="md" p="md" mb="sm">
                 <Group justify="space-between" wrap="wrap" align="flex-start">
                   <Box style={{ flex: 1, minWidth: 260 }}>
-                    {editOutline ? <TextInput label="Title" value={talk.title} onChange={(e) => mutate((t) => ({ ...t, title: e.currentTarget.value }))} /> : <Title order={3}>{talk.title}</Title>}
+                    {editOutline ? <TextInput label="Title" value={talk.title} onChange={(e) => mutate((t) => ({ ...t, title: e.currentTarget.value }))} /> : <Group gap="sm" align="baseline">{talk.outline.number && <Badge variant="outline" color="gray">{talk.outline.number}</Badge>}<Title order={3}>{talk.title}</Title></Group>}
+                    {talk.outline.note && <Text className={styles.note}>{talk.outline.note}</Text>}
                     {talk.outline.theme_scripture && <Text c="violet" fw={600} mt={4}>Theme: {talk.outline.theme_scripture}</Text>}
                     {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} onGloss={setGloss} />}
                   </Box>
                   <Stack gap={4} align="flex-end">
                     <Group gap="xs">
                       <Badge variant="light">{talk.outline.language === 'chk' ? 'Chuukese outline' : 'English outline'}</Badge>
-                      {talk.outline.total_minutes && <Badge variant="light" color="gray">{talk.outline.total_minutes} min</Badge>}
+                      {talk.outline.total_minutes && <Badge size="lg" variant="filled" color="violet">{talk.outline.total_minutes} min</Badge>}
                       <Button size="xs" variant={editOutline ? 'filled' : 'default'} leftSection={<IconEdit size={14} />} onClick={() => setEditOutline((e) => !e)}>{editOutline ? 'Done editing outline' : 'Edit outline'}</Button>
                     </Group>
                     <Box w={260}>

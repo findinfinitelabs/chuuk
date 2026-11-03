@@ -28,6 +28,10 @@ _REF = re.compile(get_scripture_reference_pattern())
 _TIME = re.compile(r"\(\s*(\d{1,3})\s*min(?:ute)?s?\.?\s*\)|\b(\d{1,3})\s*min\.(?=\s|$)", re.I)
 _MAIN = re.compile(r"^\s*(?:(\d{1,2})[.)]|([IVX]{1,4})[.)]|§)\s+(.*)$")
 _SUB = re.compile(r"^\s*(?:([A-Za-z])[.)]|[•·\-–—*]|(\d{1,2})[.)](\d{1,2})[.)]?)\s+(.*)$")
+_NOTE = re.compile(r"^\s*(?:PLEASE\s+)?NOTE\s*:", re.I)
+_TOTAL = re.compile(r"TO BE COVERED IN\s+(\d{1,3})\s*MIN", re.I)
+_BOILER = re.compile(r"^\s*(?:\[?Adhere closely|TO BE COVERED IN|©|S-\d+-[A-Z]+\b|\(?No\.\s*\d+\)?\s*$)", re.I)
+_NUMBER = re.compile(r"^\s*(No\.\s*\d+)\s*(?=\S)")
 _LANG_CHK = re.compile(r"\b(me|ngeni|ewe|ekkewe|pwe|iwe|nge|ren|ach|án|wóón|lón|seni|aramas|Jiowa|Kot)\b")
 
 
@@ -56,6 +60,61 @@ def _clean(text: str) -> str:
     text = _TIME.sub("", text or "")
     text = re.sub(r"\(\s*\)", "", text)  # parentheses emptied by removing a citation
     return re.sub(r"\s+", " ", text).strip(" :;,-–—")
+
+
+def is_heading(text: str) -> bool:
+    """A section heading of a printed outline: a line set entirely in capitals
+    ("TRUE FAITH IS SHOWN BY ACTIONS"), at least four letters long."""
+    letters = re.sub(r"[^A-Za-zÀ-ÿ]", "", text or "")
+    return len(letters) >= 4 and letters.upper() == letters
+
+
+def restructure(outline: dict) -> dict:
+    """Give an outline whose headings were lost as sub-points their structure
+    back: every capitalised heading becomes a section, the lines after it its
+    points; "PLEASE NOTE" text becomes the outline's note; the printed
+    footer (timing reminder, copyright, form number) is dropped. Point ids
+    are kept, so lines collected under them stay attached. Outlines with no
+    capitalised heading are returned unchanged."""
+    points = outline.get("points") or []
+    flat = []
+    for p in points:
+        flat.append(p)
+        flat.extend(p.get("children") or [])
+    if not any(is_heading(p.get("text", "")) for p in flat):
+        return outline
+    sections, note, dropped = [], [], []
+    total = outline.get("total_minutes")
+    for p in flat:
+        text = p.get("text", "")
+        m_total = _TOTAL.search(text)
+        if m_total:
+            total = int(m_total.group(1))
+            dropped.append(p["id"])
+            continue
+        if _NOTE.match(text):
+            note.append(_NOTE.sub("", text).strip())
+            dropped.append(p["id"])
+            continue
+        if _BOILER.match(text):
+            dropped.append(p["id"])
+            continue
+        if is_heading(text) or not sections:
+            p["children"] = []
+            sections.append(p)
+        else:
+            p.pop("children", None)
+            sections[-1]["children"].append(p)
+    out = dict(outline)
+    out["points"] = sections
+    out["note"] = " ".join(note) or outline.get("note") or ""
+    out["dropped"] = dropped
+    out["total_minutes"] = total or sum(s.get("minutes") or 0 for s in sections) or None
+    m = _NUMBER.match(out.get("title") or "")
+    if m:
+        out["number"] = m.group(1)
+        out["title"] = out["title"][m.end():].strip()
+    return out
 
 
 def parse_outline(text: str, language: str | None = None) -> dict:
@@ -117,7 +176,7 @@ def parse_outline(text: str, language: str | None = None) -> dict:
     total = sum(p["minutes"] or 0 for p in points) + sum(c["minutes"] or 0 for p in points for c in p["children"] if not p["minutes"])
     out["points"] = points
     out["total_minutes"] = total or None
-    return out
+    return restructure(out)
 
 
 def extract_text(filename: str, data: bytes) -> str:
