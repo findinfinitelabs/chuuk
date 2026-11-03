@@ -11,6 +11,7 @@ user library.
 Routes
     POST   /api/talks/parse-outline        {text, language?} or multipart `file`
     POST   /api/talks/scriptures           {refs: [...]} → {ref: {chuukese, english, error}}
+    POST   /api/talks/alternatives         {chk} → published sentences close to the line, with English
     GET    /api/talks                       the caller's talks (metadata)
     POST   /api/talks                       create {title, language, outline, lines}
     GET    /api/talks/<id>
@@ -23,7 +24,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from flask import Blueprint, current_app, jsonify, request
@@ -47,10 +48,11 @@ def _line(data: dict) -> dict:
     }
 
 
-def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, analyzer: Callable | None = None) -> Blueprint:
+def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, analyzer: Callable | None = None, wol_search: Callable | None = None) -> Blueprint:
     """`analyzer(text)` returns the dictionary / similar / phrases maps the
     gloss hover uses on the other pages; stored with each verse and article
-    so the talk never needs the dictionary again to show them."""
+    so the talk never needs the dictionary again to show them. `wol_search()`
+    returns the shared WOLSearch client for line alternatives."""
     bp = Blueprint("talks", __name__)
 
     def col():
@@ -144,6 +146,39 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         if not texts:
             return jsonify({"dictionary": {}, "similar": {}, "phrases": {}})
         return jsonify(maps_for(" ".join(texts)))
+
+    @bp.route("/api/talks/alternatives", methods=["POST"])
+    @login_required
+    def api_alternatives():
+        """Published sentences close to one line, from wol.jw.org and the
+        stored pairs, with their English and the gloss maps. Cached per line
+        for a week in `line_alternatives`; `refresh` searches again."""
+        from src.core.line_alternatives import Finder, _norm
+
+        data = request.get_json(silent=True) or {}
+        chk = (data.get("chk") or "").strip()
+        if not chk:
+            return jsonify({"error": "chk is required"}), 400
+        db = getattr(get_db(), "db", None)
+        cache = db["line_alternatives"] if db is not None else None
+        key = _norm(chk)[:300]
+        if cache is not None and not data.get("refresh"):
+            hit = cosmos_retry(lambda: cache.find_one({"key": key}, {"_id": 0, "result": 1, "at": 1}))
+            if hit and hit.get("at") and hit["at"].replace(tzinfo=timezone.utc) > datetime.now(timezone.utc) - timedelta(days=7) and (hit["result"].get("items") or hit["result"].get("wol_reachable")):
+                return jsonify({**hit["result"], "cached": True})
+        wol = None
+        if wol_search:
+            try:
+                wol = wol_search()
+            except Exception as e:  # pragma: no cover
+                current_app.logger.warning("wol client: %s", e)
+        result = Finder(get_db(), wol).find(chk)
+        result["maps"] = maps_for(" ".join(it["chk"] for it in result["items"]))
+        if not result["wol_reachable"]:
+            current_app.logger.warning("alternatives for %r: wol.jw.org not reachable", chk[:60])
+        if cache is not None and (result["items"] or result["wol_reachable"]):
+            cosmos_retry(lambda: cache.update_one({"key": key}, {"$set": {"key": key, "result": result, "at": datetime.now(timezone.utc)}}, upsert=True))
+        return jsonify(result)
 
     @bp.route("/api/talks/scriptures", methods=["POST"])
     @login_required
