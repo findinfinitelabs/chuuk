@@ -12,12 +12,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Divider, FileButton, Group, Loader, Modal, Paper, Progress,
+  Accordion, ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Divider, FileButton, Group, Loader, Modal, Paper, Progress,
   SegmentedControl, Stack, Switch, Text, TextInput, Textarea, Title, Tooltip,
 } from '@mantine/core'
 import {
   IconArrowDown, IconArrowUp, IconCheck, IconChevronLeft, IconChevronRight, IconDeviceFloppy, IconEdit, IconLanguage,
-  IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconTrash, IconUpload, IconX,
+  IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { invalidateTalks } from '../components/AddToTalk'
@@ -84,11 +84,75 @@ function TextWithCitations({ text, references, links }: { text: string; referenc
 
 const allRefs = (o: Outline | null): string[] => Array.from(new Set([o?.theme_scripture || '', ...allPoints(o).flatMap((p) => p.scriptures)].filter(Boolean)))
 
+// ── Alternatives for a line ──────────────────────────────────────────────────
+
+interface Alternative { chk: string; en: string; source: 'wol' | 'library' | 'article' | 'conversation'; reference: string; link: string | null; score: number }
+interface Alternatives { terms: string[]; items: Alternative[]; wol_reachable: boolean; wol_count: number; maps?: Maps; cached?: boolean }
+const SOURCE_LABEL: Record<Alternative['source'], string> = { wol: 'wol.jw.org', library: 'library', article: 'analysed article', conversation: 'conversation' }
+
+/** Published sentences close to the line, behind an accordion; searched when opened. */
+function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
+  line: Line; showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onUse: (a: Alternative) => void; onAdd?: (a: Alternative) => void
+}) {
+  const [open, setOpen] = useState<string | null>(null)
+  const [data, setData] = useState<Alternatives | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const load = async (refresh = false) => {
+    if (!line.chk.trim()) return
+    setLoading(true); setError('')
+    try { const res = await axios.post<Alternatives>('/api/talks/alternatives', { chk: line.chk, refresh }); setData(res.data) } catch (e) { setError(errorMessage(e, 'Could not search')) } finally { setLoading(false) }
+  }
+  useEffect(() => { setData(null) }, [line.chk])
+  useEffect(() => { if (open && !data && !loading) load() }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!line.chk.trim()) return null
+  return (
+    <Accordion value={open} onChange={setOpen} variant="separated" radius="md" mt={6} styles={{ control: { padding: '4px 8px' }, content: { padding: '4px 8px 8px' }, item: { background: 'var(--mantine-color-gray-0)' } }}>
+      <Accordion.Item value="alt">
+        <Accordion.Control icon={<IconSearch size={14} />}>
+          <Group gap={6}><Text size="xs" fw={600}>Similar on wol.jw.org and in the library</Text>{data && <Badge size="xs" variant="light" color={data.items.length ? 'violet' : 'gray'}>{data.items.length}</Badge>}{loading && <Loader size={12} />}</Group>
+        </Accordion.Control>
+        <Accordion.Panel>
+          {error && <Alert color="red" py={4}><Text size="xs">{error}</Text></Alert>}
+          {data && (
+            <Stack gap={6}>
+              <Group gap={6} justify="space-between">
+                <Text size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{!data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}</Text>
+                <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true)}>Search again</Button>
+              </Group>
+              {data.items.length === 0 && <Text size="xs" c="dimmed">Nothing close was found.</Text>}
+              {data.items.map((a, i) => (
+                <Paper key={i} withBorder p="xs" radius="sm">
+                  <Group align="flex-start" wrap="nowrap" justify="space-between">
+                    <Box style={{ flex: 1 }}>
+                      <Text className={styles.chk}>{data.maps && onGloss ? <GlossedWords text={a.chk} dictionary={data.maps.dictionary} similar={data.maps.similar} phrases={data.maps.phrases} onGloss={onGloss} keyPrefix={`${line.id}-alt${i}-`} /> : a.chk}</Text>
+                      {showEnglish && a.en && <Text size="sm" c="dimmed">{a.en}</Text>}
+                      <Group gap={6} mt={2}>
+                        <Badge size="xs" variant="light" color={a.source === 'wol' ? 'violet' : 'teal'}>{SOURCE_LABEL[a.source]}</Badge>
+                        {a.reference && (a.link ? <Anchor size="xs" href={a.link} target="_blank" rel="noopener noreferrer">{a.reference}</Anchor> : <Text size="xs" c="dimmed">{a.reference}</Text>)}
+                        <Text size="xs" c="dimmed">{Math.round(a.score * 100)}% of the words</Text>
+                      </Group>
+                    </Box>
+                    <Group gap={4} wrap="nowrap">
+                      <Tooltip label="Replace this line with it"><Button size="compact-xs" variant="light" onClick={() => onUse(a)}>Use</Button></Tooltip>
+                      {onAdd && <Tooltip label="Add it as another line"><Button size="compact-xs" variant="default" onClick={() => onAdd(a)}>Add</Button></Tooltip>}
+                    </Group>
+                  </Group>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  )
+}
+
 // ── A collected line ────────────────────────────────────────────────────────
 
-function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss }: {
+function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd }: {
   line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void
-  maps?: Maps | null; onGloss?: (g: Gloss | null) => void
+  maps?: Maps | null; onGloss?: (g: Gloss | null) => void; onAdd?: (l: Omit<Line, 'id'>) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [chk, setChk] = useState(line.chk)
@@ -137,6 +201,11 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
             <ActionIcon variant="subtle" color="red" onClick={onRemove}><IconTrash size={16} /></ActionIcon>
           </Group>
         </Group>
+      )}
+      {!editing && (
+        <LineAlternatives line={line} showEnglish={showEnglish} onGloss={onGloss}
+          onUse={(a) => onChange({ ...line, chk: a.chk, en: a.en || line.en, source: a.source, ref: a.reference, confirmed: false })}
+          onAdd={onAdd ? (a) => onAdd({ chk: a.chk, en: a.en, source: a.source, ref: a.reference, confirmed: false, note: '' }) : undefined} />
       )}
     </Paper>
   )
@@ -401,7 +470,7 @@ export default function TalkBuilder() {
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
               <Box style={{ flex: 1 }}>
-                <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
+                <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
               </Box>
             </Group>
           ))}

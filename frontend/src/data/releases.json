@@ -4,8 +4,9 @@
     {
       "version": "1.0.0.3",
       "date": "2026-11-03",
-      "title": "Talk Builder: citations resolve to the article; Hebrew Scriptures in Chuukese",
+      "title": "Talk Builder: article links, Hebrew Scriptures, alternatives for every line",
       "notes": [
+        "Talk Builder: every collected or translated line has a \"Similar on wol.jw.org and in the library\" accordion. Opening it searches wol.jw.org for the line's key words and the sentence pairs already stored in the app (analysed articles, the phrase library, corrected conversation lines), and lists the closest published sentences with their English, glossed, with the citation linked and the share of words in common. Use replaces the line with the published wording; Add keeps both. Results are kept for a week; Search again refreshes them.",
         "Talk Builder: a verse from Genesis to Malachi now shows Chuukese text from the Liebenzell Mission Paipel (1984–2001), since the New World Translation in Chuukese covers Matthew–Revelation only. Those verses carry an orange \"Liebenzell Paipel, not the New World Translation\" tag in the builder and in Deliver view, because the wording differs from what the talk quotes. Verses stored earlier without Chuukese are filled in when the talk is reopened.",
         "Talk Builder: a citation that could not be resolved is no longer remembered as a failure. Earlier failed lookups (which left the citation pointing at the wol.jw.org search page) were cleared, so reopening a talk now resolves each citation through the lookup and links the article itself, with the cited paragraph and its Chuukese below the point.",
         "Server: every request to wol.jw.org (article pages, citation lookups, Bible chapters) and every unresolved citation is now logged with the status the site answered, so a block or outage can be seen in the container logs."
