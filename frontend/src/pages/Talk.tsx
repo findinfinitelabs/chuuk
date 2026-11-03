@@ -20,7 +20,9 @@ import {
   IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
+import { useSearchParams } from 'react-router-dom'
 import { invalidateTalks } from '../components/AddToTalk'
+import { registerSaveHandler } from '../refresh'
 import { ReferenceInline } from '../components/ReferenceView'
 import { searchLink } from '../components/wolLinks'
 import type { StoredReference } from '../components/ReferenceView'
@@ -368,6 +370,18 @@ export default function TalkBuilder() {
   const loadTalks = useCallback(async () => { try { setTalks((await axios.get('/api/talks')).data) } catch { /* list only */ } }, [])
   useEffect(() => { loadTalks() }, [loadTalks])
 
+  // The open talk lives in the URL (?talk=id), so a refresh, a new version or a
+  // shared link lands on the same talk.
+  const [params, setParams] = useSearchParams()
+  const paramTalk = params.get('talk')
+  useEffect(() => {
+    if (paramTalk && paramTalk !== talk?.id) open(paramTalk)
+  }, [paramTalk]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const id = talk?.id || ''
+    if ((params.get('talk') || '') !== id) setParams(id ? { talk: id } : {}, { replace: true })
+  }, [talk?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Scriptures for the open talk, in both languages, fetched once per set of citations.
   const refs = useMemo(() => allRefs(talk?.outline || null), [talk?.outline])
   useEffect(() => {
@@ -392,6 +406,12 @@ export default function TalkBuilder() {
       setDirty(false); await loadTalks()
     } catch (e) { setError(errorMessage(e, 'Could not save')) } finally { setSaving(false) }
   }
+  // When a new version asks for a refresh, unsaved lines are saved first.
+  useEffect(() => {
+    if (!dirty || !talk) return
+    return registerSaveHandler(() => axios.put(`/api/talks/${talk.id}`, { title: talk.title, language: talk.language, outline: talk.outline, outline_text: talk.outline_text, lines: talk.lines }).then(() => undefined))
+  }, [dirty, talk])
+
   const remove = async (id: string) => {
     await axios.delete(`/api/talks/${id}`); invalidateTalks()
     if (talk?.id === id) setTalk(null)

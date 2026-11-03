@@ -178,6 +178,37 @@ class UserDB:
             print(f"❌ Failed to count users: {e}")
             return 0
 
+    # -- single active session, kept on the user record so it survives a deploy
+    #    and is shared by every replica (it used to live in process memory,
+    #    which logged everyone out whenever a new container started).
+
+    def set_active_session(self, email: str, session_id: str) -> bool:
+        if not self.is_connected():
+            return False
+        try:
+            self.users_collection.update_one({"email": {"$regex": f"^{email}$", "$options": "i"}}, {"$set": {"active_session_id": session_id}})
+            return True
+        except Exception as e:
+            print(f"❌ Failed to store session for {email}: {e}")
+            return False
+
+    def get_active_session(self, email: str) -> str | None:
+        if not self.is_connected():
+            return None
+        try:
+            doc = self.users_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}}, {"active_session_id": 1})
+            return (doc or {}).get("active_session_id")
+        except Exception as e:
+            print(f"❌ Failed to read session for {email}: {e}")
+            return None
+
+    def clear_active_session(self, email: str) -> None:
+        if self.is_connected():
+            try:
+                self.users_collection.update_one({"email": {"$regex": f"^{email}$", "$options": "i"}}, {"$unset": {"active_session_id": ""}})
+            except Exception as e:
+                print(f"❌ Failed to clear session for {email}: {e}")
+
     def record_login(self, email: str) -> bool:
         """Record user login time and start session tracking"""
         if not self.is_connected():
