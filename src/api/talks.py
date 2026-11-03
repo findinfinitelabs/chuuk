@@ -150,12 +150,13 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
     def api_scriptures():
         data = request.get_json(silent=True) or {}
         refs = [str(r).strip() for r in (data.get("refs") or []) if str(r).strip()][:40]
-        from src.core import wol_bible
+        from src.core import liebenzell_bible, wol_bible
         from src.core.scripture_refs import BOOKS, expand
 
-        # Verses already stored with the talk are returned as they are.
+        # Verses already stored with the talk are returned as they are, unless
+        # Chuukese was missing: a source may have been added since.
         oid, talk = talk_doc(data.get("talk_id"), {"scriptures": 1})
-        stored = {s["ref"]: s for s in (talk or {}).get("scriptures") or []}
+        stored = {s["ref"]: s for s in (talk or {}).get("scriptures") or [] if s.get("chuukese")}
         out = {ref: stored[ref] for ref in refs if ref in stored}
         new_entries = []
         for ref in refs:
@@ -165,7 +166,7 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             if not verses:
                 out[ref] = {"chuukese": "", "english": "", "error": "Could not read this citation", "verses": []}
                 continue
-            rows, errors = [], []
+            rows, errors, sources = [], [], set()
             for label, query in verses[:12]:
                 try:
                     r = scripture_lookup(query) or {}
@@ -180,17 +181,27 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                     if book:
                         chk = chk or wol_bible.verse(db, "chk", book, int(m.group(2)), int(m.group(3)))
                         eng = eng or wol_bible.verse(db, "en", book, int(m.group(2)), int(m.group(3)))
+                source = "nwt"
+                if m and not chk and book and book <= 39:
+                    # The New World Translation in Chuukese covers Matthew–Revelation only;
+                    # for the Hebrew Scriptures show the Liebenzell Mission Paipel, labelled.
+                    chk = liebenzell_bible.verse(db, book, int(m.group(2)), int(m.group(3)))
+                    if chk:
+                        source = "liebenzell"
                 if not (chk or eng):
                     errors.append(f"{label}: {r.get('error') or 'not available'}")
                 elif not chk:
-                    errors.append(f"{label}: no Chuukese text (Hebrew Scriptures are not on WOL in Chuukese)")
-                rows.append({"ref": label, "chuukese": chk, "english": eng})
+                    errors.append(f"{label}: no Chuukese text available")
+                else:
+                    sources.add(source)
+                rows.append({"ref": label, "chuukese": chk, "english": eng, "source": source})
             chk_text = " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['chuukese']}".strip() for v in rows if v["chuukese"])
             entry = {
                 "ref": ref,
                 "chuukese": chk_text,
                 "english": " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['english']}".strip() for v in rows if v["english"]),
                 "error": "; ".join(errors) or None,
+                "source": "liebenzell" if sources == {"liebenzell"} else ("mixed" if "liebenzell" in sources else "nwt"),
                 "verses": rows,
                 "maps": maps_for(chk_text),
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
