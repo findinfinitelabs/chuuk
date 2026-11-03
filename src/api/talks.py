@@ -226,15 +226,17 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         key = {"ref": ref["raw"].lower(), "context": context.lower()[:300]}
         # First the copy stored with the talk, then the shared cache, then wol.jw.org.
         oid, talk = talk_doc(data.get("talk_id"), {"references": 1})
+        # Only a resolution that found the article is reused; a failed one is
+        # tried again (wol.jw.org may have been unavailable).
         if talk and not data.get("refresh"):
             for r in talk.get("references") or []:
-                if r.get("key") == key:
+                if r.get("key") == key and r.get("result", {}).get("paragraphs"):
                     return jsonify({**r["result"], "cached": True, "stored": True})
         cache = db["outline_refs"] if db is not None else None
         result = None
         if cache is not None and not data.get("refresh"):
             hit = cosmos_retry(lambda: cache.find_one(key, {"_id": 0, "result": 1}))
-            if hit:
+            if hit and hit["result"].get("paragraphs"):
                 result = {**hit["result"], "cached": True}
         if result is None:
             resolver = Resolver(PageFetcher(db).get, gloss_map)
@@ -242,11 +244,11 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 result = resolver.resolve(ref, context)
             except Exception as e:
                 return jsonify({"error": f"Could not resolve the reference: {e}"}), 502
-            if cache is not None and (result["paragraphs"] or result["links"]["en"]):
+            if cache is not None and result["paragraphs"]:
                 cosmos_retry(lambda: cache.update_one(key, {"$set": {**key, "result": result, "resolved_at": datetime.now(timezone.utc)}}, upsert=True))
         if "maps" not in result:
             result["maps"] = maps_for(" ".join(p["chk"] for p in result["paragraphs"] if p.get("chk")))
-        if oid is not None and (result["paragraphs"] or result["links"]["en"]):
+        if oid is not None and result["paragraphs"]:
             keep = [r for r in (talk or {}).get("references") or [] if r.get("key") != key]
             stored = {k: v for k, v in result.items() if k not in ("cached", "stored")}
             cosmos_retry(lambda: col().update_one({"_id": oid}, {"$set": {"references": keep + [{"key": key, "result": stored, "resolved_at": datetime.now(timezone.utc)}]}}))

@@ -2,6 +2,14 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.3",
+      "date": "2026-11-03",
+      "title": "Talk Builder: citations resolve to the article",
+      "notes": [
+        "Talk Builder: a citation that could not be resolved is no longer remembered as a failure. Earlier failed lookups (which left the citation pointing at the wol.jw.org search page) were cleared, so reopening a talk now resolves each citation through the lookup and links the article itself, with the cited paragraph and its Chuukese below the point."
+      ]
+    },
+    {
       "version": "1.0.0.2",
       "date": "2026-11-02",
       "title": "Talk Builder, Conversation Builder, content-based sentence pairing",
