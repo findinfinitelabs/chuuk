@@ -95,8 +95,10 @@ export function ReferenceBody({ data, showEnglish, onGloss }: { data: ResolvedRe
 }
 
 /** One citation under a talk point: link, title, and the paragraphs. */
-export function ReferenceInline({ reference, context, talkId, stored, showEnglish, onGloss }: {
+export function ReferenceInline({ reference, context, talkId, stored, showEnglish, onGloss, onResolved }: {
   reference: string; context: string; talkId?: string; stored?: ResolvedReference; showEnglish: boolean; onGloss: (g: Gloss | null) => void
+  /** Called with the article link once known, so the citation in the point text can open the article itself. */
+  onResolved?: (reference: string, data: ResolvedReference) => void
 }) {
   const [data, setData] = useState<ResolvedReference | null>(stored || null)
   const [loading, setLoading] = useState(false)
@@ -107,14 +109,14 @@ export function ReferenceInline({ reference, context, talkId, stored, showEnglis
     setLoading(true); setError('')
     try {
       const res = await axios.post<ResolvedReference>('/api/talks/references/resolve', { ref: reference, context, refresh, talk_id: talkId })
-      setData(res.data)
+      setData(res.data); onResolved?.(reference, res.data)
     } catch (e) {
       setError(errorMessage(e, 'Could not resolve the reference'))
     } finally {
       setLoading(false)
     }
   }
-  useEffect(() => { if (stored) setData(stored); else load() }, [reference, context]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (stored) { setData(stored); onResolved?.(reference, stored) } else load() }, [reference, context]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const link = data?.links.en || data?.links.search || searchLink(reference)
   return (

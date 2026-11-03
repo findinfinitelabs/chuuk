@@ -72,7 +72,7 @@ def test_lookup_resolves_citation_through_wol_lookup_page():
 
     ref = find_references("True faith is not mental laziness or an emotional crutch (w12 11/1 23)")[0]
     out = Resolver(fetch).resolve(ref, "True faith is not mental laziness or an emotional crutch")
-    assert out["links"]["en"].endswith("/2012810")
+    assert out["links"]["en"] == "https://wol.jw.org/en/wol/d/r1/lp-e/2012810#h=1:0-9:0"
     assert out["title"]["en"] == "Is Religious Faith an Emotional Crutch?"
     assert out["chuukese_available"] is False and "not available in Chuukese" in out["note"]
     assert [p["number"] for p in out["paragraphs"]] == [1, 2]

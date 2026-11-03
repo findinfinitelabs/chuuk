@@ -53,7 +53,7 @@ async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_e
 
 const allPoints = (o: Outline | null): Point[] => (o?.points || []).flatMap((p) => [p, ...(p.children || [])])
 /** A point's text with each citation rendered as a link to wol.jw.org. */
-function TextWithCitations({ text, references }: { text: string; references?: Reference[] }) {
+function TextWithCitations({ text, references, links }: { text: string; references?: Reference[]; links: Record<string, string> }) {
   const raws = (references || []).map((r) => r.raw).filter(Boolean)
   if (!raws.length) return <>{text}</>
   const parts: (string | Reference)[] = []
@@ -72,7 +72,7 @@ function TextWithCitations({ text, references }: { text: string; references?: Re
   return (
     <>
       {parts.map((part, i) => (typeof part === 'string' ? <span key={i}>{part}</span> : (
-        <Anchor key={i} href={searchLink(part.raw)} target="_blank" rel="noopener noreferrer" c="violet" fw={700} inherit>{part.raw}</Anchor>
+        <Anchor key={i} href={links[part.raw] || searchLink(part.raw)} target="_blank" rel="noopener noreferrer" c="violet" fw={700} inherit>{part.raw}</Anchor>
       )))}
     </>
   )
@@ -279,6 +279,8 @@ export default function TalkBuilder() {
   const [parsing, setParsing] = useState(false)
   const [editOutline, setEditOutline] = useState(false)
   const [gloss, setGloss] = useState<Gloss | null>(null)
+  // Citation → article URL (with WOL's highlight anchor) once a reference has resolved.
+  const [refLinks, setRefLinks] = useState<Record<string, string>>({})
   const [lineMaps, setLineMaps] = useState<Maps | null>(null)
   const lineTexts = useMemo(() => Array.from(new Set(Object.values(talk?.lines || {}).flat().map((l) => l.chk).filter(Boolean))).sort().join('\n'), [talk?.lines])
   useEffect(() => {
@@ -378,7 +380,7 @@ export default function TalkBuilder() {
             {p.label && <Text className={styles.pointLabel}>{p.label}.</Text>}
             {editOutline ? (
               <TextInput value={p.text} onChange={(e) => updatePoint(p.id, { text: e.currentTarget.value })} style={{ flex: 1 }} />
-            ) : <Title order={child ? 5 : 4}><TextWithCitations text={p.text} references={p.references} /></Title>}
+            ) : <Title order={child ? 5 : 4}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Title>}
           </Group>
           <Group gap="xs">
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge variant="light">{p.minutes} min</Badge> : null}
@@ -387,6 +389,7 @@ export default function TalkBuilder() {
         </Group>
         {(p.references || []).map((r) => (
           <ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
+            onResolved={(raw, d) => { const link = d.links.en || d.links.search; if (link) setRefLinks((m) => (m[raw] === link ? m : { ...m, [raw]: link })) }}
             stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300))?.result} />
         ))}
         {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} />)}

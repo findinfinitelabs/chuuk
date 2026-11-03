@@ -273,19 +273,26 @@ class Resolver:
         html = self.fetch(WOL_BASE + quote(issue))
         return [doc_id for doc_id, _ in wh.doc_links(html)] if html else []
 
-    def lookup_doc_id(self, citation: str) -> str | None:
-        """wol.jw.org's own citation lookup ("w12 11/1 23" → the article's
-        document id). The lookup page renders the cited document and links
-        it, so the first document link is the answer; None when the page is
-        unavailable or the citation was not understood."""
+    def lookup(self, citation: str) -> tuple[str, str] | None:
+        """wol.jw.org's own citation lookup ("w12 11/1 23" → the article).
+        The lookup page renders the cited document and links it with a
+        highlight anchor for the cited place ("/en/wol/d/r1/lp-e/2012810#h=1:0-9:0"),
+        so the first document link is the answer: (document id, full URL
+        with its anchor). None when the page is unavailable or the citation
+        was not understood."""
         html = self.fetch(f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(citation)}")
         if not html:
             return None
         for a in BeautifulSoup(html, "html.parser").select("a[href*='/wol/d/r1/lp-e/']"):
-            m = re.search(r"/wol/d/r1/lp-e/(\d+)", a.get("href") or "")
+            href = a.get("href") or ""
+            m = re.search(r"/wol/d/r1/lp-e/(\d+)", href)
             if m:
-                return m.group(1)
+                return m.group(1), (href if href.startswith("http") else WOL_BASE + href)
         return None
+
+    def lookup_doc_id(self, citation: str) -> str | None:
+        found = self.lookup(citation)
+        return found[0] if found else None
 
     def _watchtower_doc_ids(self, year: int, month: int) -> list[str]:
         index = self.fetch(WOL_BASE + f"{wh.CHK_LIBRARY}/{wh.PUBLICATIONS['watchtower']['slug']}")
@@ -349,7 +356,7 @@ class Resolver:
         keys = key_words(context)
         out = {"ref": ref["raw"], "kind": ref["kind"], "key_words": keys, "title": {"en": "", "chk": ""}, "links": {"en": None, "chk": None, "search": f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"}, "chuukese_available": False, "paragraphs": [], "note": ""}
         en_doc = chk_doc = None
-        doc_id = None
+        doc_id = en_link = None
         wanted = ref.get("paragraphs") or []
 
         if ref["kind"] == "w":
@@ -357,9 +364,12 @@ class Resolver:
             pub, day = ref.get("pub", "w"), ref.get("day")
             # WOL's own lookup answers the citation directly; the library
             # indexes are the fallback when the lookup page is unavailable.
-            doc_id = self.lookup_doc_id(ref["raw"])
+            found = self.lookup(ref["raw"])
+            doc_id = found[0] if found else None
             en_doc = self._doc(doc_id, "en") if doc_id else None
-            if not en_doc:
+            if en_doc:
+                en_link = found[1]
+            else:
                 doc_id = None
                 study = pub == "w" and (day is None or day >= 15)
                 candidates = self._watchtower_doc_ids(ref["year"], ref["month"]) if study else []
@@ -397,7 +407,7 @@ class Resolver:
             out["note"] = "Insight is not available in Chuukese; the link opens the English volume."
             return out
 
-        out["links"]["en"] = doc_url(doc_id, "en")
+        out["links"]["en"] = en_link or doc_url(doc_id, "en")
         chk_doc = self._doc(doc_id, "chk")
         if chk_doc:
             out["chuukese_available"] = True
