@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ActionIcon, Alert, Badge, Box, Button, Card, Divider, FileButton, Group, Loader, Modal, Paper, Progress,
+  ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Divider, FileButton, Group, Loader, Modal, Paper, Progress,
   SegmentedControl, Stack, Switch, Text, TextInput, Textarea, Title, Tooltip,
 } from '@mantine/core'
 import {
@@ -21,7 +21,9 @@ import {
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { invalidateTalks } from '../components/AddToTalk'
-import ReferenceModal from '../components/ReferenceModal'
+import { ReferenceInline } from '../components/ReferenceView'
+import { searchLink } from '../components/wolLinks'
+import type { StoredReference } from '../components/ReferenceView'
 import { GlossCard, GlossLegend, GlossedWords } from '../components/GlossedText'
 import type { Dictionary, Gloss, SimilarMap } from '../components/GlossedText'
 import type { PhraseMap } from '../components/glossUtils'
@@ -33,7 +35,7 @@ interface Reference { raw: string; kind: string }
 interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
 interface Outline { title: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line { id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string }
-interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[] }
+interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
 interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps }
@@ -50,6 +52,32 @@ async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_e
 }
 
 const allPoints = (o: Outline | null): Point[] => (o?.points || []).flatMap((p) => [p, ...(p.children || [])])
+/** A point's text with each citation rendered as a link to wol.jw.org. */
+function TextWithCitations({ text, references }: { text: string; references?: Reference[] }) {
+  const raws = (references || []).map((r) => r.raw).filter(Boolean)
+  if (!raws.length) return <>{text}</>
+  const parts: (string | Reference)[] = []
+  let rest = text
+  while (rest) {
+    let best: { i: number; raw: string } | null = null
+    for (const raw of raws) {
+      const i = rest.indexOf(raw)
+      if (i >= 0 && (!best || i < best.i)) best = { i, raw }
+    }
+    if (!best) { parts.push(rest); break }
+    if (best.i > 0) parts.push(rest.slice(0, best.i))
+    parts.push({ raw: best.raw, kind: '' })
+    rest = rest.slice(best.i + best.raw.length)
+  }
+  return (
+    <>
+      {parts.map((part, i) => (typeof part === 'string' ? <span key={i}>{part}</span> : (
+        <Anchor key={i} href={searchLink(part.raw)} target="_blank" rel="noopener noreferrer" c="violet" fw={700} inherit>{part.raw}</Anchor>
+      )))}
+    </>
+  )
+}
+
 const allRefs = (o: Outline | null): string[] => Array.from(new Set([o?.theme_scripture || '', ...allPoints(o).flatMap((p) => p.scriptures)].filter(Boolean)))
 
 // ── A collected line ────────────────────────────────────────────────────────
@@ -250,7 +278,6 @@ export default function TalkBuilder() {
   const [preview, setPreview] = useState<Outline | null>(null)
   const [parsing, setParsing] = useState(false)
   const [editOutline, setEditOutline] = useState(false)
-  const [refOpen, setRefOpen] = useState<{ ref: string; context: string; label: string } | null>(null)
   const [gloss, setGloss] = useState<Gloss | null>(null)
   const [lineMaps, setLineMaps] = useState<Maps | null>(null)
   const lineTexts = useMemo(() => Array.from(new Set(Object.values(talk?.lines || {}).flat().map((l) => l.chk).filter(Boolean))).sort().join('\n'), [talk?.lines])
@@ -351,21 +378,17 @@ export default function TalkBuilder() {
             {p.label && <Text className={styles.pointLabel}>{p.label}.</Text>}
             {editOutline ? (
               <TextInput value={p.text} onChange={(e) => updatePoint(p.id, { text: e.currentTarget.value })} style={{ flex: 1 }} />
-            ) : <Title order={child ? 5 : 4}>{p.text}</Title>}
+            ) : <Title order={child ? 5 : 4}><TextWithCitations text={p.text} references={p.references} /></Title>}
           </Group>
           <Group gap="xs">
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge variant="light">{p.minutes} min</Badge> : null}
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
           </Group>
         </Group>
-        {(p.references || []).length > 0 && (
-          <Group gap={6} mt={6}>
-            <Text size="xs" c="dimmed">References:</Text>
-            {p.references!.map((r) => (
-              <Badge key={r.raw} component="button" variant="light" color="violet" style={{ cursor: 'pointer' }} onClick={() => setRefOpen({ ref: r.raw, context: p.text, label: p.label || '' })}>{r.raw}</Badge>
-            ))}
-          </Group>
-        )}
+        {(p.references || []).map((r) => (
+          <ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
+            stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300))?.result} />
+        ))}
         {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} />)}
         <Stack gap="xs" mt="sm">
           {rows.map((l, i) => (
@@ -469,7 +492,6 @@ export default function TalkBuilder() {
         </Box>
       </div>
 
-      <ReferenceModal reference={refOpen?.ref || null} context={refOpen?.context || ''} pointLabel={refOpen?.label} opened={!!refOpen} onClose={() => setRefOpen(null)} talkId={talk?.id} />
       {gloss && <GlossCard gloss={gloss} />}
       {delivering && talk && <Deliver talk={talk} verses={verses} showEnglish={showEnglish} onClose={() => setDelivering(false)} />}
 

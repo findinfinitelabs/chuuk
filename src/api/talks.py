@@ -87,9 +87,23 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         except (InvalidId, TypeError):
             return None
 
+    def refresh_references(outline: dict | None) -> None:
+        """Re-read the citations in every point's text, so talks imported
+        before a citation form was understood still get their references."""
+        from src.core.outline_refs import find_references
+
+        def walk(points):
+            for p in points or []:
+                p["references"] = find_references(p.get("text") or "")
+                walk(p.get("children"))
+
+        if outline:
+            walk(outline.get("points"))
+
     def serialize(doc: dict) -> dict:
         out = dict(doc)
         out["id"] = str(out.pop("_id"))
+        refresh_references(out.get("outline"))
         for f in ("created_at", "updated_at"):
             if hasattr(out.get(f), "isoformat"):
                 out[f] = out[f].isoformat()
