@@ -8,10 +8,28 @@
 .talkRow:hover { background: var(--mantine-color-gray-light); }
 .talkRowActive { background: var(--mantine-color-violet-light); }
 
-.point { border-left: 5px solid var(--mantine-color-violet-5); }
+/* A main section of the outline: tinted block with a bold header band, so it is
+   always clear which part of the talk the lines below belong to. */
+.section { background: var(--mantine-color-violet-light); border: 1px solid var(--mantine-color-violet-light-hover); border-left: 6px solid var(--mantine-color-violet-6); border-radius: 12px; padding: 0 0 12px; margin-bottom: 18px; overflow: hidden; }
+.sectionEmpty { border-left-color: var(--mantine-color-orange-5); }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: var(--mantine-color-violet-6); color: #fff; }
+.sectionEmpty .sectionHead { background: var(--mantine-color-orange-6); }
+.sectionNum { font-size: 1.6rem; font-weight: 900; line-height: 1; opacity: 0.85; min-width: 2.2rem; }
+.sectionTitle { font-size: 1.3rem; font-weight: 800; line-height: 1.25; color: #fff; }
+.sectionTitle a { color: #fff !important; text-decoration: underline; }
+.sectionMeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sectionTime { background: #fff; color: var(--mantine-color-violet-7); font-size: 1.15rem; font-weight: 900; padding: 4px 14px; border-radius: 999px; white-space: nowrap; }
+.sectionEmpty .sectionTime { color: var(--mantine-color-orange-7); }
+.sectionLines { color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; font-weight: 600; }
+.sectionBody { padding: 12px 16px 0; }
+.sectionCount { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
+
+/* A sub-point inside a section: white card, bold subheading and its own time. */
+.point { border-left: 5px solid var(--mantine-color-violet-5); background: var(--mantine-color-body); }
 .pointEmpty { border-left-color: var(--mantine-color-orange-4); }
 .pointLabel { font-size: 1.3rem; font-weight: 800; color: var(--mantine-color-violet-6); min-width: 2rem; }
-.child { margin-left: 1.4rem; border-left: 3px solid var(--mantine-color-gray-3); padding-left: 0.8rem; }
+.pointTitle { font-size: 1.08rem; font-weight: 800; line-height: 1.3; }
+.child { margin-left: 0; }
 .line { border-left: 3px solid transparent; }
 .lineConfirmed { border-left-color: var(--mantine-color-green-5); }
 .chk { font-size: 1.1rem; font-weight: 600; line-height: 1.35; }

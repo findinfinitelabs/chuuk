@@ -444,22 +444,43 @@ export default function TalkBuilder() {
   const covered = points.filter((p) => (talk?.lines[p.id] || []).length > 0).length
   const unsorted = talk?.lines['unsorted'] || []
 
+  const sections = talk?.outline.points || []
   const renderPoint = (p: Point, child = false) => {
     const rows = talk?.lines[p.id] || []
-    return (
-      <Card key={p.id} withBorder radius="md" p="md" className={`${child ? styles.child : ''} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''}`} mb="sm">
+    const childLines = (p.children || []).reduce((n, c) => n + (talk?.lines[c.id] || []).length, 0)
+    const sectionIndex = sections.findIndex((s) => s.id === p.id)
+    const head = child ? (
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Group gap="sm" align="flex-start" wrap="nowrap" style={{ flex: 1 }}>
             {p.label && <Text className={styles.pointLabel}>{p.label}.</Text>}
             {editOutline ? (
               <TextInput value={p.text} onChange={(e) => updatePoint(p.id, { text: e.currentTarget.value })} style={{ flex: 1 }} />
-            ) : <Title order={child ? 5 : 4}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Title>}
+            ) : <Text className={styles.pointTitle}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Text>}
           </Group>
           <Group gap="xs">
-            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge variant="light">{p.minutes} min</Badge> : null}
+            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color="violet">{p.minutes} min</Badge> : null}
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
           </Group>
         </Group>
+    ) : (
+        <div className={styles.sectionHead}>
+          <Group gap="sm" align="center" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+            <Text className={styles.sectionNum}>{p.label ? `${p.label}.` : sectionIndex + 1}</Text>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text className={styles.sectionCount}>Section {sectionIndex + 1} of {sections.length}</Text>
+              {editOutline ? (
+                <TextInput value={p.text} onChange={(e) => updatePoint(p.id, { text: e.currentTarget.value })} />
+              ) : <Text className={styles.sectionTitle}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Text>}
+            </Box>
+          </Group>
+          <div className={styles.sectionMeta}>
+            <Text className={styles.sectionLines}>{rows.length + childLines} line{rows.length + childLines === 1 ? '' : 's'}</Text>
+            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : <span className={styles.sectionTime}>{p.minutes ? `${p.minutes} min` : 'no time'}</span>}
+          </div>
+        </div>
+    )
+    const body = (
+      <>
         {(p.references || []).map((r) => (
           <ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
             onResolved={(raw, d) => { const link = d.links.en || d.links.search; if (link) setRefLinks((m) => (m[raw] === link ? m : { ...m, [raw]: link })) }}
@@ -476,8 +497,22 @@ export default function TalkBuilder() {
           ))}
         </Stack>
         <AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} />
-        {(p.children || []).length > 0 && <Box mt="sm">{p.children!.map((c) => renderPoint(c, true))}</Box>}
-      </Card>
+        {(p.children || []).length > 0 && <Stack gap="sm" mt="sm">{p.children!.map((c) => renderPoint(c, true))}</Stack>}
+      </>
+    )
+    if (child) {
+      return (
+        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''}`}>
+          {head}
+          {body}
+        </Card>
+      )
+    }
+    return (
+      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''}`}>
+        {head}
+        <div className={styles.sectionBody}>{body}</div>
+      </section>
     )
   }
 
