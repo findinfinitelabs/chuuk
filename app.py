@@ -772,16 +772,26 @@ def api_track_page():
 _RELEASES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "src", "data", "releases.json")
 
 
-@app.route("/api/version", methods=["GET"])
-def api_version():
-    """The version this server was built from (first entry of releases.json),
-    so an open page can notice a new deploy and offer to refresh."""
+def _release_info() -> dict:
+    """Version, title and date of the first entry of releases.json: the version
+    this server was built from. Read once; the file never changes while a
+    container runs."""
     try:
         with open(_RELEASES_FILE, encoding="utf-8") as f:
             first = (json.load(f).get("releases") or [{}])[0]
-        return jsonify({"version": first.get("version", ""), "title": first.get("title", ""), "date": first.get("date", "")})
+        return {"version": first.get("version", ""), "title": first.get("title", ""), "date": first.get("date", "")}
     except Exception as e:
-        return jsonify({"version": "", "error": str(e)})
+        return {"version": "", "error": str(e)}
+
+
+_RELEASE_INFO = _release_info()
+
+
+@app.route("/api/version", methods=["GET"])
+def api_version():
+    """The deployed version, so an open page can notice a new deploy and offer
+    to refresh."""
+    return jsonify(_RELEASE_INFO)
 
 
 @app.route("/api/auth/status", methods=["GET"])
