@@ -24,6 +24,7 @@ import ReviewQueue from './pages/ReviewQueue'
 import AITraining from './pages/AITraining'
 import Login from './pages/Login'
 import Footer from './components/Footer'
+import UpdateToast from './components/UpdateToast'
 import Conversation from './pages/Conversation'
 import TalkBuilder from './pages/Talk'
 import ReleaseNotes from './pages/ReleaseNotes'
@@ -180,6 +181,7 @@ function App() {
   return (
     <MantineProvider theme={chuukTheme}>
       <Notifications />
+      <UpdateToast />
       <AppShell
         padding="md"
         navbar={{

@@ -115,7 +115,36 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7  # 7 days
 # ============================================================================
 # In-memory store for active sessions and magic links
 # In production, consider using Redis or database storage
-active_sessions = {}  # {email: session_id}
+_active_sessions: dict = {}  # {email: session_id} — cache in front of the user record
+
+
+def _set_active_session(email: str, session_id: str) -> None:
+    """One active session per user, stored on the user record (so it survives
+    a deploy and is shared across replicas) and cached in this process."""
+    email = (email or "").lower()
+    _active_sessions[email] = session_id
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        user_db.set_active_session(email, session_id)
+
+
+def _get_active_session(email: str) -> str | None:
+    email = (email or "").lower()
+    if email in _active_sessions:
+        return _active_sessions[email]
+    user_db = get_user_db()
+    sid = user_db.get_active_session(email) if (user_db and user_db.is_connected()) else None
+    if sid:
+        _active_sessions[email] = sid
+    return sid
+
+
+def _clear_active_session(email: str) -> None:
+    email = (email or "").lower()
+    _active_sessions.pop(email, None)
+    user_db = get_user_db()
+    if user_db and user_db.is_connected():
+        user_db.clear_active_session(email)
 magic_links = {}  # {token: {'email': email, 'expires': datetime}}
 MAGIC_LINK_EXPIRY_MINUTES = 15
 
@@ -576,12 +605,12 @@ def api_login():
         new_session_id = secrets.token_hex(32)
 
         # Invalidate any existing session for this user (single active session)
-        old_session = active_sessions.get(user["email"].lower())
+        old_session = _get_active_session(user["email"])
         if old_session:
             print(f"🔐 Invalidating previous session for {user['email']}")
 
         # Store new session ID
-        active_sessions[user["email"].lower()] = new_session_id
+        _set_active_session(user["email"], new_session_id)
 
         session["logged_in"] = True
         session["user_email"] = user["email"]
@@ -683,11 +712,11 @@ def api_verify_magic_link(token):
     new_session_id = secrets.token_hex(32)
 
     # Invalidate any existing session for this user
-    old_session = active_sessions.get(user["email"].lower())
+    old_session = _get_active_session(user["email"])
     if old_session:
         print(f"🔐 Invalidating previous session for {user['email']} (magic link login)")
 
-    active_sessions[user["email"].lower()] = new_session_id
+    _set_active_session(user["email"], new_session_id)
 
     # Create session
     session["logged_in"] = True
@@ -713,8 +742,8 @@ def api_logout():
                 print(f"📊 Session ended for {user_email}: {duration} minutes")
 
     # Remove from active sessions
-    if user_email in active_sessions:
-        del active_sessions[user_email]
+    if user_email:
+        _clear_active_session(user_email)
     session.clear()
     return jsonify({"success": True})
 
@@ -740,6 +769,21 @@ def api_track_page():
     return jsonify({"success": True})
 
 
+_RELEASES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "src", "data", "releases.json")
+
+
+@app.route("/api/version", methods=["GET"])
+def api_version():
+    """The version this server was built from (first entry of releases.json),
+    so an open page can notice a new deploy and offer to refresh."""
+    try:
+        with open(_RELEASES_FILE, encoding="utf-8") as f:
+            first = (json.load(f).get("releases") or [{}])[0]
+        return jsonify({"version": first.get("version", ""), "title": first.get("title", ""), "date": first.get("date", "")})
+    except Exception as e:
+        return jsonify({"version": "", "error": str(e)})
+
+
 @app.route("/api/auth/status", methods=["GET"])
 def api_auth_status():
     """Check authentication status - also validates single active session"""
@@ -748,7 +792,7 @@ def api_auth_status():
         session_id = session.get("session_id")
 
         # Validate this is still the active session
-        if active_sessions.get(user_email) != session_id:
+        if _get_active_session(user_email) != session_id:
             # Session was invalidated (user logged in elsewhere)
             session.clear()
             return jsonify({"authenticated": False, "error": "Session expired. You logged in from another device."})
