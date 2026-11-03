@@ -38,7 +38,11 @@ interface Line { id: string; chk: string; en: string; source: string; ref: strin
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
-interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps }
+interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps; source?: 'nwt' | 'liebenzell' | 'mixed' }
+/** Hebrew Scriptures come from a different Chuukese translation; say so wherever they show. */
+const LIEBENZELL = 'Liebenzell Paipel, not the New World Translation'
+const SourceTag = ({ verse, size = 'xs' }: { verse: Verse; size?: string }) =>
+  verse.source && verse.source !== 'nwt' ? <Badge size={size} color="orange" variant="light" ml={6}>{LIEBENZELL}</Badge> : null
 
 const errorMessage = (e: unknown, fallback: string) =>
   (axios.isAxiosError(e) && (e.response?.data?.error as string)) || (e instanceof Error ? e.message : fallback)
@@ -179,7 +183,7 @@ function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onG
 function VerseBox({ cite, verse, showEnglish, onGloss }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void }) {
   return (
     <Box className={styles.verse} mt={6}>
-      <Text size="xs" fw={700} c="violet">{cite}</Text>
+      <Group gap={4}><Text size="xs" fw={700} c="violet">{cite}</Text>{verse && <SourceTag verse={verse} />}</Group>
       {!verse ? <Text size="xs" c="dimmed">Loading…</Text> : (
         <>
           {verse.chuukese && (
@@ -217,7 +221,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
     <Box key={p.id}>
       {p.scriptures.map((c) => verses[c] && (
         <Box key={c} className={styles.deliverVerse}>
-          <Text size="sm" fw={700} c="violet">{c}</Text>
+          <Group gap={4}><Text size="sm" fw={700} c="violet">{c}</Text><SourceTag verse={verses[c]} size="sm" /></Group>
           <div>{verses[c].chuukese || verses[c].english}</div>
           {showEnglish && verses[c].chuukese && <Text c="dimmed" size="md">{verses[c].english}</Text>}
         </Box>
@@ -255,7 +259,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         </Box>
       ))}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
-        <Box className={styles.deliverVerse}><Text size="sm" fw={700} c="violet">Theme · {talk.outline.theme_scripture}</Text><div>{verses[talk.outline.theme_scripture].chuukese}</div></Box>
+        <Box className={styles.deliverVerse}><Group gap={4}><Text size="sm" fw={700} c="violet">Theme · {talk.outline.theme_scripture}</Text><SourceTag verse={verses[talk.outline.theme_scripture]} size="sm" /></Group><div>{verses[talk.outline.theme_scripture].chuukese}</div></Box>
       )}
     </div>
   )
@@ -307,7 +311,7 @@ export default function TalkBuilder() {
     try {
       const doc: Talk = (await axios.get(`/api/talks/${id}`)).data
       // Verses stored with the talk show at once; nothing is fetched again.
-      setVerses((v) => ({ ...v, ...Object.fromEntries((doc.scriptures || []).map((s) => [s.ref, s])) }))
+      setVerses((v) => ({ ...v, ...Object.fromEntries((doc.scriptures || []).filter((s) => s.chuukese).map((s) => [s.ref, s])) }))
       setTalk(doc); setDirty(false); setEditOutline(false)
     } catch (e) { setError(errorMessage(e, 'Could not open the talk')) }
   }
