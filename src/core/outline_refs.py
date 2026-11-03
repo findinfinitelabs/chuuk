@@ -273,6 +273,20 @@ class Resolver:
         html = self.fetch(WOL_BASE + quote(issue))
         return [doc_id for doc_id, _ in wh.doc_links(html)] if html else []
 
+    def lookup_doc_id(self, citation: str) -> str | None:
+        """wol.jw.org's own citation lookup ("w12 11/1 23" → the article's
+        document id). The lookup page renders the cited document and links
+        it, so the first document link is the answer; None when the page is
+        unavailable or the citation was not understood."""
+        html = self.fetch(f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(citation)}")
+        if not html:
+            return None
+        for a in BeautifulSoup(html, "html.parser").select("a[href*='/wol/d/r1/lp-e/']"):
+            m = re.search(r"/wol/d/r1/lp-e/(\d+)", a.get("href") or "")
+            if m:
+                return m.group(1)
+        return None
+
     def _watchtower_doc_ids(self, year: int, month: int) -> list[str]:
         index = self.fetch(WOL_BASE + f"{wh.CHK_LIBRARY}/{wh.PUBLICATIONS['watchtower']['slug']}")
         year_href = wh.year_link(index, "watchtower", year) if index else None
@@ -341,19 +355,25 @@ class Resolver:
         if ref["kind"] == "w":
             out["links"]["search"] = f"{WOL_BASE}/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"
             pub, day = ref.get("pub", "w"), ref.get("day")
-            study = pub == "w" and (day is None or day >= 15)
-            candidates = self._watchtower_doc_ids(ref["year"], ref["month"]) if study else []
-            if not candidates:
-                candidates = self._english_issue_doc_ids(pub, ref["year"], ref["month"], day)
-            # The issue cover spans every page, so take the narrowest range holding the page.
-            best = None
-            for cand in candidates:
-                d = self._doc(cand, "en")
-                rng = page_range(d["citation"]) if d else None
-                if rng and rng[0] <= ref["page"] <= rng[1] and (best is None or rng[1] - rng[0] < best[0]):
-                    best = (rng[1] - rng[0], cand, d)
-            if best:
-                _, doc_id, en_doc = best
+            # WOL's own lookup answers the citation directly; the library
+            # indexes are the fallback when the lookup page is unavailable.
+            doc_id = self.lookup_doc_id(ref["raw"])
+            en_doc = self._doc(doc_id, "en") if doc_id else None
+            if not en_doc:
+                doc_id = None
+                study = pub == "w" and (day is None or day >= 15)
+                candidates = self._watchtower_doc_ids(ref["year"], ref["month"]) if study else []
+                if not candidates:
+                    candidates = self._english_issue_doc_ids(pub, ref["year"], ref["month"], day)
+                # The issue cover spans every page, so take the narrowest range holding the page.
+                best = None
+                for cand in candidates:
+                    d = self._doc(cand, "en")
+                    rng = page_range(d["citation"]) if d else None
+                    if rng and rng[0] <= ref["page"] <= rng[1] and (best is None or rng[1] - rng[0] < best[0]):
+                        best = (rng[1] - rng[0], cand, d)
+                if best:
+                    _, doc_id, en_doc = best
             if not doc_id:
                 out["note"] = "Could not find that issue and page on wol.jw.org automatically; the search link opens the citation there."
                 out["links"]["en"] = out["links"]["search"]

@@ -45,3 +45,36 @@ def test_highlight_marks_english_and_aligned_chuukese():
     assert [r["hit"] for r in hl["chuukese"]] == [False, True]
     assert [w["text"] for w in hl["chuukese"][1]["words"] if w["hit"]] == ["lingan", "Sinai"]
     assert highlight_paragraph(en, None, [])["chuukese"] is None
+
+
+def test_lookup_resolves_citation_through_wol_lookup_page():
+    """"w12 11/1 23" is answered by WOL's citation lookup page, which links the
+    document; the resolver uses that before crawling the library index."""
+    from src.core.outline_refs import Resolver, find_references
+
+    pages = {
+        "https://wol.jw.org/en/wol/l/r1/lp-e?q=w12%2011/1%2023": (
+            '<html><body><ul><li><a href="/en/wol/h/r1/lp-e">Home</a></li></ul>'
+            '<div class="results"><a href="/en/wol/d/r1/lp-e/2012810#h=1:0-9:0">Is Religious Faith an Emotional Crutch?</a>'
+            '<a href="/en/wol/bc/r1/lp-e/2012810/0/0">Proverbs 14:15</a></div></body></html>'
+        ),
+        "https://wol.jw.org/en/wol/d/r1/lp-e/2012810": (
+            '<html><body><h1>Is Religious Faith an Emotional Crutch?</h1><li class="documentLocation">w12 11/1 pp. 23-24</li>'
+            '<article><p data-pid="1">Some equate faith with gullibility, as if believers simply ignore reality.</p>'
+            '<p data-pid="2">Religious faith that is not built on sound evidence can become a crutch, but true faith is not mental laziness.</p></article></body></html>'
+        ),
+    }
+    fetched = []
+
+    def fetch(url):
+        fetched.append(url)
+        return pages.get(url)
+
+    ref = find_references("True faith is not mental laziness or an emotional crutch (w12 11/1 23)")[0]
+    out = Resolver(fetch).resolve(ref, "True faith is not mental laziness or an emotional crutch")
+    assert out["links"]["en"].endswith("/2012810")
+    assert out["title"]["en"] == "Is Religious Faith an Emotional Crutch?"
+    assert out["chuukese_available"] is False and "not available in Chuukese" in out["note"]
+    assert [p["number"] for p in out["paragraphs"]] == [1, 2]
+    assert any(w["hit"] for w in out["paragraphs"][1]["en_sentences"][0]["words"])
+    assert not any("/library/" in u for u in fetched), "the library index was crawled although the lookup answered"
