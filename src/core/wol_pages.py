@@ -8,6 +8,7 @@ kept for a week since they change; articles are kept for good.
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 import time
 from pathlib import Path
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+log = logging.getLogger(__name__)
 COLLECTION = "wol_pages"
 _DISK_CACHE = Path(__file__).resolve().parent.parent.parent / "data" / "wol_cache"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -53,13 +55,17 @@ class PageFetcher:
             _last = time.monotonic()
         try:
             r = self.session.get(url, timeout=self.timeout)
-        except requests.RequestException:
+        except requests.RequestException as e:
+            log.warning("wol.jw.org fetch failed: %s (%s)", url, e)
             return None
         if r.status_code != 200 or len(r.text) < 500:
+            # An empty 202 is wol.jw.org declining automated requests for a while.
+            log.warning("wol.jw.org answered %s with %s bytes for %s", r.status_code, len(r.text), url)
             return None
+        log.info("wol.jw.org page fetched: %s (%s bytes)", url, len(r.text))
         if self.col is not None:
             try:
                 self.col.update_one({"url": url}, {"$set": {"url": url, "html": r.text, "fetched_at": datetime.now(timezone.utc)}}, upsert=True)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("could not cache wol.jw.org page %s: %s", url, e)
         return r.text

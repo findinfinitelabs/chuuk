@@ -15,6 +15,7 @@ else it has (the local EPUB when present).
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -36,6 +37,7 @@ _lock = threading.Lock()
 _last = 0.0
 _memory: dict[tuple, dict] = {}
 COLLECTION = "bible_chapters"
+log = logging.getLogger(__name__)
 
 
 def parse_chapter(html: str) -> dict[str, str]:
@@ -63,9 +65,11 @@ def _fetch(lang: str, book: int, chapter: int, timeout: int = 30) -> dict[str, s
         _last = time.monotonic()
     try:
         r = requests.get(_URL[lang].format(book=book, chapter=chapter), headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"}, timeout=timeout)
-    except requests.RequestException:
+    except requests.RequestException as e:
+        log.warning("wol.jw.org chapter fetch failed: %s %s %s (%s)", lang, book, chapter, e)
         return None
     if r.status_code != 200:
+        log.warning("wol.jw.org answered %s with %s bytes for %s chapter %s/%s", r.status_code, len(r.text), lang, book, chapter)
         return None
     return parse_chapter(r.text)
 

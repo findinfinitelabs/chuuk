@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from src.api import user_library as _lib
 from src.core.talk_outline import extract_text, parse_outline
@@ -244,6 +244,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 result = resolver.resolve(ref, context)
             except Exception as e:
                 return jsonify({"error": f"Could not resolve the reference: {e}"}), 502
+            if not result["paragraphs"]:
+                current_app.logger.warning("reference %r not resolved: %s", raw, result.get("note"))
             if cache is not None and result["paragraphs"]:
                 cosmos_retry(lambda: cache.update_one(key, {"$set": {**key, "result": result, "resolved_at": datetime.now(timezone.utc)}}, upsert=True))
         if "maps" not in result:

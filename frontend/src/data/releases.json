@@ -6,7 +6,8 @@
       "date": "2026-11-03",
       "title": "Talk Builder: citations resolve to the article",
       "notes": [
-        "Talk Builder: a citation that could not be resolved is no longer remembered as a failure. Earlier failed lookups (which left the citation pointing at the wol.jw.org search page) were cleared, so reopening a talk now resolves each citation through the lookup and links the article itself, with the cited paragraph and its Chuukese below the point."
+        "Talk Builder: a citation that could not be resolved is no longer remembered as a failure. Earlier failed lookups (which left the citation pointing at the wol.jw.org search page) were cleared, so reopening a talk now resolves each citation through the lookup and links the article itself, with the cited paragraph and its Chuukese below the point.",
+        "Server: every request to wol.jw.org (article pages, citation lookups, Bible chapters) and every unresolved citation is now logged with the status the site answered, so a block or outage can be seen in the container logs."
       ]
     },
     {
