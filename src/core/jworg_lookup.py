@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 """
-Module for looking up words and phrases from JW.org Chuukese sources and local publications
+Module for looking up words and phrases in the Watchtower Online Library (wol.jw.org)
+and local publications. www.jw.org itself is never contacted.
 """
 
 import requests
@@ -9,9 +10,9 @@ from urllib.parse import quote
 
 
 class JWOrgLookup:
-    """Handles word and phrase lookups from JW.org Chuukese sources"""
+    """Handles word and phrase lookups from wol.jw.org Chuukese sources"""
 
-    BASE_URLS = ["https://www.jw.org/chk", "https://wol.jw.org/chk/wol/h/r303/lp-te"]
+    BASE_URLS = ["https://wol.jw.org/chk/wol/h/r303/lp-te"]
 
     def __init__(self, publication_manager=None):
         """Initialize the lookup service"""
@@ -21,7 +22,7 @@ class JWOrgLookup:
 
     def search_word(self, word: str, language_code: str = "chk") -> list[dict[str, str]]:
         """
-        Search for a word or phrase across JW.org sources
+        Build the wol.jw.org search link for a word or phrase
 
         Args:
             word: The word or phrase to search for
@@ -30,32 +31,11 @@ class JWOrgLookup:
         Returns:
             List of dictionaries containing search results
         """
-        results = []
-
-        # Search on main JW.org site
-        try:
-            search_url = f"https://www.jw.org/{language_code}/search/?q={quote(word)}"
-            response = self.session.get(search_url, timeout=10)
-
-            if response.status_code == 200:
-                results.append({"source": "JW.org Main Site", "url": search_url, "status": "success", "word": word})
-        except Exception as e:
-            results.append({"source": "JW.org Main Site", "url": search_url, "status": "error", "error": str(e)})
-
-        # Search on WOL (Watchtower Online Library)
-        try:
-            wol_search_url = f"https://wol.jw.org/{language_code}/wol/s/r303/lp-te?q={quote(word)}"
-            response = self.session.get(wol_search_url, timeout=10)
-
-            if response.status_code == 200:
-                results.append(
-                    {"source": "Watchtower Online Library", "url": wol_search_url, "status": "success", "word": word}
-                )
-        except Exception as e:
-            results.append(
-                {"source": "Watchtower Online Library", "url": wol_search_url, "status": "error", "error": str(e)}
-            )
-
+        # Only the Watchtower Online Library is used; www.jw.org is never
+        # contacted. The link is returned without being fetched: the caller
+        # opens it in the browser, so no request leaves the server here.
+        wol_search_url = f"https://wol.jw.org/{language_code}/wol/s/r303/lp-te?q={quote(word)}"
+        results = [{"source": "Watchtower Online Library", "url": wol_search_url, "status": "link", "word": word}]
         return results
 
     def translate_text(self, text: str, source_lang: str = "chk", target_lang: str = "en") -> dict[str, str] | None:
