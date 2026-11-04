@@ -62,7 +62,9 @@ const STAGE_COLOR: Record<string, string> = { start: '#1971c2', teach: '#7048e8'
 async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_en'): Promise<string> {
   const res = await axios.post('/api/translate', { text, direction })
   const t = res.data?.translations || {}
-  const pick = ['helsinki', 'madlad', 'model', 'google'].map((k) => (typeof t[k] === 'string' ? t[k] : t[k]?.text)).find((v) => typeof v === 'string' && v.trim() && !/error|not available|not configured/i.test(v))
+  // The server says which engine to show first (Google on the hosted site, the neural model locally).
+  const order = [res.data?.preferred === 'google' ? 'google' : 'helsinki', 'helsinki', 'madlad', 'model', 'google']
+  const pick = order.map((k) => (typeof t[k] === 'string' ? t[k] : t[k]?.text)).find((v) => typeof v === 'string' && v.trim() && !/error|not available|not configured/i.test(v))
   return pick ? String(pick).trim() : ''
 }
 

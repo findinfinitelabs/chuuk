@@ -20,6 +20,7 @@ import {
   IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
+import { notifications } from '@mantine/notifications'
 import { useSearchParams } from 'react-router-dom'
 import { invalidateTalks } from '../components/AddToTalk'
 import { registerSaveHandler } from '../refresh'
@@ -53,8 +54,19 @@ const looksEnglish = (s: string) => [...s].every((c) => c.charCodeAt(0) < 128 ||
 async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_en'): Promise<string> {
   const res = await axios.post('/api/translate', { text, direction })
   const t = res.data?.translations || {}
-  const pick = ['helsinki', 'madlad', 'model', 'google'].map((k) => (typeof t[k] === 'string' ? t[k] : t[k]?.text)).find((v) => typeof v === 'string' && v.trim() && !/error|not available|not configured/i.test(v))
+  // The server says which engine to show first (Google on the hosted site, the neural model locally).
+  const order = [res.data?.preferred === 'google' ? 'google' : 'helsinki', 'helsinki', 'madlad', 'model', 'google']
+  const pick = order.map((k) => (typeof t[k] === 'string' ? t[k] : t[k]?.text)).find((v) => typeof v === 'string' && v.trim() && !/error|not available|not configured/i.test(v))
   return pick ? String(pick).trim() : ''
+}
+
+/** A line the person checked is stored as a verified word, phrase or sentence. */
+async function storeVerified(line: Pick<Line, 'chk' | 'en' | 'ref'>) {
+  if (!line.chk.trim() || !line.en.trim()) return
+  try {
+    const { data } = await axios.post('/api/pairs/verified', { chk: line.chk, en: line.en, source: 'talk_builder', reference: line.ref })
+    if (data.stored) notifications.show({ id: 'verified-pair', color: 'teal', title: data.updated ? `Verified ${data.kind} updated` : `Stored as a verified ${data.kind}`, message: line.chk, autoClose: 2500 })
+  } catch { /* the line is still checked; storing can be retried by unchecking and checking */ }
 }
 
 const allPoints = (o: Outline | null): Point[] => (o?.points || []).flatMap((p) => [p, ...(p.children || [])])
@@ -179,7 +191,7 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
           <Textarea autosize minRows={1} label="English" value={en} onChange={(e) => { setEn(e.currentTarget.value); suggest('chk', e.currentTarget.value) }} rightSection={suggesting === 'en' ? <Loader size={14} /> : null} />
           <Group justify="flex-end" gap="xs">
             <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={() => { setEditing(false); setChk(line.chk); setEn(line.en) }}>Cancel</Button>
-            <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={() => { onChange({ ...line, chk: chk.trim(), en: en.trim(), confirmed: true }); setEditing(false) }}>Save</Button>
+            <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={() => { const next = { ...line, chk: chk.trim(), en: en.trim(), confirmed: true }; onChange(next); storeVerified(next); setEditing(false) }}>Save</Button>
           </Group>
         </Stack>
       ) : (
@@ -196,7 +208,7 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
             </Group>
           </Box>
           <Group gap={2} wrap="nowrap">
-            <Tooltip label={line.confirmed ? 'Mark unchecked' : 'Mark as checked'}><ActionIcon variant="subtle" color={line.confirmed ? 'green' : 'gray'} onClick={() => onChange({ ...line, confirmed: !line.confirmed })}><IconCheck size={16} /></ActionIcon></Tooltip>
+            <Tooltip label={line.confirmed ? 'Mark unchecked' : 'Mark as checked'}><ActionIcon variant="subtle" color={line.confirmed ? 'green' : 'gray'} onClick={() => { onChange({ ...line, confirmed: !line.confirmed }); if (!line.confirmed) storeVerified(line) }}><IconCheck size={16} /></ActionIcon></Tooltip>
             <ActionIcon variant="subtle" color="gray" onClick={() => { setChk(line.chk); setEn(line.en); setEditing(true) }}><IconEdit size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => onMove(-1)}><IconArrowUp size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => onMove(1)}><IconArrowDown size={16} /></ActionIcon>
