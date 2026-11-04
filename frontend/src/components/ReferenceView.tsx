@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { ActionIcon, Alert, Anchor, Badge, Box, Collapse, Divider, Group, Loader, Paper, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Alert, Anchor, Badge, Box, Button, Collapse, Divider, Group, Loader, Paper, Stack, Text, Tooltip } from '@mantine/core'
 import { IconChevronDown, IconChevronRight, IconExternalLink, IconRefresh } from '@tabler/icons-react'
 import axios from 'axios'
 import AddToTalk from './AddToTalk'
@@ -27,6 +27,8 @@ interface Paragraph { number: number; pid: string; en: string | null; chk: strin
 export interface ResolvedReference {
   ref: string; kind: string; key_words: string[]; title: { en: string; chk: string }
   links: { en: string | null; chk: string | null; search?: string | null }; chuukese_available: boolean; paragraphs: Paragraph[]; note: string; cached?: boolean; stored?: boolean
+  /** Nothing stored or cached yet; wol.jw.org is contacted only when the person asks. */
+  pending?: boolean
   maps?: { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
 }
 /** A reference stored with a talk by the resolve route. */
@@ -105,10 +107,12 @@ export function ReferenceInline({ reference, context, talkId, stored, showEnglis
   const [error, setError] = useState('')
   const [open, setOpen] = useState(true)
 
-  const load = async (refresh = false) => {
+  // fetch=false reads what is stored or cached; wol.jw.org is contacted only
+  // from the "Look up on wol.jw.org" button or Refresh.
+  const load = async (refresh = false, fetch = false) => {
     setLoading(true); setError('')
     try {
-      const res = await axios.post<ResolvedReference>('/api/talks/references/resolve', { ref: reference, context, refresh, talk_id: talkId })
+      const res = await axios.post<ResolvedReference>('/api/talks/references/resolve', { ref: reference, context, refresh, fetch, talk_id: talkId })
       setData(res.data); onResolved?.(reference, res.data)
     } catch (e) {
       setError(errorMessage(e, 'Could not resolve the reference'))
@@ -139,14 +143,19 @@ export function ReferenceInline({ reference, context, talkId, stored, showEnglis
           {data?.links.chk && <Anchor size="xs" href={data.links.chk} target="_blank" rel="noopener noreferrer">Open Chuukese</Anchor>}
           {data?.links.en && <Anchor size="xs" href={data.links.en} target="_blank" rel="noopener noreferrer">Open English</Anchor>}
           {data?.links.search && data.links.search !== data.links.en && <Anchor size="xs" c="dimmed" href={data.links.search} target="_blank" rel="noopener noreferrer">Search on WOL</Anchor>}
-          <Tooltip label="Read the article again from wol.jw.org"><ActionIcon variant="subtle" size="sm" onClick={() => load(true)} loading={loading} aria-label="Refresh"><IconRefresh size={14} /></ActionIcon></Tooltip>
+          {data?.pending ? (
+            <Button size="compact-xs" variant="light" leftSection={<IconExternalLink size={12} />} onClick={() => load(false, true)} loading={loading}>Look up on wol.jw.org</Button>
+          ) : (
+            <Tooltip label="Read the article again from wol.jw.org"><ActionIcon variant="subtle" size="sm" onClick={() => load(true, true)} loading={loading} aria-label="Refresh"><IconRefresh size={14} /></ActionIcon></Tooltip>
+          )}
         </Group>
       </Group>
       <Collapse in={open}>
         <Box mt="xs">
-          {loading && !data && <Text size="xs" c="dimmed">Reading the article on wol.jw.org… the first time takes a few seconds, after that it is instant.</Text>}
+          {loading && !data && <Text size="xs" c="dimmed">Checking what is stored…</Text>}
           {error && <Alert color="red" py={6}><Text size="sm">{error}</Text></Alert>}
-          {data && <ReferenceBody data={data} showEnglish={showEnglish} onGloss={onGloss} />}
+          {data?.pending && !loading && <Text size="xs" c="dimmed">Not stored yet. Press "Look up on wol.jw.org" to read the article once; it is then kept with the talk.</Text>}
+          {data && !data.pending && <ReferenceBody data={data} showEnglish={showEnglish} onGloss={onGloss} />}
         </Box>
       </Collapse>
     </Paper>

@@ -82,7 +82,7 @@ def _fetch(lang: str, book: int, chapter: int, timeout: int = 30) -> dict[str, s
     return parse_chapter(r.text)
 
 
-def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
+def chapter_verses(db, lang: str, book: int, chapter: int, fetch: bool = True) -> dict[str, str]:
     """Verses of one chapter, from memory, then the database, then WOL."""
     key = (lang, book, chapter)
     if key in _memory:
@@ -100,6 +100,9 @@ def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
     failed_at = _failed.get(key)
     if failed_at and time.monotonic() - failed_at < _FAIL_TTL:
         return {}
+    if not fetch:
+        # Only what is already stored; nothing is asked of wol.jw.org.
+        return {}
     verses = _fetch(lang, book, chapter) or {}
     if not verses:
         _failed[key] = time.monotonic()
@@ -113,8 +116,10 @@ def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
     return verses
 
 
-def verse(db, lang: str, book: int, chapter: int, number: int) -> str:
-    return chapter_verses(db, lang, book, chapter).get(str(number), "")
+def verse(db, lang: str, book: int, chapter: int, number: int, fetch: bool = True) -> str:
+    """One verse. With fetch=False only stored text is returned: a page that
+    opens must never contact wol.jw.org on its own; the person asks for it."""
+    return chapter_verses(db, lang, book, chapter, fetch=fetch).get(str(number), "")
 
 
 __all__ = ["chapter_verses", "verse", "parse_chapter"]

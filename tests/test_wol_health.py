@@ -48,3 +48,12 @@ def test_chapter_fetch_skips_wol_while_breaker_open(monkeypatch):
         wol_health.record_failure()
     assert wol_bible._fetch("chk", 40, 5) is None
     assert calls == []
+
+
+def test_verse_with_fetch_false_never_contacts_wol(monkeypatch):
+    """A page opening reads stored verses only."""
+    from src.core import wol_bible
+
+    monkeypatch.setattr(wol_bible.requests, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("wol.jw.org must not be contacted")))
+    wol_bible._memory.clear()
+    assert wol_bible.verse(None, "chk", 40, 5, 3, fetch=False) == ""
