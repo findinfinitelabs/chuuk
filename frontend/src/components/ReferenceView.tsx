@@ -51,7 +51,7 @@ export function ReferenceBody({ data, showEnglish, onGloss }: { data: ResolvedRe
     <Stack gap="sm">
       {data.note && <Alert color={data.chuukese_available ? 'yellow' : 'orange'} py={6}><Text size="sm">{data.note}</Text></Alert>}
       {data.key_words.length > 0 && (
-        <Text size="xs" c="dimmed">Key phrases from your outline: {data.key_words.map((k) => <Badge key={k} size="xs" variant="outline" color="yellow" mr={4}>{k}</Badge>)}</Text>
+        <Text component="div" size="xs" c="dimmed">Key phrases from your outline: {data.key_words.map((k) => <Badge key={k} size="xs" variant="outline" color="yellow" mr={4}>{k}</Badge>)}</Text>
       )}
       {data.paragraphs.map((p) => (
         <Paper key={p.pid} withBorder radius="md" p="md" style={{ borderLeft: '5px solid var(--mantine-color-violet-5)' }}>

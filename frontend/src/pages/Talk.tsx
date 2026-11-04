@@ -119,7 +119,7 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
           {data && (
             <Stack gap={6}>
               <Group gap={6} justify="space-between">
-                <Text size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{!data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}</Text>
+                <Text component="div" size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{!data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}</Text>
                 <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true)}>Search again</Button>
               </Group>
               {data.items.length === 0 && <Text size="xs" c="dimmed">Nothing close was found.</Text>}
@@ -637,7 +637,7 @@ export default function TalkBuilder() {
           <Group justify="flex-end"><Button variant="light" onClick={() => parse()} loading={parsing} disabled={!importText.trim()}>Parse outline</Button></Group>
           {preview && (
             <Paper withBorder p="sm" radius="md">
-              <Text fw={700}>{preview.title || '(no title)'} <Badge ml="xs" variant="light">{preview.language === 'chk' ? 'Chuukese' : 'English'}</Badge>{preview.total_minutes ? <Badge ml="xs" variant="light" color="gray">{preview.total_minutes} min</Badge> : null}</Text>
+              <Text component="div" fw={700}>{preview.title || '(no title)'} <Badge ml="xs" variant="light">{preview.language === 'chk' ? 'Chuukese' : 'English'}</Badge>{preview.total_minutes ? <Badge ml="xs" variant="light" color="gray">{preview.total_minutes} min</Badge> : null}</Text>
               {preview.theme_scripture && <Text size="sm" c="violet">Theme: {preview.theme_scripture}</Text>}
               <Divider my="xs" />
               {preview.points.map((p) => (
