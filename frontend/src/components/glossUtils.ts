@@ -34,6 +34,12 @@ export interface PhraseEntry {
 
 export type PhraseMap = Record<string, PhraseEntry>
 
+/** Lowercase with accents and hyphens stripped: the key phrase words are
+ *  indexed under on the server, so "múrinné" and "murinne" match. */
+export function normKey(word: string): string {
+  return word.toLowerCase().replace(/-/g, '').normalize('NFD').replace(/\p{M}/gu, '')
+}
+
 /** A phrase found in a sequence of word keys: words [start, end). */
 export interface PhraseSpan {
   start: number

@@ -5428,15 +5428,19 @@ def _get_similarity_index() -> dict:
     return index
 
 
-_PHRASE_MAX_WORDS = 4
+_PHRASE_MAX_WORDS = 5
 
 
 def _index_phrase(phrases: dict, headword: str, doc: dict) -> None:
-    """File a multi-word headword under its lowercase word sequence, keeping
-    the best-populated row when the same phrase appears more than once."""
-    if (doc.get("type") or "") == "sentence":
+    """File a multi-word headword under its accent-stripped word sequence
+    (so "ekiek múrinné" is found in text written "ekiek murinne"), keeping
+    the best-populated row when the same phrase appears more than once.
+    Example sentences are not phrases."""
+    if (doc.get("type") or "") == "sentence" or (doc.get("definition") or "").strip().lower() == "example sentence":
         return
-    words = [w.lower() for w in _WOL_WORD_RE.findall(headword)]
+    if headword.rstrip().endswith((".", "?", "!")):
+        return
+    words = [_norm_word(w) for w in _WOL_WORD_RE.findall(headword)]
     if not 2 <= len(words) <= _PHRASE_MAX_WORDS:
         return
     english = (doc.get("english_translation") or "").strip()
@@ -5460,7 +5464,7 @@ def _find_phrases(text: str, phrases: dict) -> dict:
     found: dict = {}
     if not phrases:
         return found
-    tokens = [(m.group(0).lower(), m.start(), m.end()) for m in _WOL_WORD_RE.finditer(text)]
+    tokens = [(_norm_word(m.group(0)), m.start(), m.end()) for m in _WOL_WORD_RE.finditer(text)]
     by_first: dict[str, list] = {}
     for key, entry in phrases.items():
         by_first.setdefault(entry["words"][0], []).append(entry)
