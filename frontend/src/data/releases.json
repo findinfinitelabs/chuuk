@@ -2,6 +2,14 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.4",
+      "date": "2026-11-04",
+      "title": "Talk Builder: images in a talk",
+      "notes": [
+        "Talk Builder: add an image to any section with the new Add image button. The image sits among the section's lines, can be moved up and down like a line, and takes a caption. In Deliver view it shows small and right-aligned exactly where it was placed, with the lines wrapping around it, as the cue for the AV team; clicking it shows it full screen, Escape or a click closes it. Images are stored with the talk (shrunk to at most 1600 pixels) and removed with it."
+      ]
+    },
+    {
       "version": "1.0.0.3",
       "date": "2026-11-03",
       "title": "Talk Builder: article links, Hebrew Scriptures, alternatives for every line",
