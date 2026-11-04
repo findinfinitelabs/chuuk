@@ -38,7 +38,10 @@ META = {"title": 1, "language": 1, "outline.title": 1, "outline.total_minutes": 
 
 
 def _line(data: dict) -> dict:
-    return {
+    """A line under a point: text in both languages, or an image (kind
+    "image") that sits in the same ordered list so it shows where it was
+    placed in the delivery view."""
+    line = {
         "id": data.get("id") or uuid.uuid4().hex[:10],
         "chk": (data.get("chk") or "").strip(),
         "en": (data.get("en") or "").strip(),
@@ -47,6 +50,34 @@ def _line(data: dict) -> dict:
         "confirmed": bool(data.get("confirmed")),
         "note": (data.get("note") or "")[:500],
     }
+    if data.get("kind") == "image" and data.get("image_id"):
+        line.update({"kind": "image", "image_id": str(data["image_id"])[:40], "caption": (data.get("caption") or "")[:300]})
+    return line
+
+
+IMAGE_MAX_SIDE = 1600
+IMAGES = "talk_images"
+
+
+def _prepare_image(raw: bytes) -> tuple[bytes, str, int, int]:
+    """Orient, shrink to at most IMAGE_MAX_SIDE and re-encode an upload so
+    one image stays well under Cosmos's document limit."""
+    import io
+
+    from PIL import Image, ImageOps
+
+    img = Image.open(io.BytesIO(raw))
+    img = ImageOps.exif_transpose(img)
+    has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+    img.thumbnail((IMAGE_MAX_SIDE, IMAGE_MAX_SIDE))
+    out = io.BytesIO()
+    if has_alpha:
+        img.convert("RGBA").save(out, format="PNG", optimize=True)
+        mime = "image/png"
+    else:
+        img.convert("RGB").save(out, format="JPEG", quality=85, optimize=True)
+        mime = "image/jpeg"
+    return out.getvalue(), mime, img.width, img.height
 
 
 def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: Callable, scripture_lookup: Callable, analyzer: Callable | None = None, wol_search: Callable | None = None) -> Blueprint:
@@ -401,6 +432,46 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
         _lib.link(get_db(), "talk", oid)
         return jsonify({"success": True, "id": talk_id})
 
+    @bp.route("/api/talks/<talk_id>/images", methods=["POST"])
+    @login_required
+    def api_upload_image(talk_id):
+        """Store one image for a talk (multipart field `file`); the page then
+        adds an image line where it should show."""
+        from flask import Response  # noqa: F401
+
+        oid, talk = talk_doc(talk_id, {"_id": 1})
+        if oid is None or not talk:
+            return jsonify({"error": "Talk not found"}), 404
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return jsonify({"error": "file is required"}), 400
+        raw = f.read()
+        if len(raw) > 12 * 1024 * 1024:
+            return jsonify({"error": "Image is larger than 12 MB"}), 413
+        try:
+            data, mime, w, h = _prepare_image(raw)
+        except Exception:
+            return jsonify({"error": "That file is not an image I can read"}), 400
+        db = getattr(get_db(), "db", None)
+        if db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        image_id = uuid.uuid4().hex
+        cosmos_retry(lambda: db[IMAGES].insert_one({"_id": image_id, "talk_id": oid, "data": data, "content_type": mime, "width": w, "height": h, "name": f.filename[:120], "created_by": _lib.current_email(), "created_at": datetime.now(timezone.utc)}))
+        return jsonify({"success": True, "id": image_id, "url": f"/api/talks/images/{image_id}", "width": w, "height": h})
+
+    @bp.route("/api/talks/images/<image_id>", methods=["GET"])
+    @login_required
+    def api_get_image(image_id):
+        from flask import Response
+
+        db = getattr(get_db(), "db", None)
+        if db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+        doc = cosmos_retry(lambda: db[IMAGES].find_one({"_id": image_id}))
+        if not doc:
+            return jsonify({"error": "Not found"}), 404
+        return Response(bytes(doc["data"]), mimetype=doc.get("content_type") or "image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
     @bp.route("/api/talks/<talk_id>/lines", methods=["POST"])
     @login_required
     def api_add_line(talk_id):
@@ -435,6 +506,12 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             return jsonify({"error": "Invalid ID"}), 400
         if _lib.unlink(get_db(), "talk", oid) == 0:
             cosmos_retry(lambda: c.delete_one({"_id": oid}))
+            db = getattr(get_db(), "db", None)
+            if db is not None:
+                try:
+                    cosmos_retry(lambda: db[IMAGES].delete_many({"talk_id": oid}))
+                except Exception:
+                    pass
         return jsonify({"success": True})
 
     return bp

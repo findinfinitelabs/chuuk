@@ -38,6 +38,10 @@
 .verse { background: var(--mantine-color-violet-light); border-radius: 8px; padding: 8px 10px; }
 .verseChk { font-size: 1.05rem; line-height: 1.4; }
 
+/* An image placed among a section's lines, in the builder. */
+.imageCard { display: flex; gap: 12px; align-items: flex-start; }
+.imageCard img { max-height: 120px; max-width: 200px; border-radius: 6px; object-fit: contain; background: var(--mantine-color-gray-1); }
+
 /* Delivery */
 .deliver { position: fixed; inset: 0; z-index: 1000; background: var(--mantine-color-body); overflow: auto; padding: 24px clamp(16px, 5vw, 80px); }
 .deliverHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -46,6 +50,15 @@
 .deliverEn { font-size: clamp(0.95rem, 1.6vw, 1.25rem); color: var(--mantine-color-dimmed); margin-bottom: 10px; }
 .deliverVerse { font-size: clamp(1.1rem, 2vw, 1.6rem); line-height: 1.45; background: var(--mantine-color-violet-light); border-radius: 10px; padding: 12px 16px; margin: 10px 0; }
 .deliverSub { font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; margin-top: 18px; color: var(--mantine-color-gray-7); }
+/* An image in the delivery view: small, right-aligned, text wraps around it;
+   it sits exactly where it was placed among the lines as the cue for the AV team. */
+.deliverImage { float: right; width: min(28%, 280px); margin: 4px 0 10px 18px; }
+.deliverImage img { display: block; width: 100%; border-radius: 10px; cursor: zoom-in; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18); }
+.deliverImage figcaption { font-size: 0.85rem; color: var(--mantine-color-dimmed); margin-top: 4px; text-align: center; }
+.deliverClear { clear: both; }
+.zoom { position: fixed; inset: 0; z-index: 1200; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.zoom img { max-width: 96vw; max-height: 92vh; border-radius: 8px; }
+.zoom figcaption { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; color: #fff; font-size: 1.1rem; }
 .timer { font-variant-numeric: tabular-nums; font-size: 1.4rem; font-weight: 800; }
 .timerOver { color: var(--mantine-color-red-6); }
 
