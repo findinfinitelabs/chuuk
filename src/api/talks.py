@@ -26,6 +26,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable
+from urllib.parse import quote
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -172,13 +173,13 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             return jsonify({"error": "chk is required"}), 400
         db = getattr(get_db(), "db", None)
         cache = db["line_alternatives"] if db is not None else None
-        key = _norm(chk)[:300]
+        key = _norm(chk)[:300] + ("" if data.get("wol") else "|library")
         if cache is not None and not data.get("refresh"):
             hit = cosmos_retry(lambda: cache.find_one({"key": key}, {"_id": 0, "result": 1, "at": 1}))
             if hit and hit.get("at") and hit["at"].replace(tzinfo=timezone.utc) > datetime.now(timezone.utc) - timedelta(days=7) and (hit["result"].get("items") or hit["result"].get("wol_reachable")):
                 return jsonify({**hit["result"], "cached": True})
         wol = None
-        if wol_search:
+        if wol_search and data.get("wol"):  # wol.jw.org only when the person asks
             try:
                 wol = wol_search()
             except Exception as e:  # pragma: no cover
@@ -196,6 +197,9 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
     def api_scriptures():
         data = request.get_json(silent=True) or {}
         refs = [str(r).strip() for r in (data.get("refs") or []) if str(r).strip()][:40]
+        # wol.jw.org is contacted only when the person asks (fetch: true);
+        # a page opening reads stored verses only.
+        fetch = bool(data.get("fetch"))
         from src.core import liebenzell_bible, wol_bible
         from src.core.scripture_refs import BOOKS, expand
 
@@ -213,6 +217,7 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 out[ref] = {"chuukese": "", "english": "", "error": "Could not read this citation", "verses": []}
                 continue
             rows, errors, sources = [], [], set()
+            missing = False
             for label, query in verses[:12]:
                 try:
                     r = scripture_lookup(query) or {}
@@ -225,8 +230,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                     book = BOOKS.index(m.group(1)) + 1 if m.group(1) in BOOKS else None
                     db = getattr(get_db(), "db", None)
                     if book:
-                        chk = chk or wol_bible.verse(db, "chk", book, int(m.group(2)), int(m.group(3)))
-                        eng = eng or wol_bible.verse(db, "en", book, int(m.group(2)), int(m.group(3)))
+                        chk = chk or wol_bible.verse(db, "chk", book, int(m.group(2)), int(m.group(3)), fetch=fetch)
+                        eng = eng or wol_bible.verse(db, "en", book, int(m.group(2)), int(m.group(3)), fetch=fetch)
                 source = "nwt"
                 if m and not chk and book and book <= 39:
                     # The New World Translation in Chuukese covers Matthew–Revelation only;
@@ -235,7 +240,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                     if chk:
                         source = "liebenzell"
                 if not (chk or eng):
-                    errors.append(f"{label}: {r.get('error') or 'not available'}")
+                    errors.append(f"{label}: {'not stored yet' if not fetch else (r.get('error') or 'not available')}")
+                    missing = True
                 elif not chk:
                     errors.append(f"{label}: no Chuukese text available")
                 else:
@@ -248,6 +254,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 "english": " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['english']}".strip() for v in rows if v["english"]),
                 "error": "; ".join(errors) or None,
                 "source": "liebenzell" if sources == {"liebenzell"} else ("mixed" if "liebenzell" in sources else "nwt"),
+                # True when some verse is not stored and the person may ask wol.jw.org for it.
+                "fetchable": missing and not fetch,
                 "verses": rows,
                 "maps": maps_for(chk_text),
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -295,6 +303,10 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             hit = cosmos_retry(lambda: cache.find_one(key, {"_id": 0, "result": 1}))
             if hit and hit["result"].get("paragraphs"):
                 result = {**hit["result"], "cached": True}
+        if result is None and not data.get("fetch"):
+            # Nothing stored or cached: the page shows a button; wol.jw.org is
+            # contacted only when the person presses it.
+            return jsonify({"pending": True, "ref": ref["raw"], "kind": ref["kind"], "key_words": [], "title": {"en": "", "chk": ""}, "links": {"en": None, "chk": None, "search": f"https://wol.jw.org/en/wol/l/r1/lp-e?q={quote(ref['raw'])}"}, "chuukese_available": False, "paragraphs": [], "note": ""})
         if result is None:
             resolver = Resolver(PageFetcher(db).get, gloss_map)
             try:

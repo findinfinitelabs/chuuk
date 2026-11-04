@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from src.core import wol_health
+
 log = logging.getLogger(__name__)
 COLLECTION = "wol_pages"
 _DISK_CACHE = Path(__file__).resolve().parent.parent.parent / "data" / "wol_cache"
@@ -47,6 +49,8 @@ class PageFetcher:
         disk = _DISK_CACHE / f"{hashlib.sha1(url.encode('utf-8')).hexdigest()}.html"
         if disk.exists():
             return disk.read_text(encoding="utf-8")
+        if not wol_health.available():
+            return None
         global _last
         with _lock:
             wait = _MIN_INTERVAL - (time.monotonic() - _last)
@@ -57,11 +61,14 @@ class PageFetcher:
             r = self.session.get(url, timeout=self.timeout)
         except requests.RequestException as e:
             log.warning("wol.jw.org fetch failed: %s (%s)", url, e)
+            wol_health.record_failure()
             return None
         if r.status_code != 200 or len(r.text) < 500:
             # An empty 202 is wol.jw.org declining automated requests for a while.
             log.warning("wol.jw.org answered %s with %s bytes for %s", r.status_code, len(r.text), url)
+            wol_health.record_failure()
             return None
+        wol_health.record_success()
         log.info("wol.jw.org page fetched: %s (%s bytes)", url, len(r.text))
         if self.col is not None:
             try:

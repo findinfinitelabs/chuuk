@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 
+from src.core import wol_health
 from src.core.wol_search import WOL_BASE, _plain
 
 _URL = {
@@ -36,6 +37,8 @@ _MIN_INTERVAL = 2.5
 _lock = threading.Lock()
 _last = 0.0
 _memory: dict[tuple, dict] = {}
+_failed: dict[tuple, float] = {}  # chapter → when WOL last declined it
+_FAIL_TTL = 600.0
 COLLECTION = "bible_chapters"
 log = logging.getLogger(__name__)
 
@@ -58,6 +61,8 @@ def parse_chapter(html: str) -> dict[str, str]:
 
 def _fetch(lang: str, book: int, chapter: int, timeout: int = 30) -> dict[str, str] | None:
     global _last
+    if not wol_health.available():
+        return None
     with _lock:
         wait = _MIN_INTERVAL - (time.monotonic() - _last)
         if wait > 0:
@@ -67,14 +72,17 @@ def _fetch(lang: str, book: int, chapter: int, timeout: int = 30) -> dict[str, s
         r = requests.get(_URL[lang].format(book=book, chapter=chapter), headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"}, timeout=timeout)
     except requests.RequestException as e:
         log.warning("wol.jw.org chapter fetch failed: %s %s %s (%s)", lang, book, chapter, e)
+        wol_health.record_failure()
         return None
-    if r.status_code != 200:
+    if r.status_code != 200 or len(r.text) < 500:
         log.warning("wol.jw.org answered %s with %s bytes for %s chapter %s/%s", r.status_code, len(r.text), lang, book, chapter)
+        wol_health.record_failure()
         return None
+    wol_health.record_success()
     return parse_chapter(r.text)
 
 
-def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
+def chapter_verses(db, lang: str, book: int, chapter: int, fetch: bool = True) -> dict[str, str]:
     """Verses of one chapter, from memory, then the database, then WOL."""
     key = (lang, book, chapter)
     if key in _memory:
@@ -88,7 +96,16 @@ def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
                 return doc["verses"]
         except Exception:
             pass
+    # A chapter WOL declined a moment ago is not asked for again at once.
+    failed_at = _failed.get(key)
+    if failed_at and time.monotonic() - failed_at < _FAIL_TTL:
+        return {}
+    if not fetch:
+        # Only what is already stored; nothing is asked of wol.jw.org.
+        return {}
     verses = _fetch(lang, book, chapter) or {}
+    if not verses:
+        _failed[key] = time.monotonic()
     if verses:
         _memory[key] = verses
         if col is not None:
@@ -99,8 +116,10 @@ def chapter_verses(db, lang: str, book: int, chapter: int) -> dict[str, str]:
     return verses
 
 
-def verse(db, lang: str, book: int, chapter: int, number: int) -> str:
-    return chapter_verses(db, lang, book, chapter).get(str(number), "")
+def verse(db, lang: str, book: int, chapter: int, number: int, fetch: bool = True) -> str:
+    """One verse. With fetch=False only stored text is returned: a page that
+    opens must never contact wol.jw.org on its own; the person asks for it."""
+    return chapter_verses(db, lang, book, chapter, fetch=fetch).get(str(number), "")
 
 
 __all__ = ["chapter_verses", "verse", "parse_chapter"]

@@ -41,7 +41,7 @@ interface Line { id: string; chk: string; en: string; source: string; ref: strin
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
-interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps; source?: 'nwt' | 'liebenzell' | 'mixed' }
+interface Verse { ref?: string; chuukese: string; english: string; error: string | null; maps?: Maps; source?: 'nwt' | 'liebenzell' | 'mixed'; fetchable?: boolean }
 /** Hebrew Scriptures come from a different Chuukese translation; say so wherever they show. */
 const LIEBENZELL = 'Liebenzell Paipel, not the New World Translation'
 const SourceTag = ({ verse, size = 'xs' }: { verse: Verse; size?: string }) =>
@@ -112,10 +112,13 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
   const [data, setData] = useState<Alternatives | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const load = async (refresh = false) => {
+  // Opening the accordion searches the stored pairs only; wol.jw.org is
+  // searched only from the "Search wol.jw.org" button.
+  const [wolAsked, setWolAsked] = useState(false)
+  const load = async (refresh = false, wol = false) => {
     if (!line.chk.trim()) return
-    setLoading(true); setError('')
-    try { const res = await axios.post<Alternatives>('/api/talks/alternatives', { chk: line.chk, refresh }); setData(res.data) } catch (e) { setError(errorMessage(e, 'Could not search')) } finally { setLoading(false) }
+    setLoading(true); setError(''); if (wol) setWolAsked(true)
+    try { const res = await axios.post<Alternatives>('/api/talks/alternatives', { chk: line.chk, refresh, wol }); setData(res.data) } catch (e) { setError(errorMessage(e, 'Could not search')) } finally { setLoading(false) }
   }
   useEffect(() => { setData(null) }, [line.chk])
   useEffect(() => { if (open && !data && !loading) load() }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -124,15 +127,18 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
     <Accordion value={open} onChange={setOpen} variant="separated" radius="md" mt={6} styles={{ control: { padding: '4px 8px' }, content: { padding: '4px 8px 8px' }, item: { background: 'var(--mantine-color-gray-0)' } }}>
       <Accordion.Item value="alt">
         <Accordion.Control icon={<IconSearch size={14} />}>
-          <Group gap={6}><Text size="xs" fw={600}>Similar on wol.jw.org and in the library</Text>{data && <Badge size="xs" variant="light" color={data.items.length ? 'violet' : 'gray'}>{data.items.length}</Badge>}{loading && <Loader size={12} />}</Group>
+          <Group gap={6}><Text size="xs" fw={600}>Similar in the library (and on wol.jw.org when you ask)</Text>{data && <Badge size="xs" variant="light" color={data.items.length ? 'violet' : 'gray'}>{data.items.length}</Badge>}{loading && <Loader size={12} />}</Group>
         </Accordion.Control>
         <Accordion.Panel>
           {error && <Alert color="red" py={4}><Text size="xs">{error}</Text></Alert>}
           {data && (
             <Stack gap={6}>
               <Group gap={6} justify="space-between">
-                <Text component="div" size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{!data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}</Text>
-                <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true)}>Search again</Button>
+                <Text component="div" size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{wolAsked && !data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}{!wolAsked && <Text span> · library only</Text>}</Text>
+                <Group gap={4}>
+                  <Button size="compact-xs" variant="light" leftSection={<IconSearch size={12} />} onClick={() => load(true, true)} loading={loading}>Search wol.jw.org</Button>
+                  <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true, wolAsked)}>Search again</Button>
+                </Group>
               </Group>
               {data.items.length === 0 && <Text size="xs" c="dimmed">Nothing close was found.</Text>}
               {data.items.map((a, i) => (
@@ -263,7 +269,7 @@ function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onG
 
 // ── Verse box ───────────────────────────────────────────────────────────────
 
-function VerseBox({ cite, verse, showEnglish, onGloss }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void }) {
+function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onFetch?: (cite: string) => void }) {
   return (
     <Box className={styles.verse} mt={6}>
       <Group gap={4}><Text size="xs" fw={700} c="violet">{cite}</Text>{verse && <SourceTag verse={verse} />}</Group>
@@ -275,7 +281,9 @@ function VerseBox({ cite, verse, showEnglish, onGloss }: { cite: string; verse?:
             </Text>
           )}
           {showEnglish && verse.english && <Text size="sm" c="dimmed">{verse.english}</Text>}
-          {!verse.chuukese && !verse.english && <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>}
+          {!verse.chuukese && !verse.english && (verse.fetchable && onFetch
+            ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Fetch from wol.jw.org</Button></Group>
+            : <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>)}
         </>
       )}
     </Box>
@@ -396,11 +404,31 @@ export default function TalkBuilder() {
 
   // Scriptures for the open talk, in both languages, fetched once per set of citations.
   const refs = useMemo(() => allRefs(talk?.outline || null), [talk?.outline])
+  // Citations already being fetched are not requested again while the first
+  // request runs: a talk with thirty verses used to fire the same lookup
+  // several times and tie up the browser's connections to the server.
+  const inFlight = useRef<Set<string>>(new Set())
+  // Opening a talk reads stored verses only (fetch: false); wol.jw.org is
+  // contacted only from the Fetch buttons.
   useEffect(() => {
-    const missing = refs.filter((r) => !verses[r])
+    const missing = refs.filter((r) => !verses[r] && !inFlight.current.has(r))
     if (!missing.length || !talk) return
-    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id }).then((r) => setVerses((v) => ({ ...v, ...r.data }))).catch(() => undefined)
+    missing.forEach((r) => inFlight.current.add(r))
+    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id, fetch: false })
+      .then((r) => setVerses((v) => ({ ...v, ...r.data })))
+      .catch(() => undefined)
+      .finally(() => missing.forEach((r) => inFlight.current.delete(r)))
   }, [refs, verses, talk])
+  const [fetchingVerses, setFetchingVerses] = useState(false)
+  const fetchVerses = async (which: string[]) => {
+    if (!talk || !which.length) return
+    setFetchingVerses(true)
+    try {
+      const r = await axios.post('/api/talks/scriptures', { refs: which, talk_id: talk.id, fetch: true })
+      setVerses((v) => ({ ...v, ...r.data }))
+    } catch { /* shown as not stored */ } finally { setFetchingVerses(false) }
+  }
+  const fetchableRefs = refs.filter((r) => verses[r]?.fetchable)
 
   const open = async (id: string) => {
     try {
@@ -518,7 +546,7 @@ export default function TalkBuilder() {
             onResolved={(raw, d) => { const link = d.links.en || d.links.search; if (link) setRefLinks((m) => (m[raw] === link ? m : { ...m, [raw]: link })) }}
             stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300) && s.result.paragraphs.length > 0)?.result} />
         ))}
-        {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} />)}
+        {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} />)}
         <Stack gap="xs" mt="sm">
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
@@ -596,12 +624,13 @@ export default function TalkBuilder() {
                     {editOutline ? <TextInput label="Title" value={talk.title} onChange={(e) => mutate((t) => ({ ...t, title: e.currentTarget.value }))} /> : <Group gap="sm" align="baseline">{talk.outline.number && <Badge variant="outline" color="gray">{talk.outline.number}</Badge>}<Title order={3}>{talk.title}</Title></Group>}
                     {talk.outline.note && <Text className={styles.note}>{talk.outline.note}</Text>}
                     {talk.outline.theme_scripture && <Text c="violet" fw={600} mt={4}>Theme: {talk.outline.theme_scripture}</Text>}
-                    {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} onGloss={setGloss} />}
+                    {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} />}
                   </Box>
                   <Stack gap={4} align="flex-end">
                     <Group gap="xs">
                       <Badge variant="light">{talk.outline.language === 'chk' ? 'Chuukese outline' : 'English outline'}</Badge>
                       {talk.outline.total_minutes && <Badge size="lg" variant="filled" color="violet">{talk.outline.total_minutes} min</Badge>}
+                      {fetchableRefs.length > 0 && <Button size="xs" variant="light" loading={fetchingVerses} onClick={() => fetchVerses(fetchableRefs)}>Fetch {fetchableRefs.length} missing verse{fetchableRefs.length === 1 ? '' : 's'} from wol.jw.org</Button>}
                       <Button size="xs" variant={editOutline ? 'filled' : 'default'} leftSection={<IconEdit size={14} />} onClick={() => setEditOutline((e) => !e)}>{editOutline ? 'Done editing outline' : 'Edit outline'}</Button>
                     </Group>
                     <Box w={260}>
