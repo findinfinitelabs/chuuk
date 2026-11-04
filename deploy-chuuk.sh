@@ -316,6 +316,8 @@ deploy_main() {
     # No GPU in the container: never auto-retrain there. Models are trained
     # locally and uploaded to the chuuk-models share (see docs/ or memory).
     "TRAINING_SCHEDULER_ENABLED=false"
+    # The hosted site has no GPU and runs Helsinki; pages show Google's answer first.
+    "PREFERRED_TRANSLATION_ENGINE=google"
   )
   if [ -n "$google_key" ]; then
     ENV_ARGS+=("GOOGLE_CLOUD_API_KEY=${google_key}")

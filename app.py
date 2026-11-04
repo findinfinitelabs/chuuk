@@ -79,6 +79,10 @@ from bs4 import BeautifulSoup
 # or TRANSLATION_ENGINE=madlad (Google MADLAD-400 3B + LoRA, pre-trained on Chuukese).
 # The module-level name `helsinki_translator` is kept for backward compatibility;
 # it holds whichever engine is active. Both expose the same translate_* methods.
+# Which engine's answer the pages take first. The hosted site has no GPU and
+# runs Helsinki there, so it is set to "google"; locally MADLAD is preferred.
+PREFERRED_TRANSLATION_ENGINE = os.getenv("PREFERRED_TRANSLATION_ENGINE", "model").strip().lower() or "model"
+
 try:
     from src.training.trainer_factory import engine_display_name, get_translator, translation_engine
 
@@ -1666,6 +1670,9 @@ def api_translate():
             "translations": {},
             "engine": TRANSLATION_ENGINE,
             "engine_name": TRANSLATION_ENGINE_NAME,
+            # Which answer the pages should show first: "google" on the hosted
+            # site (PREFERRED_TRANSLATION_ENGINE=google), else the neural model.
+            "preferred": PREFERRED_TRANSLATION_ENGINE,
         }
 
         # Google Translate - Using REST API with API key
@@ -4943,6 +4950,53 @@ def _appearance_update(existing: list, appearance: dict | None) -> list | None:
     if any(a.get("article_id") == appearance["article_id"] and a.get("english") == appearance["english"] for a in rows):
         return None
     return ([appearance] + rows)[:_MAX_GAME_APPEARANCES]
+
+
+def _store_verified_pair(chk: str, en: str, source: str, reference: str = "", by: str = "") -> dict:
+    """Store a Chuukese/English pair a person has checked as a verified entry:
+    a single word goes to the dictionary (or marks the existing headword
+    verified with this English merged in), anything longer to the phrase
+    library as a verified phrase (2–5 words) or sentence. Re-checking the same
+    Chuukese updates the entry instead of adding a second one. Verified pairs
+    carry confidence 100, so training picks them up first."""
+    chk, en = (chk or "").strip(), (en or "").strip()
+    if not chk or not en or dict_db is None:
+        return {"stored": False}
+    now = datetime.now(timezone.utc)
+    words = _WOL_WORD_RE.findall(chk)
+    verified = {"verified": True, "user_confirmed": True, "confidence_score": 100, "confidence_level": "verified", "date_modified": now, "updated_date": now, "edited_by": by, "verified_source": source, "reference": reference}
+    if len(words) == 1 and not chk.endswith((".", "?", "!")):
+        word = _clean_headword(chk)
+        found = _find_headword(word)
+        if found:
+            collection, _field, existing = found
+            english = (existing.get("english_translation") or "").strip()
+            merged = english if (not english or en.lower() in english.lower()) else f"{english}; {en}"
+            collection.update_one({"_id": existing["_id"]}, {"$set": {**verified, "english_translation": merged or en}})
+            return {"stored": True, "kind": "word", "updated": True}
+        dict_db.dictionary_collection.insert_one({"chuukese_word": word, "english_translation": en, "grammar": "", "definition": "", "type": "word", "source": source, "created_date": now, **verified})
+        return {"stored": True, "kind": "word", "updated": False}
+    kind = "phrase" if 2 <= len(words) <= 5 and not chk.endswith((".", "?", "!")) else "sentence"
+    col = dict_db.phrases_collection
+    existing = col.find_one({"chuukese_phrase": {"$regex": f"^{re.escape(chk)}$", "$options": "i"}})
+    if existing:
+        col.update_one({"_id": existing["_id"]}, {"$set": {**verified, "english_translation": en, "type": kind}})
+        return {"stored": True, "kind": kind, "updated": True}
+    col.insert_one({"_id": f"phrase_{hash(chk) & 0x7FFFFFFF}_{hash(en) & 0x7FFFFFFF}", "chuukese_phrase": chk, "english_translation": en, "type": kind, "source": source, "definition": "", "date_added": now, **verified})
+    return {"stored": True, "kind": kind, "updated": False}
+
+
+@app.route("/api/pairs/verified", methods=["POST"])
+@login_required
+def api_store_verified_pair():
+    """A pair the person has checked (Talk Builder line marked checked):
+    stored as a verified word, phrase or sentence."""
+    data = request.get_json(silent=True) or {}
+    try:
+        out = _store_verified_pair(data.get("chk", ""), data.get("en", ""), (data.get("source") or "talk_builder")[:60], (data.get("reference") or "")[:300], _get_user_initials())
+        return jsonify({"success": True, **out})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/brochures/match/words", methods=["POST"])
