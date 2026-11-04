@@ -396,10 +396,18 @@ export default function TalkBuilder() {
 
   // Scriptures for the open talk, in both languages, fetched once per set of citations.
   const refs = useMemo(() => allRefs(talk?.outline || null), [talk?.outline])
+  // Citations already being fetched are not requested again while the first
+  // request runs: a talk with thirty verses used to fire the same lookup
+  // several times and tie up the browser's connections to the server.
+  const inFlight = useRef<Set<string>>(new Set())
   useEffect(() => {
-    const missing = refs.filter((r) => !verses[r])
+    const missing = refs.filter((r) => !verses[r] && !inFlight.current.has(r))
     if (!missing.length || !talk) return
-    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id }).then((r) => setVerses((v) => ({ ...v, ...r.data }))).catch(() => undefined)
+    missing.forEach((r) => inFlight.current.add(r))
+    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id })
+      .then((r) => setVerses((v) => ({ ...v, ...r.data })))
+      .catch(() => undefined)
+      .finally(() => missing.forEach((r) => inFlight.current.delete(r)))
   }, [refs, verses, talk])
 
   const open = async (id: string) => {

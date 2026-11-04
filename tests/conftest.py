@@ -130,3 +130,14 @@ def _safe_open(path, *args, **kwargs):
     mock_fh.__exit__ = MagicMock(return_value=False)
     mock_fh.read.return_value = ""
     return mock_fh
+
+
+@pytest.fixture(autouse=True)
+def _closed_wol_breaker():
+    """The wol.jw.org circuit breaker is process-wide; no test inherits an
+    open breaker from another."""
+    from src.core import wol_health
+
+    wol_health.reset()
+    yield
+    wol_health.reset()

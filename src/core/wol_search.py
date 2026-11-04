@@ -391,13 +391,31 @@ class WOLSearch:
         self._doc_lock = threading.Lock()
 
     # -- fetching ----------------------------------------------------------
+    def _get(self, url: str, timeout: int) -> str:
+        """One request to wol.jw.org through the shared circuit breaker: when
+        the site is declining automated requests, fail at once instead of
+        spending the timeout."""
+        from src.core import wol_health  # noqa: PLC0415
+
+        if not wol_health.available():
+            raise requests.RequestException("wol.jw.org is declining automated requests at the moment")
+        try:
+            resp = self.session.get(url, timeout=timeout)
+        except requests.RequestException:
+            wol_health.record_failure()
+            raise
+        if getattr(resp, "status_code", 200) != 200 or not resp.text.strip():
+            # An empty 202 is the site declining automated requests for a while.
+            wol_health.record_failure()
+            raise requests.RequestException(f"wol.jw.org answered {resp.status_code} with {len(resp.text)} bytes")
+        wol_health.record_success()
+        return resp.text
+
     def _fetch(self, query: str, page: int, timeout: int) -> str:
         url = WOL_SEARCH.format(lang=self.language) + f"?q={quote(query)}"
         if page > 1:
             url += f"&pg={page}"
-        resp = self.session.get(url, timeout=timeout)
-        resp.raise_for_status()
-        return resp.text
+        return self._get(url, timeout)
 
     # -- parsing -----------------------------------------------------------
     def _parse(self, html: str, query: str) -> list[dict]:
@@ -459,14 +477,11 @@ class WOLSearch:
 
         rsconf, lib = _LANGS[lang]
         try:
-            resp = self.session.get(
-                WOL_DOC.format(lang=lang, rsconf=rsconf, lib=lib, doc_id=doc_id), timeout=timeout
-            )
-            resp.raise_for_status()
+            html = self._get(WOL_DOC.format(lang=lang, rsconf=rsconf, lib=lib, doc_id=doc_id), timeout)
         except requests.RequestException:
             return None
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
         article = soup.find("article") or soup
         title_el = soup.select_one("li.resultsNavigationSelected .navContent") or soup.find("h1")
         location = soup.select_one("li.documentLocation")
