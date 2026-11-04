@@ -30,6 +30,9 @@ export interface PhraseEntry {
   english: string
   grammar: string
   definition: string
+  /** "library": a phrase recorded in the phrase library; "grammar": consecutive
+   *  dictionary words whose parts of speech form a phrase (pronoun + noun…). */
+  kind?: 'library' | 'grammar'
 }
 
 export type PhraseMap = Record<string, PhraseEntry>
@@ -94,4 +97,46 @@ export function phraseGloss(entry: PhraseEntry, dictionary: Dictionary): Gloss['
     entry,
     words: words.map((word) => ({ word, entry: dictionary[word.toLowerCase()] })),
   }
+}
+
+// ── Grammatical phrases ───────────────────────────────────────────────────────
+
+/** Part-of-speech sequences that read as one phrase in Chuukese, longest first.
+ *  Labels are the first word of the dictionary's `grammar` field. */
+export const GRAMMAR_PATTERNS: string[][] = [
+  ['preposition', 'article', 'noun'], ['article', 'noun', 'adjective'], ['pronoun', 'verb', 'noun'], ['noun', 'verb', 'noun'],
+  ['possessive', 'noun', 'adjective'], ['demonstrative', 'noun', 'adjective'],
+  ['pronoun', 'noun'], ['possessive', 'noun'], ['classifier', 'noun'], ['article', 'noun'], ['demonstrative', 'noun'], ['noun', 'demonstrative'],
+  ['adjective', 'noun'], ['noun', 'adjective'], ['number', 'noun'], ['numeral', 'noun'], ['quantifier', 'noun'],
+  ['preposition', 'noun'], ['preposition', 'pronoun'], ['pronoun', 'verb'], ['noun', 'verb'], ['verb', 'noun'], ['verb', 'adverb'], ['adverb', 'verb'], ['auxiliary', 'verb'],
+]
+
+export function posOf(entry: DictEntry | undefined): string {
+  return (entry?.grammar || '').trim().toLowerCase().split(/[\s(/,]+/)[0] || ''
+}
+
+/** Phrases formed by the parts of speech of consecutive dictionary words, in
+ *  the gaps left by the library phrases (`taken`: word indexes already in a
+ *  span). `words` are the words as written, `keys` their lowercase forms. */
+export function grammarPhraseSpans(
+  words: string[], keys: string[], dictionary: Dictionary, taken: Set<number>, joinable: (i: number) => boolean = () => true,
+): PhraseSpan[] {
+  const pos = keys.map((k) => posOf(dictionary[k]))
+  const spans: PhraseSpan[] = []
+  let i = 0
+  while (i < keys.length) {
+    if (taken.has(i) || !pos[i]) { i += 1; continue }
+    const hit = GRAMMAR_PATTERNS.find((pat) => pat.every((label, k) => pos[i + k] === label && !taken.has(i + k) && (k === 0 || joinable(i + k - 1))))
+    if (!hit) { i += 1; continue }
+    const n = hit.length
+    const text = words.slice(i, i + n).join(' ')
+    const entry: PhraseEntry = {
+      text, words: keys.slice(i, i + n), kind: 'grammar',
+      english: keys.slice(i, i + n).map((k) => dictionary[k]?.english || '…').join(' '),
+      grammar: hit.join(' + '), definition: '',
+    }
+    spans.push({ start: i, end: i + n, key: `${text.toLowerCase()}#grammar`, entry })
+    i += n
+  }
+  return spans
 }
