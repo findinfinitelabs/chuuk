@@ -1,46 +1,47 @@
 /*
- * GlossedText — Chuukese words tinted by dictionary status, with a floating
- * gloss on hover. Shared by the Watchtower Library search and the Translation
- * Game so both pages read the same way.
+ * GlossedText — Chuukese text that reads as plain text, with the dictionary
+ * behind it. Palette: text, dictionary underline / hover / selected, phrase
+ * underline, focus outline. Shared by every page that glosses Chuukese.
  */
 
-/* A word with no dictionary tint still needs the same padding so the line
-   does not jitter as tints appear. */
+:root {
+  --text-primary: #293241;
+  --dictionary-underline: #B7C3CE;
+  --dictionary-hover: #EDF3F8;
+  --dictionary-selected: #DCEAF5;
+  --phrase-underline: #6685A1;
+  --focus-outline: #376B9A;
+}
+
+/* Every word keeps the same padding so the line does not jitter as states change. */
 .word {
   padding: 1px 2px;
   border-radius: 3px;
+  color: var(--text-primary);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
-/* In the dictionary, with an English translation. */
-.translated {
-  background-color: #ebfbee;
-  cursor: help;
+/* A word the dictionary knows (or has something close to): no persistent
+   styling; a soft cue on hover; a visible outline when focused by keyboard. */
+.known {
+  cursor: pointer;
 }
 
-.translated:hover {
-  background-color: #d3f9d8;
+.known:hover {
+  background-color: var(--dictionary-hover);
 }
 
-/* In the dictionary, but no English translation recorded yet. */
-.untranslated {
-  background-color: #ffdeeb;
-  cursor: help;
+.word:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 1px;
 }
 
-.untranslated:hover {
-  background-color: #fcc2d7;
-}
-
-/* In the dictionary, but spelled with different accents there. */
-.accent {
-  background-color: #d0ebff;
-  cursor: help;
-}
-
-.accent:hover {
-  background-color: #a5d8ff;
+/* Reader setting on: every dictionary word gets a faint dotted underline. */
+.indicator {
+  text-decoration: underline dotted var(--dictionary-underline);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 /* Pages that edit entries make every word clickable. */
@@ -48,61 +49,61 @@
   cursor: pointer;
 }
 
-/* Not in the dictionary, but we hold words that look related. */
-.similar {
-  background-color: #fff3bf;
-  cursor: help;
+/* Words of one phrase share a thin dotted underline: a library phrase ("kapas
+   eis"), or dictionary words whose parts of speech form one (pronoun + noun). */
+.phrase,
+.grammarPhrase {
+  text-decoration: underline dotted var(--phrase-underline);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
 }
 
-.similar:hover {
-  background-color: #ffec99;
+.phrase:hover,
+.grammarPhrase:hover {
+  text-decoration-style: solid;
 }
 
-/* Words of one dictionary phrase ("ewe Kot") share an underline. */
-.phrase {
-  border-bottom: 2px solid #7950f2;
-  padding-bottom: 1px;
-}
-
-.phrase:hover {
-  border-bottom-color: #5f3dc4;
+/* The selected word or phrase while its definition is pinned. */
+.selected {
+  background-color: var(--dictionary-selected);
 }
 
 /* The phrase block at the top of the gloss, above the hovered word's own entry */
 .glossPhrase {
   margin-bottom: 6px;
   padding-bottom: 6px;
-  border-bottom: 1px solid #343a40;
+  border-bottom: 1px solid var(--dictionary-selected);
 }
 
-/* Floating gloss shown on hover. One node for the whole page, positioned
-   against the cursor, rather than a tooltip per word. */
+/* The definition panel: one node for the whole page, placed by the cursor. */
 .gloss {
   position: fixed;
   z-index: 400;
-  max-width: 280px;
+  max-width: 300px;
   pointer-events: none;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: #1a1b1e;
-  color: #f1f3f5;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  font-size: 0.82rem;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-primary);
+  border: 1px solid var(--dictionary-underline);
+  box-shadow: 0 8px 24px rgba(41, 50, 65, 0.18);
+  font-size: 0.84rem;
   line-height: 1.45;
 }
 
 .glossWord {
   font-weight: 700;
-  color: #ffd43b;
+  color: var(--focus-outline);
 }
 
 .glossEnglish {
-  color: #8ce99a;
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .glossMeta {
-  color: #adb5bd;
-  font-size: 0.74rem;
+  color: var(--phrase-underline);
+  font-size: 0.76rem;
 }
 
 /* Alphabetical list of related words we do hold */
@@ -116,31 +117,31 @@
 
 .glossList li {
   padding: 1px 0;
-  color: #ffe066;
+  color: var(--text-primary);
   font-size: 0.8rem;
 }
 
 .glossList li span {
-  color: #ced4da;
-  font-size: 0.74rem;
+  color: var(--phrase-underline);
+  font-size: 0.76rem;
 }
 
 /* An article the word was matched in: title, then the English sentence */
 .glossAppearance {
-  color: #a5d8ff !important;
+  color: var(--focus-outline) !important;
   white-space: normal;
 }
 
 .glossAppearance span {
-  color: #ced4da;
+  color: var(--phrase-underline);
   font-size: 0.72rem;
   font-style: italic;
 }
 
 /* The headword a word was matched under when only the accents differ */
 .glossVariant {
-  color: #a5d8ff;
-  font-size: 0.74rem;
+  color: var(--phrase-underline);
+  font-size: 0.76rem;
   margin-bottom: 2px;
 }
 
@@ -148,9 +149,9 @@
 .glossSuggestion {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #343a40;
-  color: #ffc9c9;
-  font-size: 0.74rem;
+  border-top: 1px solid var(--dictionary-selected);
+  color: var(--phrase-underline);
+  font-size: 0.76rem;
 }
 
 /* Legend swatch */
@@ -163,5 +164,5 @@
   vertical-align: -1px;
 }
 
-/* A key phrase of the learner's outline, on top of the dictionary tint. */
+/* A key phrase of the learner's outline, on top of the dictionary states. */
 .mark { background: #ffd43b; border-radius: 3px; box-shadow: 0 0 0 1px #ffd43b; }

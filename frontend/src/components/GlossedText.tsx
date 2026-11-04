@@ -1,15 +1,19 @@
 /**
- * GlossedText — Chuukese text with every word tinted by its dictionary status
- * and a floating gloss on hover showing the base word's translation, grammar
- * and definition, or (for words we do not hold) related entries we do.
+ * GlossedText — Chuukese text that reads as plain text with the dictionary
+ * behind it: phrases carry a thin dotted underline, hovering a word shows a
+ * soft cue and its gloss, and a click, tap or Enter selects the word (soft
+ * blue) and pins its gloss. Related entries are shown for words we do not
+ * hold. A reader setting adds a faint underline to every dictionary word.
  *
  * Used by the Watchtower Library search page and the Translation Game. The
  * `dictionary` and `similar` maps come from the backend's `_attach_dictionary`.
  */
-import type { MouseEvent, ReactNode } from 'react'
-import { Group, Text } from '@mantine/core'
+import { useEffect, useState } from 'react'
+import type { FocusEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, ReactNode } from 'react'
+import { Group, Switch, Text } from '@mantine/core'
+import { setIndicators, useIndicators } from './glossSettings'
 import styles from './GlossedText.module.css'
-import { findPhraseSpans, glossStatus, normKey, phraseGloss, spanIndex } from './glossUtils'
+import { findPhraseSpans, grammarPhraseSpans, normKey, phraseGloss, spanIndex } from './glossUtils'
 import type { PhraseEntry, PhraseMap } from './glossUtils'
 
 /** An article in which a word was matched during the Translation Game. */
@@ -86,8 +90,12 @@ function groupAppearances(appearances: Appearance[]): Appearance[] {
   return Array.from(seen.values())
 }
 
-/** Every word of `text` tinted by dictionary status; hovering a known or
- *  near-known word reports a Gloss through `onGloss` (null on leave). */
+/** Every word of `text` as plain reading text with the dictionary behind it:
+ *  a dotted underline marks phrases (library phrases, and runs of dictionary
+ *  words whose parts of speech form one), hovering shows a soft cue, and a
+ *  click, tap or Enter selects the word (soft blue) and pins its gloss until
+ *  the next click or Escape. With "Show dictionary indicators" on, every word
+ *  the dictionary holds also gets a faint dotted underline. */
 export function GlossedWords({
   text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks,
 }: {
@@ -103,54 +111,86 @@ export function GlossedWords({
   onWordClick?: (word: string) => void
   keyPrefix?: string
 }): ReactNode {
+  const indicators = useIndicators()
+  const [pinned, setPinned] = useState<number | null>(null)
+  useEffect(() => {
+    if (pinned === null) return
+    const clear = () => { setPinned(null); onGloss(null) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') clear() }
+    document.addEventListener('click', clear)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('click', clear); document.removeEventListener('keydown', onKey) }
+  }, [pinned]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const tokens = text.split(TOKENS)
   // Word tokens in order, so phrases can be found across the separators.
   const wordAt: number[] = []
   tokens.forEach((tok, ti) => { if (tok && IS_WORD.test(tok)) wordAt.push(ti) })
-  const keys = wordAt.map((ti) => normKey(tokens[ti]))
+  const words = wordAt.map((ti) => tokens[ti])
+  const keys = words.map(normKey)
+  const lowers = words.map((w) => w.toLowerCase())
   const joinable = (i: number) => {
     const between = tokens.slice(wordAt[i] + 1, wordAt[i + 1]).join('')
     return PHRASE_GAP.test(between)
   }
-  const spans = spanIndex(findPhraseSpans(keys, phrases, joinable))
+  const library = findPhraseSpans(keys, phrases, joinable)
+  const taken = new Set<number>()
+  library.forEach((sp) => { for (let i = sp.start; i < sp.end; i++) taken.add(i) })
+  const spans = spanIndex([...library, ...grammarPhraseSpans(words, lowers, dictionary, taken, joinable)])
   const tokenSpan = new Map<number, ReturnType<typeof spans.get>>()
   spans.forEach((span, wi) => {
     // Every token from the first word to the last word of the phrase, separators included.
     for (let ti = wordAt[span.start]; ti < wordAt[span.end - 1] + 1; ti++) tokenSpan.set(ti, span)
     tokenSpan.set(wordAt[wi], span)
   })
+  const pinnedSpan = pinned !== null ? tokenSpan.get(pinned) : undefined
 
   return tokens.map((tok, ti) => {
     if (!tok) return null
     const key = `${keyPrefix}${ti}`
     const span = tokenSpan.get(ti)
-    const phraseClass = span ? ` ${styles.phrase}` : ''
-    if (!IS_WORD.test(tok)) return <span key={key} className={phraseClass || undefined}>{tok}</span>
+    const inPinned = pinned !== null && (ti === pinned || (!!pinnedSpan && span === pinnedSpan))
+    const phraseClass = span ? ` ${span.entry.kind === 'grammar' ? styles.grammarPhrase : styles.phrase}` : ''
+    const selectedClass = inPinned ? ` ${styles.selected}` : ''
+    if (!IS_WORD.test(tok)) return <span key={key} className={(phraseClass + selectedClass).trim() || undefined}>{tok}</span>
 
     const lower = tok.toLowerCase()
     const entry = dictionary[lower]
     const near = entry ? undefined : similar[lower]
-    const status = glossStatus(entry, near)
-    const tint = status ? styles[status] : undefined
-
-    const hoverable = entry || near || span
+    const hoverable = !!(entry || near || span)
     const marked = marks?.has(lower.replace(/[^\p{L}\p{N}]/gu, '')) ? ` ${styles.mark}` : ''
+    const gloss = (e: { clientX: number; clientY: number }): Gloss => ({
+      word: tok, entry, similar: near,
+      phrase: span ? phraseGloss(span.entry, dictionary) : undefined,
+      x: e.clientX, y: e.clientY,
+    })
+    const label = entry ? `${tok}: ${entry.english || 'in the dictionary'}` : span ? `${tok}, part of ${span.entry.text}` : near ? `${tok}: similar to ${near[0]?.word}` : tok
+    const select = (e: { clientX: number; clientY: number; stopPropagation: () => void }) => {
+      e.stopPropagation()
+      if (onWordClick) { onWordClick(tok); return }
+      if (!hoverable) return
+      if (pinned === ti) { setPinned(null); onGloss(null) } else { setPinned(ti); onGloss(gloss(e)) }
+    }
     return (
       <span
         key={key}
-        className={`${styles.word}${tint ? ` ${tint}` : ''}${phraseClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}`}
-        onClick={onWordClick ? () => onWordClick(tok) : undefined}
-        onMouseEnter={
-          hoverable
-            ? (e: MouseEvent<HTMLSpanElement>) =>
-                onGloss({
-                  word: tok, entry, similar: near,
-                  phrase: span ? phraseGloss(span.entry, dictionary) : undefined,
-                  x: e.clientX, y: e.clientY,
-                })
-            : undefined
-        }
-        onMouseLeave={hoverable ? () => onGloss(null) : undefined}
+        className={`${styles.word}${hoverable ? ` ${styles.known}` : ''}${indicators && entry ? ` ${styles.indicator}` : ''}${phraseClass}${selectedClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}`}
+        role={hoverable || onWordClick ? 'button' : undefined}
+        tabIndex={hoverable || onWordClick ? 0 : undefined}
+        aria-label={hoverable ? label : undefined}
+        aria-pressed={hoverable ? inPinned : undefined}
+        onClick={hoverable || onWordClick ? select : undefined}
+        onKeyDown={hoverable || onWordClick ? (e: ReactKeyboardEvent<HTMLSpanElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            const r = e.currentTarget.getBoundingClientRect()
+            select({ clientX: r.left, clientY: r.bottom, stopPropagation: () => e.stopPropagation() })
+          }
+        } : undefined}
+        onFocus={hoverable ? (e: FocusEvent<HTMLSpanElement>) => { if (pinned === null) { const r = e.currentTarget.getBoundingClientRect(); onGloss(gloss({ clientX: r.left, clientY: r.bottom })) } } : undefined}
+        onBlur={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
+        onMouseEnter={hoverable ? (e: MouseEvent<HTMLSpanElement>) => { if (pinned === null) onGloss(gloss(e)) } : undefined}
+        onMouseLeave={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
       >
         {tok}
       </span>
@@ -158,7 +198,6 @@ export function GlossedWords({
   })
 }
 
-/** The floating gloss. One instance for the page, following the cursor. */
 export function GlossCard({ gloss }: { gloss: Gloss }) {
   // Keep the card on screen near the right and bottom edges.
   const left = Math.min(gloss.x + 14, window.innerWidth - 300)
@@ -256,33 +295,25 @@ export function GlossCard({ gloss }: { gloss: Gloss }) {
   )
 }
 
-/** Explains the word tints. */
+/** The reader's dictionary setting and what the underlines mean. */
 export function GlossLegend() {
+  const indicators = useIndicators()
   return (
-    <Group gap="md" mt="xs">
+    <Group gap="md" mt="xs" align="center">
+      <Switch size="xs" label="Show dictionary indicators" checked={indicators} onChange={(e) => setIndicators(e.currentTarget.checked)} />
       <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#ebfbee', border: '1px solid #b2f2bb' }} />
-        in dictionary, translated
+        <span className={styles.swatch} style={{ background: 'transparent', borderBottom: '2px dotted #6685A1', borderRadius: 0, height: 8 }} />
+        phrase
       </Text>
+      {indicators && (
+        <Text size="xs" c="dimmed">
+          <span className={styles.swatch} style={{ background: 'transparent', borderBottom: '2px dotted #B7C3CE', borderRadius: 0, height: 8 }} />
+          in the dictionary
+        </Text>
+      )}
       <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#ffdeeb' }} />
-        in dictionary, no translation
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#d0ebff' }} />
-        in dictionary under other accents
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#fff3bf' }} />
-        similar entries exist
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: 'transparent', border: '1px solid #ced4da' }} />
-        not in dictionary
-      </Text>
-      <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: 'transparent', borderBottom: '2px solid #7950f2', borderRadius: 0, height: 8 }} />
-        dictionary phrase
+        <span className={styles.swatch} style={{ background: '#DCEAF5' }} />
+        selected · click or tap a word for its definition
       </Text>
     </Group>
   )
