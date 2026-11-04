@@ -9,7 +9,7 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { Group, Text } from '@mantine/core'
 import styles from './GlossedText.module.css'
-import { findPhraseSpans, glossStatus, phraseGloss, spanIndex } from './glossUtils'
+import { findPhraseSpans, glossStatus, normKey, phraseGloss, spanIndex } from './glossUtils'
 import type { PhraseEntry, PhraseMap } from './glossUtils'
 
 /** An article in which a word was matched during the Translation Game. */
@@ -107,7 +107,7 @@ export function GlossedWords({
   // Word tokens in order, so phrases can be found across the separators.
   const wordAt: number[] = []
   tokens.forEach((tok, ti) => { if (tok && IS_WORD.test(tok)) wordAt.push(ti) })
-  const keys = wordAt.map((ti) => tokens[ti].toLowerCase())
+  const keys = wordAt.map((ti) => normKey(tokens[ti]))
   const joinable = (i: number) => {
     const between = tokens.slice(wordAt[i] + 1, wordAt[i + 1]).join('')
     return PHRASE_GAP.test(between)
@@ -261,7 +261,7 @@ export function GlossLegend() {
   return (
     <Group gap="md" mt="xs">
       <Text size="xs" c="dimmed">
-        <span className={styles.swatch} style={{ background: '#d3f9d8' }} />
+        <span className={styles.swatch} style={{ background: '#ebfbee', border: '1px solid #b2f2bb' }} />
         in dictionary, translated
       </Text>
       <Text size="xs" c="dimmed">

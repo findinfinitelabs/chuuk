@@ -285,3 +285,15 @@ class TestSavedMatchesComeBackOnFetch:
         got = app._game_article_matches("art1")
         assert got == [{"english_id": 3, "chuukese_ids": [4, 5], "english_text": "Hi", "was_edited": False, "word_pairs": []}]
         assert app._game_article_matches("") == []
+
+    def test_phrases_match_without_regard_to_accents_and_skip_example_sentences(self):
+        from app import _find_phrases, _index_phrase
+
+        phrases: dict = {}
+        _index_phrase(phrases, "ekiek múrinné", {"english_translation": "think positively", "definition": "Means “have positive thoughts.”"})
+        _index_phrase(phrases, "A echipwanga le angang.", {"english_translation": "He got tired of working.", "definition": "example sentence"})
+        _index_phrase(phrases, "kapas eis", {"english_translation": "question", "definition": "Means “question.”"})
+        assert set(phrases) == {"ekiek murinne", "kapas eis"}
+        found = _find_phrases("Sipwe ekiek murinne ren ewe kapas eis.", phrases)
+        assert set(found) == {"ekiek murinne", "kapas eis"}
+        assert found["ekiek murinne"]["text"] == "ekiek múrinné" and found["ekiek murinne"]["definition"]

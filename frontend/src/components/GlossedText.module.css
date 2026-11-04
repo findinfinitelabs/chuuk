@@ -15,12 +15,12 @@
 
 /* In the dictionary, with an English translation. */
 .translated {
-  background-color: #d3f9d8;
+  background-color: #ebfbee;
   cursor: help;
 }
 
 .translated:hover {
-  background-color: #b2f2bb;
+  background-color: #d3f9d8;
 }
 
 /* In the dictionary, but no English translation recorded yet. */
@@ -61,7 +61,11 @@
 /* Words of one dictionary phrase ("ewe Kot") share an underline. */
 .phrase {
   border-bottom: 2px solid #7950f2;
-  padding-bottom: 0;
+  padding-bottom: 1px;
+}
+
+.phrase:hover {
+  border-bottom-color: #5f3dc4;
 }
 
 /* The phrase block at the top of the gloss, above the hovered word's own entry */
