@@ -17,7 +17,7 @@ import {
 } from '@mantine/core'
 import {
   IconArrowDown, IconArrowUp, IconCheck, IconChevronLeft, IconChevronRight, IconDeviceFloppy, IconEdit, IconLanguage,
-  IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconTrash, IconUpload, IconX,
+  IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconStrikethrough, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { notifications } from '@mantine/notifications'
@@ -35,9 +35,18 @@ import styles from './Talk.module.css'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Reference { raw: string; kind: string }
-interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
+interface Point {
+  id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[]
+  /** Struck through: kept in the outline for reference but not used in the talk. */
+  skipped?: boolean
+}
 interface Outline { title: string; number?: string; note?: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
-interface Line { id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string }
+interface Line {
+  id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string
+  /** An image placed among the lines: shows where it sits, small and right-aligned, in Deliver view. */
+  kind?: 'text' | 'image'; image_id?: string; caption?: string
+}
+const imageUrl = (l: Line) => `/api/talks/images/${l.image_id}`
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
@@ -166,6 +175,42 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
       </Accordion.Item>
     </Accordion>
   )
+}
+
+// ── An image among the lines ─────────────────────────────────────────────────
+
+function ImageCard({ line, onChange, onRemove, onMove }: { line: Line; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void }) {
+  return (
+    <Paper withBorder p="sm" radius="md" className={styles.line}>
+      <Group align="flex-start" wrap="nowrap" justify="space-between">
+        <div className={styles.imageCard}>
+          <img src={imageUrl(line)} alt={line.caption || 'Talk image'} />
+          <Box style={{ flex: 1 }}>
+            <Badge size="xs" variant="light" color="grape" mb={4}>image · shows here in Deliver view</Badge>
+            <TextInput size="xs" placeholder="Caption (optional)" value={line.caption || ''} onChange={(e) => onChange({ ...line, caption: e.currentTarget.value })} />
+          </Box>
+        </div>
+        <Group gap={2} wrap="nowrap">
+          <ActionIcon variant="subtle" color="gray" onClick={() => onMove(-1)}><IconArrowUp size={16} /></ActionIcon>
+          <ActionIcon variant="subtle" color="gray" onClick={() => onMove(1)}><IconArrowDown size={16} /></ActionIcon>
+          <ActionIcon variant="subtle" color="red" onClick={onRemove}><IconTrash size={16} /></ActionIcon>
+        </Group>
+      </Group>
+    </Paper>
+  )
+}
+
+/** Upload an image for the talk and return the line to add. */
+async function uploadImage(talkId: string, file: File): Promise<Omit<Line, 'id'> | null> {
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const { data } = await axios.post(`/api/talks/${talkId}/images`, form)
+    return { kind: 'image', image_id: data.id, caption: '', chk: '', en: '', source: 'image', ref: '', confirmed: true, note: '' }
+  } catch (e) {
+    notifications.show({ color: 'red', title: 'Image not added', message: errorMessage(e, 'Could not upload the image') })
+    return null
+  }
 }
 
 // ── A collected line ────────────────────────────────────────────────────────
@@ -297,11 +342,12 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   const [showEnglish, setShowEnglish] = useState(initialEnglish)
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [zoom, setZoom] = useState<Line | null>(null)
   const points = talk.outline.points
   const point = points[i]
   useEffect(() => { if (!running) return; const t = window.setInterval(() => setElapsed((e) => e + 1), 1000); return () => window.clearInterval(t) }, [running])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowRight' || e.key === ' ') setI((x) => Math.min(points.length - 1, x + 1)); if (e.key === 'ArrowLeft') setI((x) => Math.max(0, x - 1)); if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowRight' || e.key === ' ') setI((x) => Math.min(points.length - 1, x + 1)); if (e.key === 'ArrowLeft') setI((x) => Math.max(0, x - 1)); if (e.key === 'Escape') setZoom((z) => { if (!z) onClose(); return null }) }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [points.length, onClose])
   const plannedUntil = points.slice(0, i + 1).reduce((n, p) => n + (p.minutes || 0), 0) * 60
@@ -318,15 +364,29 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         </Box>
       ))}
       {(talk.lines[p.id] || []).map((l) => (
-        <Box key={l.id}>
-          <div className={styles.deliverLine}>{l.chk || l.en}</div>
-          {showEnglish && l.chk && <div className={styles.deliverEn}>{l.en}</div>}
-        </Box>
+        l.kind === 'image' ? (
+          <figure key={l.id} className={styles.deliverImage} onClick={() => setZoom(l)}>
+            <img src={imageUrl(l)} alt={l.caption || 'Talk image'} />
+            {l.caption && <figcaption>{l.caption}</figcaption>}
+          </figure>
+        ) : (
+          <Box key={l.id}>
+            <div className={styles.deliverLine}>{l.chk || l.en}</div>
+            {showEnglish && l.chk && <div className={styles.deliverEn}>{l.en}</div>}
+          </Box>
+        )
       ))}
+      <div className={styles.deliverClear} />
     </Box>
   )
   return (
     <div className={styles.deliver}>
+      {zoom && (
+        <figure className={styles.zoom} onClick={() => setZoom(null)}>
+          <img src={imageUrl(zoom)} alt={zoom.caption || 'Talk image'} />
+          {zoom.caption && <figcaption>{zoom.caption}</figcaption>}
+        </figure>
+      )}
       <div className={styles.deliverHead}>
         <Group gap="sm">
           <Button variant="default" leftSection={<IconChevronLeft size={16} />} onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}>Back</Button>
@@ -341,12 +401,16 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           <Button variant="default" leftSection={<IconX size={16} />} onClick={onClose}>Exit</Button>
         </Group>
       </div>
-      <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}</div>
-      {block(point)}
+      <div className={point.skipped ? styles.deliverSkipped : undefined}>
+        <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}{point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
+        {block(point)}
+      </div>
       {(point.children || []).map((c) => (
         <Box key={c.id}>
-          <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
-          {block(c)}
+          <div className={c.skipped || point.skipped ? styles.deliverSkipped : undefined}>
+            <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}{c.skipped && !point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
+            {block(c)}
+          </div>
         </Box>
       ))}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
@@ -518,8 +582,9 @@ export default function TalkBuilder() {
             ) : <Text className={styles.pointTitle}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Text>}
           </Group>
           <Group gap="xs">
-            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color="violet">{p.minutes} min</Badge> : null}
+            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color={p.skipped ? 'gray' : 'violet'}>{p.minutes} min</Badge> : null}
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
+            <Tooltip label={p.skipped ? 'Use this point again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through"><IconStrikethrough size={16} /></ActionIcon></Tooltip>
           </Group>
         </Group>
     ) : (
@@ -536,6 +601,7 @@ export default function TalkBuilder() {
           <div className={styles.sectionMeta}>
             <Text className={styles.sectionLines}>{rows.length + childLines} line{rows.length + childLines === 1 ? '' : 's'}</Text>
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : <span className={styles.sectionTime}>{p.minutes ? `${p.minutes} min` : 'no time'}</span>}
+            <Tooltip label={p.skipped ? 'Use this section again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through" style={{ color: p.skipped ? undefined : '#fff' }}><IconStrikethrough size={16} /></ActionIcon></Tooltip>
           </div>
         </div>
     )
@@ -551,25 +617,34 @@ export default function TalkBuilder() {
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
               <Box style={{ flex: 1 }}>
-                <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
+                {l.kind === 'image' ? (
+                  <ImageCard line={l} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
+                ) : (
+                  <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
+                )}
               </Box>
             </Group>
           ))}
         </Stack>
-        <AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} />
+        <Group align="flex-start" gap="xs" wrap="nowrap">
+          <Box style={{ flex: 1 }}><AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} /></Box>
+          <FileButton accept="image/*" onChange={async (file) => { if (file && talk) { const l = await uploadImage(talk.id, file); if (l) addLine(p.id, l) } }}>
+            {(props) => <Button {...props} mt="xs" variant="default" leftSection={<IconPhoto size={16} />}>Add image</Button>}
+          </FileButton>
+        </Group>
         {(p.children || []).length > 0 && <Stack gap="sm" mt="sm">{p.children!.map((c) => renderPoint(c, true))}</Stack>}
       </>
     )
     if (child) {
       return (
-        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''}`}>
+        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''} ${p.skipped ? styles.skippedPoint : ''}`}>
           {head}
           {body}
         </Card>
       )
     }
     return (
-      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''}`}>
+      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''} ${p.skipped ? styles.skipped : ''}`}>
         {head}
         <div className={styles.sectionBody}>{body}</div>
       </section>
