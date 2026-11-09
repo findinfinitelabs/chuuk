@@ -65,6 +65,9 @@
 .deliverSkipped, .deliverSkipped .deliverSub, .deliverSkipped .deliverLine, .deliverSkipped .deliverEn, .deliverSkipped .deliverVerse, .deliverSkipped .deliverTitle { color: var(--mantine-color-gray-5) !important; text-decoration: line-through; text-decoration-thickness: 2px; }
 .deliverSkipped .deliverVerse { background: var(--mantine-color-gray-0); }
 .deliverSkipped .deliverImage { opacity: 0.4; filter: grayscale(1); }
+.deliverSkipped :global(.mantine-Accordion-control) { padding: 8px 12px; }
+.deliverSkipped :global(.mantine-Accordion-label) { padding: 0; }
+.deliverSkipped :global(.mantine-Accordion-content) { padding-top: 0; }
 .deliverSkippedTag { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mantine-color-gray-5); text-decoration: none; margin-left: 8px; vertical-align: middle; }
 /* An image in the delivery view: small, right-aligned, text wraps around it;
    it sits exactly where it was placed among the lines as the cue for the AV team. */

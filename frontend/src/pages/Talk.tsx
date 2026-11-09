@@ -404,16 +404,36 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         <ActionIcon variant="light" onClick={() => setRunning((r) => !r)} aria-label={running ? 'Pause' : 'Start'}>{running ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</ActionIcon>
         <ActionIcon variant="subtle" onClick={() => { setElapsed(0); setRunning(false) }} aria-label="Reset"><IconRefresh size={18} /></ActionIcon>
       </div>
-      <div className={point.skipped ? styles.deliverSkipped : undefined}>
-        <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}{point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
-        {block(point)}
-      </div>
+      {point.skipped ? (
+        // A struck-through section: folded away behind its crossed-out title.
+        <Accordion variant="contained" radius="md" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
+          <Accordion.Item value="skipped">
+            <Accordion.Control><span className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
+            <Accordion.Panel>{block(point)}</Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      ) : (
+        <div>
+          <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}</div>
+          {block(point)}
+        </div>
+      )}
       {(point.children || []).map((c) => (
         <Box key={c.id}>
-          <div className={c.skipped || point.skipped ? styles.deliverSkipped : undefined}>
-            <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}{c.skipped && !point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
-            {block(c)}
-          </div>
+          {c.skipped && !point.skipped ? (
+            // A struck-through point: folded away behind its crossed-out heading.
+            <Accordion variant="contained" radius="md" mt="sm" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
+              <Accordion.Item value={c.id}>
+                <Accordion.Control><span className={styles.deliverSub} style={{ marginTop: 0 }}>{c.label ? `${c.label}. ` : '· '}{c.text}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
+                <Accordion.Panel>{block(c)}</Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          ) : (
+            <div className={point.skipped ? styles.deliverSkipped : undefined}>
+              <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
+              {block(c)}
+            </div>
+          )}
         </Box>
       ))}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
