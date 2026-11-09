@@ -43,8 +43,12 @@
 .line { border-left: 3px solid transparent; }
 .lineConfirmed { border-left-color: var(--mantine-color-green-5); }
 .chk { font-size: 1.1rem; font-weight: 600; line-height: 1.35; }
-.verse { background: var(--mantine-color-violet-light); border-radius: 8px; padding: 8px 10px; }
-.verseChk { font-size: 1.05rem; line-height: 1.4; }
+/* Scripture text reads in orangered in the builder and in Deliver view, so a verse
+   is told apart from the talk's own lines at a glance. */
+.verse { background: rgba(255, 69, 0, 0.06); border-left: 4px solid orangered; border-radius: 8px; padding: 8px 10px; color: orangered; }
+.verseChk { font-size: 1.05rem; line-height: 1.4; color: orangered; }
+.verseChk span { color: inherit; }
+.verseEn { color: orangered; opacity: 0.8; }
 
 /* An image placed among a section's lines, in the builder. */
 .imageCard { display: flex; gap: 12px; align-items: flex-start; }
@@ -59,7 +63,8 @@
 .deliverTitle { font-size: clamp(1.2rem, 2.1vw, 1.7rem); font-weight: 800; color: var(--mantine-color-violet-7); }
 .deliverLine { font-size: clamp(1.15rem, 2.2vw, 1.9rem); font-weight: 700; line-height: 1.3; margin: 8px 0 2px; }
 .deliverEn { font-size: clamp(0.9rem, 1.4vw, 1.1rem); color: var(--mantine-color-dimmed); margin-bottom: 8px; }
-.deliverVerse { font-size: clamp(1rem, 1.7vw, 1.35rem); line-height: 1.45; background: var(--mantine-color-violet-light); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+.deliverVerse { font-size: clamp(1rem, 1.7vw, 1.35rem); line-height: 1.45; background: rgba(255, 69, 0, 0.06); border-left: 5px solid orangered; border-radius: 10px; padding: 10px 14px; margin: 8px 0; color: orangered; font-weight: 600; }
+.deliverVerseEn { color: orangered; opacity: 0.8; font-weight: 400; }
 .deliverSub { font-size: clamp(0.95rem, 1.6vw, 1.25rem); font-weight: 700; margin-top: 16px; color: var(--mantine-color-gray-7); }
 /* A struck-through outline point in the delivery view: crossed out, light grey, easy to pass over. */
 .deliverSkipped, .deliverSkipped .deliverSub, .deliverSkipped .deliverLine, .deliverSkipped .deliverEn, .deliverSkipped .deliverVerse, .deliverSkipped .deliverTitle { color: var(--mantine-color-gray-5) !important; text-decoration: line-through; text-decoration-thickness: 2px; }

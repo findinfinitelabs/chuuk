@@ -325,7 +325,7 @@ function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string
               {verse.maps && onGloss ? <GlossedWords text={verse.chuukese} dictionary={verse.maps.dictionary} similar={verse.maps.similar} phrases={verse.maps.phrases} onGloss={onGloss} keyPrefix={`${cite}-`} /> : verse.chuukese}
             </Text>
           )}
-          {showEnglish && verse.english && <Text size="sm" c="dimmed">{verse.english}</Text>}
+          {showEnglish && verse.english && <Text size="sm" className={styles.verseEn}>{verse.english}</Text>}
           {!verse.chuukese && !verse.english && (verse.fetchable && onFetch
             ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Fetch from wol.jw.org</Button></Group>
             : <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>)}
@@ -360,7 +360,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         <Box key={c} className={styles.deliverVerse}>
           <Group gap={4}><Text size="sm" fw={700} c="violet">{c}</Text><SourceTag verse={verses[c]} size="sm" /></Group>
           <div>{verses[c].chuukese || verses[c].english}</div>
-          {showEnglish && verses[c].chuukese && <Text c="dimmed" size="md">{verses[c].english}</Text>}
+          {showEnglish && verses[c].chuukese && <Text size="md" className={styles.deliverVerseEn}>{verses[c].english}</Text>}
         </Box>
       ))}
       {(talk.lines[p.id] || []).map((l) => (
