@@ -394,12 +394,15 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           <Button variant="default" rightSection={<IconChevronRight size={16} />} onClick={() => setI((x) => Math.min(points.length - 1, x + 1))} disabled={i === points.length - 1}>Next</Button>
         </Group>
         <Group gap="sm">
-          <Text className={`${styles.timer} ${total && elapsed > plannedUntil ? styles.timerOver : ''}`}>{fmt(elapsed)}{point.minutes ? ` / ${fmt(plannedUntil)}` : ''}{total ? ` · ${fmt(total)} total` : ''}</Text>
-          <ActionIcon variant="light" onClick={() => setRunning((r) => !r)}>{running ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</ActionIcon>
-          <ActionIcon variant="subtle" onClick={() => { setElapsed(0); setRunning(false) }}><IconRefresh size={18} /></ActionIcon>
           <Switch label="English" checked={showEnglish} onChange={(e) => setShowEnglish(e.currentTarget.checked)} />
           <Button variant="default" leftSection={<IconX size={16} />} onClick={onClose}>Exit</Button>
         </Group>
+      </div>
+      {/* Pinned clock: visible wherever the talk is scrolled to. */}
+      <div className={styles.clock}>
+        <Text className={`${styles.timer} ${total && elapsed > plannedUntil ? styles.timerOver : ''}`}>{fmt(elapsed)}{point.minutes ? ` / ${fmt(plannedUntil)}` : ''}{total ? ` · ${fmt(total)}` : ''}</Text>
+        <ActionIcon variant="light" onClick={() => setRunning((r) => !r)} aria-label={running ? 'Pause' : 'Start'}>{running ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</ActionIcon>
+        <ActionIcon variant="subtle" onClick={() => { setElapsed(0); setRunning(false) }} aria-label="Reset"><IconRefresh size={18} /></ActionIcon>
       </div>
       <div className={point.skipped ? styles.deliverSkipped : undefined}>
         <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}{point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
