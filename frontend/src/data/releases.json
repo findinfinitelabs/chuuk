@@ -2,6 +2,17 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.6",
+      "date": "2026-11-09",
+      "title": "Struck-through scriptures, Deliver footer below the text, clean print",
+      "notes": [
+        "Deliver view: the Back / Next footer now sits below everything in the section, including the theme scripture on the first page, instead of above it.",
+        "Talk Builder: when a section or point is struck through, its scriptures are crossed out and greyed with it.",
+        "Deliver view: a struck-through section folds its scriptures and its sub-points into the same accordion, so nothing from it shows until you open it.",
+        "Print: struck-through sections and points, and their scriptures, are left off the printed talk."
+      ]
+    },
+    {
       "version": "1.0.0.5",
       "date": "2026-11-08",
       "title": "Deliver view: smaller text, pinned clock, folded struck-through points",

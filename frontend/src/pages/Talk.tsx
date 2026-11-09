@@ -413,6 +413,24 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
       <div className={styles.deliverClear} />
     </Box>
   )
+  const children = (point.children || []).map((c) => (
+    <Box key={c.id}>
+      {c.skipped && !point.skipped ? (
+        // A struck-through point: folded away behind its crossed-out heading.
+        <Accordion variant="contained" radius="md" mt="sm" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
+          <Accordion.Item value={c.id}>
+            <Accordion.Control><span className={styles.deliverSub} style={{ marginTop: 0 }}>{c.label ? `${c.label}. ` : '· '}{c.text}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
+            <Accordion.Panel>{block(c)}</Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      ) : (
+        <div>
+          <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
+          {block(c)}
+        </div>
+      )}
+    </Box>
+  ))
   return (
     <div className={styles.deliver}>
       {zoom && (
@@ -439,7 +457,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         <Accordion variant="contained" radius="md" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
           <Accordion.Item value="skipped">
             <Accordion.Control><span className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
-            <Accordion.Panel>{block(point)}</Accordion.Panel>
+            <Accordion.Panel>{block(point)}{children}</Accordion.Panel>
           </Accordion.Item>
         </Accordion>
       ) : (
@@ -448,29 +466,12 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           {block(point)}
         </div>
       )}
-      {(point.children || []).map((c) => (
-        <Box key={c.id}>
-          {c.skipped && !point.skipped ? (
-            // A struck-through point: folded away behind its crossed-out heading.
-            <Accordion variant="contained" radius="md" mt="sm" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
-              <Accordion.Item value={c.id}>
-                <Accordion.Control><span className={styles.deliverSub} style={{ marginTop: 0 }}>{c.label ? `${c.label}. ` : '· '}{c.text}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
-                <Accordion.Panel>{block(c)}</Accordion.Panel>
-              </Accordion.Item>
-            </Accordion>
-          ) : (
-            <div className={point.skipped ? styles.deliverSkipped : undefined}>
-              <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
-              {block(c)}
-            </div>
-          )}
-        </Box>
-      ))}
-      {/* The same pager at the foot, so a long section needs no scroll back up. */}
-      <div className={styles.deliverFoot}>{pager}</div>
+      {!point.skipped && children}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
         <Box className={styles.deliverVerse}><Group gap={4}><Text size="sm" fw={700} c="violet">Theme · {talk.outline.theme_scripture}</Text><SourceTag verse={verses[talk.outline.theme_scripture]} size="sm" /></Group><div>{verses[talk.outline.theme_scripture].chuukese}</div></Box>
       )}
+      {/* The same pager at the foot, below everything, so a long section needs no scroll back up. */}
+      <div className={styles.deliverFoot}>{pager}</div>
     </div>
   )
 }
