@@ -89,6 +89,16 @@ async function storeVerified(line: Pick<Line, 'chk' | 'en' | 'ref'>) {
   } catch { /* the line is still checked; storing can be retried by unchecking and checking */ }
 }
 
+/** Print the open talk: 5×7 pages (see @media print in Talk.module.css); the
+ *  document title is set so the running header and any saved PDF carry it. */
+function printTalk(talk: Talk) {
+  const previous = document.title
+  document.title = talk.title
+  const restore = () => { document.title = previous; window.removeEventListener('afterprint', restore) }
+  window.addEventListener('afterprint', restore)
+  window.print()
+}
+
 const allPoints = (o: Outline | null): Point[] => (o?.points || []).flatMap((p) => [p, ...(p.children || [])])
 /** A point's text with each citation rendered as a link to wol.jw.org. */
 function TextWithCitations({ text, references, links }: { text: string; references?: Reference[]; links: Record<string, string> }) {
@@ -264,7 +274,7 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
             <Text className={styles.chk}>
               {line.chk ? (maps && onGloss ? <GlossedWords text={line.chk} dictionary={maps.dictionary} similar={maps.similar} phrases={maps.phrases} onGloss={onGloss} keyPrefix={`${line.id}-`} /> : line.chk) : <Text span c="dimmed" fs="italic">No Chuukese yet</Text>}
             </Text>
-            {showEnglish && line.en && <Text size="sm" className={scripture ? styles.verseEn : undefined} c={scripture ? undefined : 'dimmed'}>{line.en}</Text>}
+            {showEnglish && line.en && <Text size="sm" className={`${styles.en} ${scripture ? styles.verseEn : ''}`} c={scripture ? undefined : 'dimmed'}>{line.en}</Text>}
             <Group gap={6} mt={4}>
               <Badge size="xs" variant="light" color="violet">{line.source}</Badge>
               {scripture && <Badge size="xs" variant="light" color="orange">scripture</Badge>}
@@ -340,7 +350,7 @@ function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string
               {verse.maps && onGloss ? <GlossedWords text={verse.chuukese} dictionary={verse.maps.dictionary} similar={verse.maps.similar} phrases={verse.maps.phrases} onGloss={onGloss} keyPrefix={`${cite}-`} /> : verse.chuukese}
             </Text>
           )}
-          {showEnglish && verse.english && <Text size="sm" className={styles.verseEn}>{verse.english}</Text>}
+          {showEnglish && verse.english && <Text size="sm" className={`${styles.en} ${styles.verseEn}`}>{verse.english}</Text>}
           {!verse.chuukese && !verse.english && (verse.fetchable && onFetch
             ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Fetch from wol.jw.org</Button></Group>
             : <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>)}
@@ -649,9 +659,9 @@ export default function TalkBuilder() {
     const body = (
       <>
         {(p.references || []).map((r) => (
-          <ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
+          <div key={`${talk?.id}-${p.id}-${r.raw}-wrap`} className={styles.noPrint}><ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
             onResolved={(raw, d) => { const link = d.links.en || d.links.search; if (link) setRefLinks((m) => (m[raw] === link ? m : { ...m, [raw]: link })) }}
-            stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300) && s.result.paragraphs.length > 0)?.result} />
+            stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300) && s.result.paragraphs.length > 0)?.result} /></div>
         ))}
         {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} />)}
         <Stack gap="xs" mt="sm">
@@ -703,7 +713,7 @@ export default function TalkBuilder() {
           {talk && <GlossLegend />}
           <Switch label="English" checked={showEnglish} onChange={(e) => setShowEnglish(e.currentTarget.checked)} />
           <Button variant="default" leftSection={<IconUpload size={16} />} onClick={() => setImportOpen(true)}>New talk from outline</Button>
-          {talk && <Button variant="light" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>Print</Button>}
+          {talk && <Button variant="light" leftSection={<IconPrinter size={16} />} onClick={() => printTalk(talk)}>Print</Button>}
           {talk && <Button color="violet" leftSection={<IconPresentation size={16} />} onClick={() => setDelivering(true)}>Deliver</Button>}
           {talk && <Button leftSection={<IconDeviceFloppy size={16} />} onClick={save} loading={saving} disabled={!dirty}>{dirty ? 'Save' : 'Saved'}</Button>}
         </Group>
@@ -734,7 +744,8 @@ export default function TalkBuilder() {
             </Alert>
           ) : (
             <>
-              <Card withBorder radius="md" p="md" mb="sm">
+              <div className={styles.printHeader} aria-hidden="true">{talk.title}</div>
+              <Card withBorder radius="md" p="md" mb="sm" className={styles.titleCard}>
                 <Group justify="space-between" wrap="wrap" align="flex-start">
                   <Box style={{ flex: 1, minWidth: 260 }}>
                     {editOutline ? <TextInput label="Title" value={talk.title} onChange={(e) => mutate((t) => ({ ...t, title: e.currentTarget.value }))} /> : <Group gap="sm" align="baseline">{talk.outline.number && <Badge variant="outline" color="gray">{talk.outline.number}</Badge>}<Title order={3}>{talk.title}</Title></Group>}
@@ -742,7 +753,7 @@ export default function TalkBuilder() {
                     {talk.outline.theme_scripture && <Text c="violet" fw={600} mt={4}>Theme: {talk.outline.theme_scripture}</Text>}
                     {talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && <VerseBox cite={talk.outline.theme_scripture} verse={verses[talk.outline.theme_scripture]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} />}
                   </Box>
-                  <Stack gap={4} align="flex-end">
+                  <Stack gap={4} align="flex-end" className={styles.noPrint}>
                     <Group gap="xs">
                       <Badge variant="light">{talk.outline.language === 'chk' ? 'Chuukese outline' : 'English outline'}</Badge>
                       {talk.outline.total_minutes && <Badge size="lg" variant="filled" color="violet">{talk.outline.total_minutes} min</Badge>}

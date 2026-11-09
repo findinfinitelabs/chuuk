@@ -92,8 +92,59 @@
 .timer { font-variant-numeric: tabular-nums; font-size: 1.3rem; font-weight: 800; white-space: nowrap; }
 .timerOver { color: var(--mantine-color-red-6); }
 
+/* ── Print: 5 × 7 in pages, Times New Roman, Chuukese 12 pt, English 8 pt,
+      the talk title at the top of every page and page numbers at the foot. ── */
+.printHeader { display: none; }
+.en { }
+.noPrint { }
+
+@page {
+  size: 5in 7in;
+  margin: 0.55in 0.4in 0.5in;
+  @bottom-center { content: counter(page) " / " counter(pages); font-family: "Times New Roman", Times, serif; font-size: 8pt; color: #444; }
+}
+
 @media print {
-  :global(.mantine-AppShell-navbar), :global(.mantine-AppShell-header), .side, :global(button), :global(input), :global(textarea) { display: none !important; }
-  .layout { grid-template-columns: 1fr; }
-  .page { max-width: none; }
+  :global(.mantine-AppShell-navbar), :global(.mantine-AppShell-header), :global(.mantine-AppShell-footer), :global(footer),
+  .side, .noPrint, :global(button), :global(input), :global(textarea), :global(.mantine-Switch-root), :global(.mantine-Progress-root),
+  :global(.mantine-Accordion-root), :global(.mantine-Badge-root), :global(.mantine-Tooltip-tooltip), :global(.mantine-Notifications-root),
+  .sectionCount, .sectionLines, .pointLabel, .note { display: none !important; }
+  :global(.mantine-AppShell-main) { padding: 0 !important; }
+  .layout { display: block; }
+  .page { max-width: none; font-family: "Times New Roman", Times, serif; color: #000; }
+  .page * { font-family: "Times New Roman", Times, serif !important; box-shadow: none !important; }
+
+  /* Running title, repeated on every page (fixed elements repeat when printed). */
+  .printHeader { display: block; position: fixed; top: -0.4in; left: 0; right: 0; text-align: center; font-size: 8pt; font-style: italic; color: #444; border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
+
+  .titleCard { border: none !important; padding: 0 0 6pt !important; margin-bottom: 6pt !important; }
+  .titleCard h3 { font-size: 14pt !important; margin: 0; }
+
+  .section { background: none; border: none; border-left: none; border-top: 1pt solid #000; border-radius: 0; margin: 8pt 0 0; padding: 4pt 0 0; break-inside: auto; page-break-inside: auto; }
+  .sectionHead { background: none !important; color: #000; padding: 0; display: block; }
+  .sectionNum { display: none; }
+  .sectionTitle { color: #000; font-size: 12pt; font-weight: 700; text-transform: uppercase; }
+  .sectionTitle a { color: #000 !important; text-decoration: none; }
+  .sectionMeta { display: inline; }
+  .sectionTime { background: none; color: #000; font-size: 8pt; font-weight: 400; padding: 0; }
+  .sectionTime::before { content: "("; } .sectionTime::after { content: ")"; }
+  .sectionBody { padding: 0; }
+
+  .point, .child { border: none !important; box-shadow: none !important; background: none !important; padding: 2pt 0 0 !important; margin: 4pt 0 0 !important; }
+  .pointTitle { color: #000; font-size: 12pt; font-weight: 700; }
+
+  .line { border: none !important; padding: 1pt 0 !important; margin: 0 !important; background: none !important; break-inside: avoid; page-break-inside: avoid; }
+  .chk { font-size: 12pt; font-weight: 400; line-height: 1.3; color: #000; }
+  .chk span { color: inherit !important; text-decoration: none !important; background: none !important; }
+  .en { font-size: 8pt !important; line-height: 1.25; color: #333 !important; margin-bottom: 2pt; }
+
+  .verse { background: none; border-left: 1.5pt solid #000; border-radius: 0; padding: 1pt 0 1pt 6pt; margin: 3pt 0; color: #000; break-inside: avoid; page-break-inside: avoid; }
+  .verseChk { font-size: 12pt; color: #000; }
+  .verseEn { color: #333; opacity: 1; }
+  .lineScripture { border-left: 1.5pt solid #000 !important; padding-left: 6pt !important; }
+  .lineScripture .chk { color: #000; }
+
+  .imageCard img { max-height: 1.6in; max-width: 2in; }
+  .skipped, .skippedPoint { opacity: 1; }
+  .skipped .sectionTitle, .skippedPoint .pointTitle { text-decoration: line-through; color: #666; }
 }
