@@ -49,6 +49,8 @@ def _line(data: dict) -> dict:
         "ref": (data.get("ref") or "")[:300],
         "confirmed": bool(data.get("confirmed")),
         "note": (data.get("note") or "")[:500],
+        # A line that quotes scripture: shown in the scripture colour.
+        "scripture": bool(data.get("scripture")),
     }
     if data.get("kind") == "image" and data.get("image_id"):
         line.update({"kind": "image", "image_id": str(data["image_id"])[:40], "caption": (data.get("caption") or "")[:300]})

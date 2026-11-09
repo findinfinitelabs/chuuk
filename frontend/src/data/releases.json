@@ -7,7 +7,10 @@
       "title": "Deliver view: smaller text, pinned clock, folded struck-through points",
       "notes": [
         "Deliver view: text is a step smaller so more of a section fits on screen, and the clock with its start, pause and reset buttons is pinned at the top right, staying in view while you scroll.",
-        "Deliver view: a struck-through section or point is folded into an accordion under its crossed-out heading, so it takes one line until you open it."
+        "Deliver view: a struck-through section or point is folded into an accordion under its crossed-out heading, so it takes one line until you open it.",
+        "Talk Builder and Deliver view: scripture text shows in orangered with a matching left edge, so verses stand apart from the talk's own lines.",
+        "Talk Builder and Deliver view: a collected line that quotes a verse stored with the talk is coloured as scripture too, and any line can be marked as scripture with the Bible button on the line.",
+        "Talk Builder: Print lays the talk out on 5 × 7 inch pages in Times New Roman, the talk text at 12 pt and the English at 8 pt, with the talk title at the top of every page and page numbers at the foot. Controls, badges, references and alternatives are left off the page; verses and scripture lines keep a rule at the left."
       ]
     },
     {
