@@ -6779,9 +6779,11 @@ def save_article_analysis():
             return jsonify({"error": "Failed to resolve saved analysis ID"}), 500
         _lib.link(dict_db, "article", analysis_oid)
 
-        paragraphs_col.delete_many({"analysis_id": analysis_oid})
+        # Cosmos throttles bursts of writes (429); retry rather than lose the paragraphs.
+        _cosmos_retry(paragraphs_col.delete_many, {"analysis_id": analysis_oid})
         if paragraphs:
-            paragraphs_col.insert_many(
+            _cosmos_retry(
+                paragraphs_col.insert_many,
                 [
                     {
                         "analysis_id": analysis_oid,
@@ -6790,7 +6792,7 @@ def save_article_analysis():
                         "updated_at": now,
                     }
                     for index, paragraph in enumerate(paragraphs)
-                ]
+                ],
             )
 
         return jsonify({"success": True, "id": str(analysis_oid)})
@@ -6848,8 +6850,8 @@ def delete_article_analysis(analysis_id):
 
         paragraphs_col = _get_article_analysis_paragraphs_collection()
         if paragraphs_col is not None:
-            paragraphs_col.delete_many({"analysis_id": oid})
-        col.delete_one({"_id": oid})
+            _cosmos_retry(paragraphs_col.delete_many, {"analysis_id": oid})
+        _cosmos_retry(col.delete_one, {"_id": oid})
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
