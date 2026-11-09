@@ -16,7 +16,7 @@ import {
   SegmentedControl, Stack, Switch, Text, TextInput, Textarea, Title, Tooltip,
 } from '@mantine/core'
 import {
-  IconArrowDown, IconArrowUp, IconCheck, IconChevronLeft, IconChevronRight, IconDeviceFloppy, IconEdit, IconLanguage,
+  IconArrowDown, IconArrowUp, IconBook2, IconCheck, IconChevronLeft, IconChevronRight, IconDeviceFloppy, IconEdit, IconLanguage,
   IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconStrikethrough, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
@@ -45,6 +45,17 @@ interface Line {
   id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string
   /** An image placed among the lines: shows where it sits, small and right-aligned, in Deliver view. */
   kind?: 'text' | 'image'; image_id?: string; caption?: string
+  /** Marked as scripture by the person; lines matching a stored verse are coloured as scripture automatically. */
+  scripture?: boolean
+}
+/** Normalised for matching a line against verse text: lowercase letters only, leading verse number dropped. */
+const normVerse = (s: string) => s.replace(/^\s*\d+\s+/, '').toLowerCase().normalize('NFD').replace(/[^\p{L}\s]/gu, '').replace(/\s+/g, ' ').trim()
+/** True when the line is marked as scripture or its text is (part of) a verse stored with the talk. */
+function isScripture(line: Line, verseTexts: string[]): boolean {
+  if (line.scripture) return true
+  const t = normVerse(line.chk || line.en || '')
+  if (t.length < 20) return false
+  return verseTexts.some((v) => v.includes(t) || t.includes(v))
 }
 const imageUrl = (l: Line) => `/api/talks/images/${l.image_id}`
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
@@ -215,9 +226,11 @@ async function uploadImage(talkId: string, file: File): Promise<Omit<Line, 'id'>
 
 // ── A collected line ────────────────────────────────────────────────────────
 
-function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd }: {
+function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd, scripture = false }: {
   line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void
   maps?: Maps | null; onGloss?: (g: Gloss | null) => void; onAdd?: (l: Omit<Line, 'id'>) => void
+  /** Show in the scripture colour (marked, or matched to a stored verse). */
+  scripture?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [chk, setChk] = useState(line.chk)
@@ -235,7 +248,7 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
   }
 
   return (
-    <Paper withBorder p="sm" radius="md" className={`${styles.line} ${line.confirmed ? styles.lineConfirmed : ''}`}>
+    <Paper withBorder p="sm" radius="md" className={`${styles.line} ${line.confirmed ? styles.lineConfirmed : ''} ${scripture ? styles.lineScripture : ''}`}>
       {editing ? (
         <Stack gap={6}>
           <Textarea autosize minRows={1} label="Chuukese" value={chk} onChange={(e) => { setChk(e.currentTarget.value); suggest('en', e.currentTarget.value) }} rightSection={suggesting === 'chk' ? <Loader size={14} /> : null} />
@@ -251,14 +264,16 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
             <Text className={styles.chk}>
               {line.chk ? (maps && onGloss ? <GlossedWords text={line.chk} dictionary={maps.dictionary} similar={maps.similar} phrases={maps.phrases} onGloss={onGloss} keyPrefix={`${line.id}-`} /> : line.chk) : <Text span c="dimmed" fs="italic">No Chuukese yet</Text>}
             </Text>
-            {showEnglish && line.en && <Text size="sm" c="dimmed">{line.en}</Text>}
+            {showEnglish && line.en && <Text size="sm" className={scripture ? styles.verseEn : undefined} c={scripture ? undefined : 'dimmed'}>{line.en}</Text>}
             <Group gap={6} mt={4}>
               <Badge size="xs" variant="light" color="violet">{line.source}</Badge>
+              {scripture && <Badge size="xs" variant="light" color="orange">scripture</Badge>}
               {line.ref && <Text size="xs" c="dimmed" lineClamp={1}>{line.ref}</Text>}
               {line.confirmed ? <Badge size="xs" variant="outline" color="green">checked</Badge> : <Badge size="xs" variant="outline" color="orange">unchecked</Badge>}
             </Group>
           </Box>
           <Group gap={2} wrap="nowrap">
+            <Tooltip label={line.scripture ? 'Not scripture' : 'Mark as scripture'}><ActionIcon variant="subtle" color={line.scripture ? 'orange' : 'gray'} onClick={() => onChange({ ...line, scripture: !line.scripture })} aria-pressed={!!line.scripture}><IconBook2 size={16} /></ActionIcon></Tooltip>
             <Tooltip label={line.confirmed ? 'Mark unchecked' : 'Mark as checked'}><ActionIcon variant="subtle" color={line.confirmed ? 'green' : 'gray'} onClick={() => { onChange({ ...line, confirmed: !line.confirmed }); if (!line.confirmed) storeVerified(line) }}><IconCheck size={16} /></ActionIcon></Tooltip>
             <ActionIcon variant="subtle" color="gray" onClick={() => { setChk(line.chk); setEn(line.en); setEditing(true) }}><IconEdit size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => onMove(-1)}><IconArrowUp size={16} /></ActionIcon>
@@ -353,6 +368,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   const plannedUntil = points.slice(0, i + 1).reduce((n, p) => n + (p.minutes || 0), 0) * 60
   const total = (talk.outline.total_minutes || 0) * 60
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
   if (!point) return null
   const block = (p: Point) => (
     <Box key={p.id}>
@@ -370,7 +386,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
             {l.caption && <figcaption>{l.caption}</figcaption>}
           </figure>
         ) : (
-          <Box key={l.id}>
+          <Box key={l.id} className={isScripture(l, verseTexts) ? styles.deliverLineScripture : undefined}>
             <div className={styles.deliverLine}>{l.chk || l.en}</div>
             {showEnglish && l.chk && <div className={styles.deliverEn}>{l.en}</div>}
           </Box>
@@ -516,6 +532,8 @@ export default function TalkBuilder() {
     } catch { /* shown as not stored */ } finally { setFetchingVerses(false) }
   }
   const fetchableRefs = refs.filter((r) => verses[r]?.fetchable)
+  // Verse text known to the talk, for colouring lines that quote scripture.
+  const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
 
   const open = async (id: string) => {
     try {
@@ -643,7 +661,7 @@ export default function TalkBuilder() {
                 {l.kind === 'image' ? (
                   <ImageCard line={l} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
                 ) : (
-                  <LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
+                  <LineCard line={l} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
                 )}
               </Box>
             </Group>
@@ -745,7 +763,7 @@ export default function TalkBuilder() {
                   <Stack gap="xs">
                     {unsorted.map((l, i) => (
                       <Group key={l.id} align="flex-start" wrap="nowrap">
-                        <Box style={{ flex: 1 }}><LineCard line={l} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines('unsorted', unsorted.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines('unsorted', unsorted.filter((x) => x.id !== l.id))} onMove={(d) => moveLine('unsorted', i, d)} /></Box>
+                        <Box style={{ flex: 1 }}><LineCard line={l} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines('unsorted', unsorted.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines('unsorted', unsorted.filter((x) => x.id !== l.id))} onMove={(d) => moveLine('unsorted', i, d)} /></Box>
                         <select className="mantine-Input-input" style={{ maxWidth: 220 }} defaultValue="" onChange={(e) => e.target.value && moveLineTo('unsorted', i, e.target.value)}>
                           <option value="">Move under…</option>
                           {points.map((p) => <option key={p.id} value={p.id}>{p.label ? `${p.label}. ` : ''}{p.text.slice(0, 50)}</option>)}

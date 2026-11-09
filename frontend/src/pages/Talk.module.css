@@ -49,6 +49,12 @@
 .verseChk { font-size: 1.05rem; line-height: 1.4; color: orangered; }
 .verseChk span { color: inherit; }
 .verseEn { color: orangered; opacity: 0.8; }
+/* A collected line that quotes scripture: same colour as a verse box. */
+.lineScripture { border-left-color: orangered !important; background: rgba(255, 69, 0, 0.04); }
+.lineScripture .chk { color: orangered; }
+.lineScripture .chk span { color: inherit; }
+.deliverLineScripture .deliverLine { color: orangered; }
+.deliverLineScripture .deliverEn { color: orangered; opacity: 0.8; }
 
 /* An image placed among a section's lines, in the builder. */
 .imageCard { display: flex; gap: 12px; align-items: flex-start; }
