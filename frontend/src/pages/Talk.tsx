@@ -380,6 +380,14 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
   if (!point) return null
+  const go = (d: -1 | 1) => { setI((x) => Math.max(0, Math.min(points.length - 1, x + d))); window.scrollTo({ top: 0 }); document.querySelector(`.${styles.deliver}`)?.scrollTo({ top: 0 }) }
+  const pager = (
+    <Group gap="sm">
+      <Button variant="default" leftSection={<IconChevronLeft size={16} />} onClick={() => go(-1)} disabled={i === 0}>Back</Button>
+      <Text fw={700}>{i + 1} / {points.length}</Text>
+      <Button variant="default" rightSection={<IconChevronRight size={16} />} onClick={() => go(1)} disabled={i === points.length - 1}>Next</Button>
+    </Group>
+  )
   const block = (p: Point) => (
     <Box key={p.id}>
       {p.scriptures.map((c) => verses[c] && (
@@ -414,11 +422,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
         </figure>
       )}
       <div className={styles.deliverHead}>
-        <Group gap="sm">
-          <Button variant="default" leftSection={<IconChevronLeft size={16} />} onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}>Back</Button>
-          <Text fw={700}>{i + 1} / {points.length}</Text>
-          <Button variant="default" rightSection={<IconChevronRight size={16} />} onClick={() => setI((x) => Math.min(points.length - 1, x + 1))} disabled={i === points.length - 1}>Next</Button>
-        </Group>
+        {pager}
         <Group gap="sm">
           <Switch label="English" checked={showEnglish} onChange={(e) => setShowEnglish(e.currentTarget.checked)} />
           <Button variant="default" leftSection={<IconX size={16} />} onClick={onClose}>Exit</Button>
@@ -462,6 +466,8 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           )}
         </Box>
       ))}
+      {/* The same pager at the foot, so a long section needs no scroll back up. */}
+      <div className={styles.deliverFoot}>{pager}</div>
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
         <Box className={styles.deliverVerse}><Group gap={4}><Text size="sm" fw={700} c="violet">Theme · {talk.outline.theme_scripture}</Text><SourceTag verse={verses[talk.outline.theme_scripture]} size="sm" /></Group><div>{verses[talk.outline.theme_scripture].chuukese}</div></Box>
       )}
