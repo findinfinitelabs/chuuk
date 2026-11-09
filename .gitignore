@@ -255,3 +255,15 @@ data/verb_verification/
 
 # Cached wol.jw.org pages from scripts/harvest_wol_pairs.py
 data/wol_cache/
+
+# Run output of local scripts (harvests, fills, deploys, guards); only training_status.json is tracked.
+logs/*.out
+logs/hyphen_headwords_*.json
+
+# Tokenizer copies and the auto-generated model card PEFT writes next to the LoRA adapter;
+# the tokenizer loads from the base model, so these are not sources.
+models/madlad400-chuukese/lora/README.md
+models/madlad400-chuukese/lora/tokenizer.json
+models/madlad400-chuukese/lora/tokenizer_config.json
+models/madlad400-chuukese/lora/special_tokens_map.json
+models/madlad400-chuukese/lora/spiece.model
