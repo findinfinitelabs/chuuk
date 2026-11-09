@@ -17,7 +17,7 @@ import {
 } from '@mantine/core'
 import {
   IconArrowDown, IconArrowUp, IconCheck, IconChevronLeft, IconChevronRight, IconDeviceFloppy, IconEdit, IconLanguage,
-  IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconTrash, IconUpload, IconX,
+  IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconStrikethrough, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { notifications } from '@mantine/notifications'
@@ -35,7 +35,11 @@ import styles from './Talk.module.css'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Reference { raw: string; kind: string }
-interface Point { id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[] }
+interface Point {
+  id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[]
+  /** Struck through: kept in the outline for reference but not used in the talk. */
+  skipped?: boolean
+}
 interface Outline { title: string; number?: string; note?: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line {
   id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string
@@ -397,12 +401,16 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           <Button variant="default" leftSection={<IconX size={16} />} onClick={onClose}>Exit</Button>
         </Group>
       </div>
-      <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}</div>
-      {block(point)}
+      <div className={point.skipped ? styles.deliverSkipped : undefined}>
+        <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}{point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
+        {block(point)}
+      </div>
       {(point.children || []).map((c) => (
         <Box key={c.id}>
-          <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
-          {block(c)}
+          <div className={c.skipped || point.skipped ? styles.deliverSkipped : undefined}>
+            <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}{c.skipped && !point.skipped && <span className={styles.deliverSkippedTag}>not used</span>}</div>
+            {block(c)}
+          </div>
         </Box>
       ))}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
@@ -574,8 +582,9 @@ export default function TalkBuilder() {
             ) : <Text className={styles.pointTitle}><TextWithCitations text={p.text} references={p.references} links={refLinks} /></Text>}
           </Group>
           <Group gap="xs">
-            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color="violet">{p.minutes} min</Badge> : null}
+            {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color={p.skipped ? 'gray' : 'violet'}>{p.minutes} min</Badge> : null}
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
+            <Tooltip label={p.skipped ? 'Use this point again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through"><IconStrikethrough size={16} /></ActionIcon></Tooltip>
           </Group>
         </Group>
     ) : (
@@ -592,6 +601,7 @@ export default function TalkBuilder() {
           <div className={styles.sectionMeta}>
             <Text className={styles.sectionLines}>{rows.length + childLines} line{rows.length + childLines === 1 ? '' : 's'}</Text>
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : <span className={styles.sectionTime}>{p.minutes ? `${p.minutes} min` : 'no time'}</span>}
+            <Tooltip label={p.skipped ? 'Use this section again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through" style={{ color: p.skipped ? undefined : '#fff' }}><IconStrikethrough size={16} /></ActionIcon></Tooltip>
           </div>
         </div>
     )
@@ -627,14 +637,14 @@ export default function TalkBuilder() {
     )
     if (child) {
       return (
-        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''}`}>
+        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''} ${p.skipped ? styles.skippedPoint : ''}`}>
           {head}
           {body}
         </Card>
       )
     }
     return (
-      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''}`}>
+      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''} ${p.skipped ? styles.skipped : ''}`}>
         {head}
         <div className={styles.sectionBody}>{body}</div>
       </section>

@@ -4,9 +4,10 @@
     {
       "version": "1.0.0.4",
       "date": "2026-11-04",
-      "title": "Talk Builder: images in a talk",
+      "title": "Talk Builder: images and struck-through points",
       "notes": [
-        "Talk Builder: add an image to any section with the new Add image button. The image sits among the section's lines, can be moved up and down like a line, and takes a caption. In Deliver view it shows small and right-aligned exactly where it was placed, with the lines wrapping around it, as the cue for the AV team; clicking it shows it full screen, Escape or a click closes it. Images are stored with the talk (shrunk to at most 1600 pixels) and removed with it."
+        "Talk Builder: add an image to any section with the new Add image button. The image sits among the section's lines, can be moved up and down like a line, and takes a caption. In Deliver view it shows small and right-aligned exactly where it was placed, with the lines wrapping around it, as the cue for the AV team; clicking it shows it full screen, Escape or a click closes it. Images are stored with the talk (shrunk to at most 1600 pixels) and removed with it.",
+        "Talk Builder: strike through any outline section or point you will not use, with the new strike-through button on its header. In the builder the title is crossed out and the section band turns grey; in Deliver view the whole point, its verses, lines and images, shows crossed out in light grey with a \"not used\" tag, so it is easy to pass over. Press the button again to use it."
       ]
     },
     {

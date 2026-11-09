@@ -24,6 +24,14 @@
 .sectionBody { padding: 12px 16px 0; }
 .sectionCount { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
 
+/* An outline point struck through: kept for reference, not to be used. */
+.skipped .sectionHead { background: var(--mantine-color-gray-4); }
+.skipped .sectionTitle, .skipped .pointTitle, .skipped .sectionNum { text-decoration: line-through; color: var(--mantine-color-gray-6); }
+.skipped .sectionTitle a { color: var(--mantine-color-gray-6) !important; }
+.skipped .sectionTime { color: var(--mantine-color-gray-6); }
+.skippedPoint { opacity: 0.75; border-left-color: var(--mantine-color-gray-4) !important; }
+.skippedPoint .pointTitle, .skippedPoint .pointLabel { text-decoration: line-through; color: var(--mantine-color-gray-6); }
+
 /* A sub-point inside a section: white card, bold subheading and its own time. */
 .point { border-left: 5px solid var(--mantine-color-violet-5); background: var(--mantine-color-body); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .pointEmpty { border-left-color: var(--mantine-color-orange-4); }
@@ -50,6 +58,11 @@
 .deliverEn { font-size: clamp(0.95rem, 1.6vw, 1.25rem); color: var(--mantine-color-dimmed); margin-bottom: 10px; }
 .deliverVerse { font-size: clamp(1.1rem, 2vw, 1.6rem); line-height: 1.45; background: var(--mantine-color-violet-light); border-radius: 10px; padding: 12px 16px; margin: 10px 0; }
 .deliverSub { font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; margin-top: 18px; color: var(--mantine-color-gray-7); }
+/* A struck-through outline point in the delivery view: crossed out, light grey, easy to pass over. */
+.deliverSkipped, .deliverSkipped .deliverSub, .deliverSkipped .deliverLine, .deliverSkipped .deliverEn, .deliverSkipped .deliverVerse, .deliverSkipped .deliverTitle { color: var(--mantine-color-gray-5) !important; text-decoration: line-through; text-decoration-thickness: 2px; }
+.deliverSkipped .deliverVerse { background: var(--mantine-color-gray-0); }
+.deliverSkipped .deliverImage { opacity: 0.4; filter: grayscale(1); }
+.deliverSkippedTag { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mantine-color-gray-5); text-decoration: none; margin-left: 8px; vertical-align: middle; }
 /* An image in the delivery view: small, right-aligned, text wraps around it;
    it sits exactly where it was placed among the lines as the cue for the AV team. */
 .deliverImage { float: right; width: min(28%, 280px); margin: 4px 0 10px 18px; }
