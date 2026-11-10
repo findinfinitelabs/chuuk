@@ -113,8 +113,9 @@
 
 @page {
   size: 5in 7in;
-  margin: 0.55in 0.4in 0.5in;
-  @bottom-center { content: counter(page) " / " counter(pages); font-family: "Times New Roman", Times, serif; font-size: 8pt; color: #444; }
+  /* Deep top and bottom margins so the running title and page number stay clear of the text. */
+  margin: 0.85in 0.4in 0.8in;
+  @bottom-center { content: counter(page) " / " counter(pages); font-family: "Times New Roman", Times, serif; font-size: 8pt; color: #444; vertical-align: bottom; padding-bottom: 0.15in; }
 }
 
 @media print {
@@ -128,7 +129,7 @@
   .page * { font-family: "Times New Roman", Times, serif !important; box-shadow: none !important; }
 
   /* Running title, repeated on every page (fixed elements repeat when printed). */
-  .printHeader { display: block; position: fixed; top: -0.4in; left: 0; right: 0; text-align: center; font-size: 8pt; font-style: italic; color: #444; border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
+  .printHeader { display: block; position: fixed; top: -0.7in; left: 0; right: 0; text-align: center; font-size: 8pt; font-style: italic; color: #444; border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
 
   .titleCard { border: none !important; padding: 0 0 6pt !important; margin-bottom: 6pt !important; }
   .titleCard h3 { font-size: 14pt !important; margin: 0; }

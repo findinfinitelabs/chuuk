@@ -2,6 +2,14 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.8",
+      "date": "2026-11-10",
+      "title": "Print: title line and page number clear of the text",
+      "notes": [
+        "Print: the running title with its rule now sits higher in a deeper top margin, and the page number sits lower in a deeper bottom margin, so neither runs into the talk text."
+      ]
+    },
+    {
       "version": "1.0.0.7",
       "date": "2026-11-10",
       "title": "Deliver view: pace marks on each section",
