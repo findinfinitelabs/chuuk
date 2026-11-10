@@ -368,16 +368,29 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [zoom, setZoom] = useState<Line | null>(null)
+  // Pace: the elapsed time at which each section was first reached in this run,
+  // and the same from the previous run on this device, to compare against.
+  const paceKey = `talk-pace-${talk.id}`
+  const [arrivals, setArrivals] = useState<Record<number, number>>({})
+  const [previous] = useState<Record<number, number>>(() => { try { return JSON.parse(localStorage.getItem(paceKey) || '{}') } catch { return {} } })
   const points = talk.outline.points
   const point = points[i]
   useEffect(() => { if (!running) return; const t = window.setInterval(() => setElapsed((e) => e + 1), 1000); return () => window.clearInterval(t) }, [running])
+  // Stamp the section with the time it was reached, once per run, as soon as the timer has started.
+  useEffect(() => { if (running || elapsed > 0) setArrivals((a) => (a[i] === undefined ? { ...a, [i]: elapsed } : a)) }, [i, running]) // eslint-disable-line react-hooks/exhaustive-deps
+  const arrivalsRef = useRef(arrivals); arrivalsRef.current = arrivals
+  /** A run with at least two stamped sections becomes the one to compare the next run against. */
+  const closeRun = () => { const a = arrivalsRef.current; if (Object.keys(a).length >= 2) { try { localStorage.setItem(paceKey, JSON.stringify(a)) } catch { /* private window or storage off */ } } }
+  useEffect(() => closeRun, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowRight' || e.key === ' ') setI((x) => Math.min(points.length - 1, x + 1)); if (e.key === 'ArrowLeft') setI((x) => Math.max(0, x - 1)); if (e.key === 'Escape') setZoom((z) => { if (!z) onClose(); return null }) }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [points.length, onClose])
   const plannedUntil = points.slice(0, i + 1).reduce((n, p) => n + (p.minutes || 0), 0) * 60
+  const plannedStart = points.slice(0, i).reduce((n, p) => n + (p.minutes || 0), 0) * 60
   const total = (talk.outline.total_minutes || 0) * 60
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  const diff = (s: number) => `${s < 0 ? '−' : '+'}${fmt(Math.abs(s))}`
   const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
   if (!point) return null
   const go = (d: -1 | 1) => { setI((x) => Math.max(0, Math.min(points.length - 1, x + d))); window.scrollTo({ top: 0 }); document.querySelector(`.${styles.deliver}`)?.scrollTo({ top: 0 }) }
@@ -450,8 +463,19 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
       <div className={styles.clock}>
         <Text className={`${styles.timer} ${total && elapsed > plannedUntil ? styles.timerOver : ''}`}>{fmt(elapsed)}{point.minutes ? ` / ${fmt(plannedUntil)}` : ''}{total ? ` · ${fmt(total)}` : ''}</Text>
         <ActionIcon variant="light" onClick={() => setRunning((r) => !r)} aria-label={running ? 'Pause' : 'Start'}>{running ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</ActionIcon>
-        <ActionIcon variant="subtle" onClick={() => { setElapsed(0); setRunning(false) }} aria-label="Reset"><IconRefresh size={18} /></ActionIcon>
+        <ActionIcon variant="subtle" onClick={() => { closeRun(); setElapsed(0); setRunning(false); setArrivals({}) }} aria-label="Reset"><IconRefresh size={18} /></ActionIcon>
       </div>
+      {/* Pace mark: when this section was reached, against the plan and the previous run. */}
+      {(arrivals[i] !== undefined || previous[i] !== undefined) && (
+        <div className={styles.pace}>
+          {arrivals[i] !== undefined && (
+            <span>Reached at <b>{fmt(arrivals[i])}</b>{point.minutes || plannedStart ? <> · planned {fmt(plannedStart)} <span className={arrivals[i] - plannedStart > 30 ? styles.paceBehind : styles.paceAhead}>({diff(arrivals[i] - plannedStart)})</span></> : null}</span>
+          )}
+          {previous[i] !== undefined && (
+            <span>Last run <b>{fmt(previous[i])}</b>{arrivals[i] !== undefined && <> <span className={arrivals[i] - previous[i] > 30 ? styles.paceBehind : styles.paceAhead}>({diff(arrivals[i] - previous[i])})</span></>}</span>
+          )}
+        </div>
+      )}
       {point.skipped ? (
         // A struck-through section: folded away behind its crossed-out title.
         <Accordion variant="contained" radius="md" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
