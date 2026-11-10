@@ -2,6 +2,15 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.7",
+      "date": "2026-11-10",
+      "title": "Deliver view: pace marks on each section",
+      "notes": [
+        "Deliver view: when the timer is running and you move to a section, the time you reached it is stamped under the section title next to the planned start time, with the difference in green when ahead and red when behind.",
+        "Deliver view: the previous run's time for each section is kept on this device and shown beside the current one, so you can see whether you are keeping the same pace from one practice to the next. Reset or Exit closes the run and makes it the one to compare against."
+      ]
+    },
+    {
       "version": "1.0.0.6",
       "date": "2026-11-09",
       "title": "Struck-through scriptures, Deliver footer below the text, clean print",

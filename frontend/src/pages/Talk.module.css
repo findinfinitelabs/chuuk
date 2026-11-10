@@ -79,6 +79,11 @@
 .deliverEn { font-size: clamp(0.9rem, 1.4vw, 1.1rem); color: var(--mantine-color-dimmed); margin-bottom: 8px; }
 .deliverVerse { font-size: clamp(1rem, 1.7vw, 1.35rem); line-height: 1.45; background: rgba(255, 69, 0, 0.06); border-left: 5px solid orangered; border-radius: 10px; padding: 10px 14px; margin: 8px 0; color: orangered; font-weight: 600; }
 .deliverVerseEn { color: orangered; opacity: 0.8; font-weight: 400; }
+/* Pace line under the section title: reached-at time against the plan and the previous run. */
+.pace { display: flex; gap: 16px; flex-wrap: wrap; font-size: clamp(0.85rem, 1.3vw, 1rem); color: var(--mantine-color-gray-6); margin: 0 0 8px; font-variant-numeric: tabular-nums; }
+.pace b { color: var(--text-primary, #293241); }
+.paceAhead { color: var(--mantine-color-green-7); font-weight: 600; }
+.paceBehind { color: var(--mantine-color-red-6); font-weight: 600; }
 .deliverSub { font-size: clamp(0.95rem, 1.6vw, 1.25rem); font-weight: 700; margin-top: 16px; color: var(--mantine-color-gray-7); }
 /* A struck-through outline point in the delivery view: crossed out, light grey, easy to pass over. */
 .deliverSkipped, .deliverSkipped .deliverSub, .deliverSkipped .deliverLine, .deliverSkipped .deliverEn, .deliverSkipped .deliverVerse, .deliverSkipped .deliverTitle { color: var(--mantine-color-gray-5) !important; text-decoration: line-through; text-decoration-thickness: 2px; }
