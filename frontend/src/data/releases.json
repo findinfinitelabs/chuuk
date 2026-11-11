@@ -7,6 +7,7 @@
       "title": "Verb Lookup: a verb with every pronoun, suffix and tense",
       "notes": [
         "New Verb Lookup page (sidebar, under Talk Builder): type any verb and see it with all seven subject pronouns across the seven tense markers (ua, upwe, upwap, use, usap, usaamwo, upwele and their counterparts), with an English guide for each cell.",
+        "Verb Lookup: an English word works too. Looking up 'need' lists the dictionary words that carry that meaning (osun, lamot, osupwang), opens the first and lets you switch to another with a click; the translation is shown next to the verb.",
         "Verb Lookup: the object suffixes (me -ei, you -uk, us -kich / -kem, you all -kemi, them -r) are formed for the verb and checked against the dictionary; each form is marked as in the dictionary or formed by rule, and picking one changes the whole table. 'fen', 'kan', 'chék', 'pwal' or 'tongeni' can be placed between the marker and the verb.",
         "Verb Lookup: other dictionary forms built on the verb (directionals, reduplications, possessed forms) are listed and open with a click.",
         "Verb Lookup: examples from the stored library, analysed articles, conversations and dictionary examples where a subject marker stands directly before the verb, with the pronoun, tense and aspect identified and the clause highlighted. A Search wol.jw.org button fetches live examples only when pressed.",

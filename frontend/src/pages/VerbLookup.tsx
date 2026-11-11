@@ -22,6 +22,7 @@ interface ObjectForm { object: string; english: string; suffix: string; form: st
 interface OtherForm { form: string; english: string; modifier: string; grammar: string }
 interface Example { chk: string; en: string; source: string; reference: string; marker: string; aspect: string; form: string; person: string; tense: string; start: number; end: number }
 interface Lookup {
+  matches: { chuukese: string; english: string; grammar: string }[]
   query: string; found: boolean; verb: string; english: string; grammar: string; modifier: string; definition: string
   persons: { id: string; english: string; pronoun: string }[]
   tenses: { id: string; label: string; gloss: string }[]
@@ -85,11 +86,11 @@ export default function VerbLookup() {
     <Stack gap="md" className={styles.page}>
       <div>
         <Title order={2}><IconAbc size={26} style={{ verticalAlign: 'middle' }} /> Verb Lookup</Title>
-        <Text c="dimmed" size="sm">Type a verb to see it with every subject pronoun and tense marker, every object suffix, and examples from the stored library.</Text>
+        <Text c="dimmed" size="sm">Type a verb in Chuukese or English to see it with every subject pronoun and tense marker, every object suffix, and examples from the stored library.</Text>
       </div>
       <form onSubmit={(e) => { e.preventDefault(); void lookup(q) }}>
         <Group align="flex-end" gap="xs">
-          <TextInput label="Verb" placeholder="e.g. álisi, tongei, ekieki" value={q} onChange={(e) => setQ(e.currentTarget.value)} style={{ flex: 1, maxWidth: 420 }} />
+          <TextInput label="Verb" placeholder="Chuukese or English, e.g. álisi, tongei, need, help" value={q} onChange={(e) => setQ(e.currentTarget.value)} style={{ flex: 1, maxWidth: 420 }} />
           <Button type="submit" leftSection={<IconSearch size={16} />} loading={loading}>Look up</Button>
         </Group>
       </form>
@@ -98,10 +99,23 @@ export default function VerbLookup() {
 
       {data && (
         <>
+          {data.matches.length > 0 && (
+            // An English query: the dictionary words that carry that meaning; the first is shown, the others are a click away.
+            <Card withBorder radius="md" p="sm">
+              <Text size="sm" fw={700} mb={4}>Words that mean “{data.query}”</Text>
+              <Group gap={6}>
+                {data.matches.map((m) => (
+                  <Button key={m.chuukese} size="xs" variant={m.chuukese === data.verb ? 'filled' : 'light'} color="violet" onClick={() => { setQ(m.chuukese); void lookup(m.chuukese) }}>
+                    {m.chuukese}<Text span size="xs" ml={6} opacity={0.85}>{m.english}{m.grammar ? ` (${m.grammar})` : ''}</Text>
+                  </Button>
+                ))}
+              </Group>
+            </Card>
+          )}
           <Card withBorder radius="md" p="md" className={styles.head}>
             <Group gap="sm" align="baseline">
               <Text className={styles.verb}>{data.verb}</Text>
-              <Text size="lg">{data.english || <Text span c="dimmed">not in the dictionary; forms are by rule</Text>}</Text>
+              <Text size="lg" fw={600}>{data.english ? `= ${data.english}` : <Text span c="dimmed">not in the dictionary; forms are by rule</Text>}</Text>
               {data.grammar && <Badge variant="light" color="violet">{data.grammar}{data.modifier ? ` · ${data.modifier}` : ''}</Badge>}
             </Group>
             {data.definition && <Text size="sm" c="dimmed" mt={4}>{data.definition}</Text>}

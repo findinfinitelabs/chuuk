@@ -110,3 +110,20 @@ def test_lookup_route_returns_series(monkeypatch):
     assert d["found"] and d["english"] == "to love"
     you = next(o for o in d["objects"] if o["object"] == "you")
     assert you["form"] == "tongeek" and you["attested"]
+
+
+def test_english_query_offers_chuukese_words():
+    db = MagicMock()
+    rows = [
+        {"chuukese_word": "lamot", "english_translation": "important, need", "grammar": "adjective"},
+        {"chuukese_word": "osun", "english_translation": "in need of, require, lack", "grammar": "verb", "grammar_modifier": "or adjective"},
+        {"chuukese_word": "tikek", "english_translation": "needle (sewing)", "grammar": "noun"},
+        {"chuukese_word": "Ren ach sipwe lúkúlúk", "english_translation": "we need to be balanced", "grammar": ""},
+    ]
+    db.dictionary_collection.find.return_value.limit.return_value = rows
+    m = vf.english_matches(db.dictionary_collection, "need")
+    assert [x["chuukese"] for x in m] == ["osun", "lamot"]  # verb first; 'needle' and the sentence are left out
+    db.phrases_collection.find.return_value.limit.return_value = []
+    db.db.__getitem__.return_value.find.return_value.limit.return_value = []
+    r = vf.lookup(db, "need")
+    assert r["matches"][0]["chuukese"] == "osun" and r["verb"] in ("osun", "lamot")

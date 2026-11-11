@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import unicodedata
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,18 @@ OBJECTS = [
     ("you_pl", "you (pl.)", "-kemi"),
     ("them", "them", "-r"),
 ]
+
+
+def rows(cursor_fn, attempts: int = 3) -> list:
+    """Run a find and list it, retrying briefly on a Cosmos rate limit (429)."""
+    for i in range(attempts):
+        try:
+            return list(cursor_fn())
+        except Exception as e:
+            if "429" not in str(e) and "RequestRateTooLarge" not in str(e) or i == attempts - 1:
+                raise
+            time.sleep(0.5 * (2 ** i))
+    return []
 
 
 def norm(word: str) -> str:
@@ -195,14 +208,14 @@ def examples_from_db(dict_db, forms: list[str], limit: int = 30) -> list[dict]:
         col = getattr(dict_db, "phrases_collection", None)
         if col is not None:
             q = {"$or": [{f: r} for r in rx for f in ("chuukese_phrase", "chuukese_sentence", "chuukese")]}
-            for r in col.find(q, {"chuukese_phrase": 1, "chuukese_sentence": 1, "chuukese": 1, "english_translation": 1, "english": 1, "source": 1, "reference": 1}).limit(limit * 3):
+            for r in rows(lambda: col.find(q, {"chuukese_phrase": 1, "chuukese_sentence": 1, "chuukese": 1, "english_translation": 1, "english": 1, "source": 1, "reference": 1}).limit(limit * 3)):
                 add(r.get("chuukese_phrase") or r.get("chuukese_sentence") or r.get("chuukese"), r.get("english_translation") or r.get("english"), "library", r.get("reference") or r.get("source") or "")
     except Exception as e:  # pragma: no cover - network
         log.warning("verb examples, phrases: %s", e)
     try:
         if db is not None:
             q = {"$or": [{"paragraph.sentences.text_only": r} for r in rx]}
-            for doc in db["article_analysis_paragraphs"].find(q, {"paragraph.sentences.text_only": 1, "paragraph.sentences.english_text": 1, "article_title": 1, "title": 1, "url": 1}).limit(limit):
+            for doc in rows(lambda: db["article_analysis_paragraphs"].find(q, {"paragraph.sentences.text_only": 1, "paragraph.sentences.english_text": 1, "article_title": 1, "title": 1, "url": 1}).limit(limit)):
                 title = doc.get("article_title") or doc.get("title") or "analysed article"
                 for s in (doc.get("paragraph") or {}).get("sentences") or []:
                     add(s.get("text_only"), s.get("english_text"), "article", title)
@@ -210,14 +223,14 @@ def examples_from_db(dict_db, forms: list[str], limit: int = 30) -> list[dict]:
         log.warning("verb examples, articles: %s", e)
     try:
         if db is not None:
-            for doc in db["conversation_phrases"].find({"$or": [{"chk": r} for r in rx]}, {"chk": 1, "en": 1, "mt": 1}).limit(limit):
+            for doc in rows(lambda: db["conversation_phrases"].find({"$or": [{"chk": r} for r in rx]}, {"chk": 1, "en": 1, "mt": 1}).limit(limit)):
                 add(doc.get("chk"), doc.get("en"), "conversation (machine translated)" if doc.get("mt") else "conversation")
     except Exception as e:  # pragma: no cover
         log.warning("verb examples, conversations: %s", e)
     try:
         col = getattr(dict_db, "dictionary_collection", None)
         if col is not None:
-            for doc in col.find({"examples.0": {"$exists": True}, "$or": [{"examples": r} for r in rx]}, {"examples": 1, "chuukese_word": 1}).limit(limit):
+            for doc in rows(lambda: col.find({"examples.0": {"$exists": True}, "$or": [{"examples": r} for r in rx]}, {"examples": 1, "chuukese_word": 1}).limit(limit)):
                 for ex in doc.get("examples") or []:
                     text = ex if isinstance(ex, str) else (ex or {}).get("chuukese") or ""
                     en = "" if isinstance(ex, str) else (ex or {}).get("english") or ""
@@ -237,22 +250,54 @@ _PROJ = {"chuukese_word": 1, "english_translation": 1, "grammar": 1, "grammar_mo
 def _find_entry(col, query: str) -> dict | None:
     """Exact match first (accents ignored), verbs preferred; then a prefix match."""
     rx = re.compile(rf"^{re.escape(query)}", re.IGNORECASE)
-    rows = list(col.find({"chuukese_word": {"$regex": rx.pattern, "$options": "i"}}, _PROJ).limit(60))
+    found = rows(lambda: col.find({"chuukese_word": {"$regex": rx.pattern, "$options": "i"}}, _PROJ).limit(60))
     if norm(query) != query.lower():
-        rows += list(col.find({"chuukese_word": {"$regex": f"^{re.escape(norm(query))}", "$options": "i"}}, _PROJ).limit(60))
-    exact = [r for r in rows if norm(_word_of(r)) == norm(query)]
+        found += rows(lambda: col.find({"chuukese_word": {"$regex": f"^{re.escape(norm(query))}", "$options": "i"}}, _PROJ).limit(60))
+    exact = [r for r in found if norm(_word_of(r)) == norm(query)]
     exact.sort(key=lambda r: ((r.get("grammar") or "") != "verb", bool(r.get("grammar_modifier"))))
     if exact:
         return exact[0]
-    verbs = [r for r in rows if (r.get("grammar") or "") == "verb"]
+    verbs = [r for r in found if (r.get("grammar") or "") == "verb"]
     verbs.sort(key=lambda r: len(_word_of(r)))
-    return verbs[0] if verbs else (rows[0] if rows else None)
+    return verbs[0] if verbs else (found[0] if found else None)
+
+
+_WORD_GRAMMARS = ("verb", "adjective", "adverb", "noun", "")
+
+
+def english_matches(col, query: str, limit: int = 12) -> list[dict]:
+    """Dictionary words (not phrases) whose English meaning contains `query`
+    as a whole word, verbs first. 'need' → lamot, osun, osupwang."""
+    pattern = rf"(^|[^a-z]){re.escape(query.lower())}([^a-z]|$)"
+    found: list[dict] = []
+    try:
+        found = rows(lambda: col.find({"english_translation": {"$regex": pattern, "$options": "i"}}, _PROJ).limit(80))
+    except Exception as e:  # pragma: no cover
+        log.warning("verb lookup, english: %s", e)
+    whole = re.compile(pattern, re.IGNORECASE)
+    words = [r for r in found if _word_of(r) and len(_word_of(r).split()) <= 2 and (r.get("grammar") or "") in _WORD_GRAMMARS
+             and whole.search(r.get("english_translation") or "")]
+    order = {"verb": 0, "adjective": 1, "adverb": 2, "": 3, "noun": 4}
+    words.sort(key=lambda r: (order.get(r.get("grammar") or "", 5), bool(r.get("grammar_modifier")), len(_word_of(r))))
+    seen, out = set(), []
+    for r in words:
+        n = norm(_word_of(r))
+        if n not in seen:
+            seen.add(n)
+            out.append({"chuukese": _word_of(r), "english": r.get("english_translation") or "", "grammar": r.get("grammar") or ""})
+    return out[:limit]
 
 
 def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
     query = (query or "").strip()
     col = getattr(dict_db, "dictionary_collection", None) if dict_db is not None else None
     entry = _find_entry(col, query) if col is not None and query else None
+    matches: list[dict] = []
+    if col is not None and query and (entry is None or norm(_word_of(entry)) != norm(query)):
+        # Not a Chuukese headword: treat the query as English and offer the words that mean it.
+        matches = english_matches(col, query)
+        if matches and (entry is None or re.fullmatch(r"[a-z\s'-]+", query.lower())):
+            entry = _find_entry(col, matches[0]["chuukese"]) or {"chuukese_word": matches[0]["chuukese"], "english_translation": matches[0]["english"], "grammar": matches[0]["grammar"]}
     stem = _word_of(entry) if entry else query
     related: list[dict] = []
     if col is not None and stem:
@@ -261,7 +306,7 @@ def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
         pats.add(re.escape(n[:-1] if len(n) > 3 else n))
         try:
             for p in pats:
-                related += list(col.find({"chuukese_word": {"$regex": f"^{p}", "$options": "i"}}, _PROJ).limit(200))
+                related += rows(lambda: col.find({"chuukese_word": {"$regex": f"^{p}", "$options": "i"}}, _PROJ).limit(200))
         except Exception as e:  # pragma: no cover
             log.warning("verb lookup, related: %s", e)
     objects = object_series(stem, related)
@@ -271,6 +316,7 @@ def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
     return {
         "query": query,
         "found": entry is not None,
+        "matches": matches,
         "verb": stem,
         "english": (entry or {}).get("english_translation") or "",
         "grammar": (entry or {}).get("grammar") or "",
@@ -286,4 +332,4 @@ def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
     }
 
 
-__all__ = ["PERSONS", "TENSES", "OBJECTS", "ASPECTS", "MARKER_INDEX", "norm", "candidates", "object_series", "other_forms", "subject_table", "clause_pattern", "find_clause", "examples_from_db", "lookup"]
+__all__ = ["PERSONS", "TENSES", "OBJECTS", "ASPECTS", "MARKER_INDEX", "norm", "candidates", "object_series", "other_forms", "subject_table", "clause_pattern", "find_clause", "examples_from_db", "english_matches", "lookup"]
