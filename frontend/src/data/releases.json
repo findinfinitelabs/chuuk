@@ -2,6 +2,18 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.9",
+      "date": "2026-11-11",
+      "title": "Verb Lookup: a verb with every pronoun, suffix and tense",
+      "notes": [
+        "New Verb Lookup page (sidebar, under Talk Builder): type any verb and see it with all seven subject pronouns across the seven tense markers (ua, upwe, upwap, use, usap, usaamwo, upwele and their counterparts), with an English guide for each cell.",
+        "Verb Lookup: the object suffixes (me -ei, you -uk, us -kich / -kem, you all -kemi, them -r) are formed for the verb and checked against the dictionary; each form is marked as in the dictionary or formed by rule, and picking one changes the whole table. 'fen', 'kan', 'chék', 'pwal' or 'tongeni' can be placed between the marker and the verb.",
+        "Verb Lookup: other dictionary forms built on the verb (directionals, reduplications, possessed forms) are listed and open with a click.",
+        "Verb Lookup: examples from the stored library, analysed articles, conversations and dictionary examples where a subject marker stands directly before the verb, with the pronoun, tense and aspect identified and the clause highlighted. A Search wol.jw.org button fetches live examples only when pressed.",
+        "Any cell or example can be added to a talk with the usual button."
+      ]
+    },
+    {
       "version": "1.0.0.8",
       "date": "2026-11-10",
       "title": "Print: title line and page number clear of the text",

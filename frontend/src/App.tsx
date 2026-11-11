@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconPresentation, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconPresentation, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist, IconAbc } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -18,6 +18,7 @@ import Sentences from './pages/Sentences'
 import ArticleAnalysis from './pages/ArticleAnalysis'
 import WolSearch from './pages/WolSearch'
 import Verbs from './pages/Verbs'
+import VerbLookup from './pages/VerbLookup'
 import Compose from './pages/Compose'
 import AdminUsers from './pages/AdminUsers'
 import ReviewQueue from './pages/ReviewQueue'
@@ -279,6 +280,17 @@ function App() {
             )}
             {hasPermission('sentences') && (
               <NavLink 
+                label="Verb Lookup" 
+                leftSection={<IconAbc size="1.2rem" />} 
+                component={Link}
+                to="/verb-lookup"
+                active={location.pathname === '/verb-lookup'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('sentences') && (
+              <NavLink 
                 label="Talk Builder" 
                 leftSection={<IconPresentation size="1.2rem" />} 
                 component={Link}
@@ -427,6 +439,7 @@ function App() {
               <Route path="/sentences" element={hasPermission('sentences') ? <Sentences /> : <AccessDenied />} />
               <Route path="/article-analysis" element={hasPermission('sentences') ? <ArticleAnalysis /> : <AccessDenied />} />
               <Route path="/verbs" element={hasPermission('sentences') ? <Verbs /> : <AccessDenied />} />
+              <Route path="/verb-lookup" element={hasPermission('sentences') ? <VerbLookup /> : <AccessDenied />} />
               <Route path="/wol-search" element={hasPermission('lookup') ? <WolSearch /> : <AccessDenied />} />
               <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
               <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
