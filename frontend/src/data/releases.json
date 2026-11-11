@@ -11,7 +11,8 @@
         "Verb Lookup: the object suffixes (me -ei, you -uk, us -kich / -kem, you all -kemi, them -r) are formed for the verb and checked against the dictionary; each form is marked as in the dictionary or formed by rule, and picking one changes the whole table. 'fen', 'kan', 'chék', 'pwal' or 'tongeni' can be placed between the marker and the verb.",
         "Verb Lookup: other dictionary forms built on the verb (directionals, reduplications, possessed forms) are listed and open with a click.",
         "Verb Lookup: examples from the stored library, analysed articles, conversations and dictionary examples where a subject marker stands directly before the verb, with the pronoun, tense and aspect identified and the clause highlighted. A Search wol.jw.org button fetches live examples only when pressed.",
-        "Any cell or example can be added to a talk with the usual button."
+        "Any cell or example can be added to a talk with the usual button.",
+        "Verb Lookup: in each example the English word for the verb is highlighted too (helped, helps, helping all count), so the Chuukese clause and its translation line up at a glance."
       ]
     },
     {

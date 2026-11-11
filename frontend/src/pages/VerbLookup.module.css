@@ -12,3 +12,4 @@
 .example { padding: 6px 10px; border-left: 3px solid var(--mantine-color-violet-2); border-radius: 6px; background: var(--mantine-color-gray-0); }
 :global([data-mantine-color-scheme="dark"]) .example { background: var(--mantine-color-dark-6); }
 .hit { background: var(--dictionary-selected, #DCEAF5); color: inherit; border-radius: 3px; padding: 0 2px; }
+.hitEn { background: rgba(255, 196, 0, 0.35); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 600; }

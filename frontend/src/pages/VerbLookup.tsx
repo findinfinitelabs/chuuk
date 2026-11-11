@@ -8,7 +8,7 @@
  * Stored data only on load. wol.jw.org is searched only from the button.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, Anchor, Badge, Button, Card, Chip, Group, Loader, SegmentedControl, Stack, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import { IconAbc, IconSearch, IconWorld } from '@tabler/icons-react'
 import axios from 'axios'
@@ -40,6 +40,38 @@ function gloss(tenseGloss: string, subject: string, verb: string) {
 }
 
 const baseVerb = (english: string) => (english || '').replace(/^to\s+/i, '').split(/[;,(]/)[0].trim()
+
+const STOP = new Set(['to', 'be', 'a', 'an', 'the', 'of', 'in', 'on', 'for', 'with', 'about', 'at', 'or', 'and', 'up', 'out', 'sg', 'pl', 'incl', 'excl', 'me', 'you', 'him', 'her', 'it', 'us', 'them', 'one', 'someone', 'something'])
+
+/** A regex that finds the verb's English in a sentence in any common form:
+ *  "help" matches helped, helps, helping; "love" matches loved, loving;
+ *  "carry" matches carries, carried. Built from every meaning the
+ *  dictionary gives for the verb and its object forms. */
+function englishPattern(meanings: string[]): RegExp | null {
+  const stems = new Set<string>()
+  for (const m of meanings) {
+    for (const part of (m || '').toLowerCase().split(/[;,/()]/)) {
+      for (const w of part.replace(/^to\s+/, '').split(/[^a-z']+/)) {
+        if (w.length >= 3 && !STOP.has(w)) stems.add(w)
+      }
+    }
+  }
+  if (!stems.size) return null
+  const alts = [...stems].map((w) => {
+    const e = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (w.endsWith('y')) return `${e.slice(0, -1)}(?:y|ies|ied|ying)`
+    if (w.endsWith('e')) return `${e.slice(0, -1)}(?:e|es|ed|ing)`
+    return `${e}(?:s|es|ed|ing|${w.slice(-1)}ed|${w.slice(-1)}ing)?`
+  })
+  return new RegExp(`\\b(?:${alts.join('|')})\\b`, 'i')
+}
+
+/** The English sentence with the verb's translation marked. */
+function HighlightEnglish({ text, pattern }: { text: string; pattern: RegExp | null }) {
+  const m = pattern ? pattern.exec(text) : null
+  if (!m) return <>{text}</>
+  return <>{text.slice(0, m.index)}<mark className={styles.hitEn}>{m[0]}</mark>{text.slice(m.index + m[0].length)}</>
+}
 
 export default function VerbLookup() {
   const [params, setParams] = useSearchParams()
@@ -76,6 +108,7 @@ export default function VerbLookup() {
   }
 
   const chosen = data?.objects.find((o) => o.object === object)
+  const enPattern = useMemo(() => (data ? englishPattern([data.english, ...data.objects.map((o) => o.gloss), ...data.other_forms.slice(0, 10).map((o) => o.english)]) : null), [data])
   const form = chosen?.form || data?.verb || ''
   const objectEnglish = (o: ObjectForm) => (o.object === 'him' ? '' : ` ${o.english.replace(/ \(.*\)/, '')}`)
   const verbEnglish = data ? baseVerb(data.english) + (chosen ? objectEnglish(chosen) : '') : ''
@@ -234,7 +267,7 @@ export default function VerbLookup() {
                     <Group gap={6} wrap="nowrap" align="flex-start">
                       <div style={{ flex: 1 }}>
                         <div className={styles.chk}>{e.chk.slice(0, e.start)}<mark className={styles.hit}>{e.chk.slice(e.start, e.end)}</mark>{e.chk.slice(e.end)}</div>
-                        {e.en && <Text size="sm" c="dimmed">{e.en}</Text>}
+                        {e.en && <Text size="sm" c="dimmed"><HighlightEnglish text={e.en} pattern={enPattern} /></Text>}
                         <Group gap={4} mt={2}>
                           {person && <Badge size="xs" variant="light" color="violet">{person.english}</Badge>}
                           {tense && <Badge size="xs" variant="light" color="blue">{tense.label}</Badge>}
