@@ -1,6 +1,7 @@
 """Verb lookup: object suffix rules, attestation, clause detection, route."""
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 import app as app_module  # noqa: F401  (imported before conftest patches `open`, like the other route tests)
@@ -193,3 +194,27 @@ def test_wol_counts_route_uses_cache_then_fetches(monkeypatch):
 def test_wol_counts_route_requires_words(monkeypatch):
     c = _client(monkeypatch, MagicMock())
     assert c.post("/api/verbs/wol-counts", json={"words": []}).status_code == 400
+
+
+def test_accents_are_optional_in_matching():
+    assert re.fullmatch(vf.accent_rx("alisi"), "álisi", re.IGNORECASE)
+    assert re.fullmatch(vf.accent_rx("álisi"), "alisi", re.IGNORECASE)
+    pat = vf.clause_pattern(["álisikich"])
+    assert vf.find_clause("epwe alisikich", pat)["form"] == "alisikich"
+    assert vf.find_clause("Epwe Álisikich", pat)["form"] == "Álisikich"
+
+
+def test_lookup_without_accents_finds_the_accented_headword():
+    db = MagicMock()
+    db.dictionary_collection.find.return_value.limit.return_value = [
+        {"chuukese_word": "álisi", "english_translation": "help", "grammar": "verb", "grammar_modifier": "transitive"},
+        {"chuukese_word": "álisuk", "english_translation": "help you", "grammar": "verb"},
+    ]
+    db.phrases_collection.find.return_value.limit.return_value = []
+    db.db.__getitem__.return_value.find.return_value.limit.return_value = []
+    r = vf.lookup(db, "alisi")
+    assert r["found"] and r["verb"] == "álisi" and r["matches"] == []
+    assert next(o for o in r["objects"] if o["object"] == "you")["form"] == "álisuk"
+    # The Mongo query itself must accept either spelling.
+    pattern = db.dictionary_collection.find.call_args_list[0].args[0]["chuukese_word"]["$regex"]
+    assert re.match(pattern, "álisi", re.IGNORECASE) and re.match(pattern, "alisi", re.IGNORECASE)

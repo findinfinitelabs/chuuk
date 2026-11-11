@@ -14,7 +14,8 @@
         "Any cell or example can be added to a talk with the usual button.",
         "Verb Lookup: in each example the English word for the verb is highlighted too (helped, helps, helping all count), so the Chuukese clause and its translation line up at a glance.",
         "Verb Lookup: each cell of the pronoun table has a sparkle button that makes a sentence with that pronoun and form: stored sentences with the same pronoun, tense and form are listed first; otherwise an English sentence written from the cell's meaning can be edited and translated with the site's engine, the Chuukese checked for the chosen clause and corrected, then saved as a verified pair or added to a talk.",
-        "Verb Lookup: when several words share a meaning, a Count on wol.jw.org button puts a badge on each with how often wol.jw.org uses it (its all-time total, since the site has no date filter) and how many of the dated hits on the first results page come from the last three years. One search per word, at most six, spaced out and cached for a month."
+        "Verb Lookup: when several words share a meaning, a Count on wol.jw.org button puts a badge on each with how often wol.jw.org uses it (its all-time total, since the site has no date filter) and how many of the dated hits on the first results page come from the last three years. One search per word, at most six, spaced out and cached for a month.",
+        "Verb Lookup: accents are optional everywhere. Typing alisi finds álisi, and the related forms, stored examples and clause detection match a word whether or not it was written with its accents."
       ]
     },
     {

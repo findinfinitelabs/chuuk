@@ -86,6 +86,20 @@ def norm(word: str) -> str:
     return "".join(c for c in d if unicodedata.category(c) != "Mn")
 
 
+_ACCENTS = {"a": "aáàâäãā", "e": "eéèêëē", "i": "iíìîïī", "o": "oóòôöõō", "u": "uúùûüū", "n": "nñ"}
+
+
+def accent_rx(word: str) -> str:
+    """A regex fragment matching `word` with or without accents: 'alisi' and
+    'álisi' both become ``[aáàâäãā]l[iíìîïī]s[iíìîïī]``. Case is left to the
+    'i' flag."""
+    out = []
+    for ch in norm(word):
+        cls = _ACCENTS.get(ch)
+        out.append(f"[{cls}]" if cls else re.escape(ch))
+    return "".join(out)
+
+
 def candidates(stem: str) -> dict[str, list[str]]:
     """Object forms by rule, most likely first. The dictionary decides which
     is attested; the first stays as the formed suggestion otherwise."""
@@ -170,7 +184,7 @@ _ASPECT_WORDS = "|".join(re.escape(a) for a, _ in ASPECTS)
 
 def clause_pattern(forms: list[str]) -> re.Pattern:
     markers = "|".join(sorted((re.escape(m) for m in MARKER_INDEX), key=len, reverse=True))
-    alts = "|".join(re.escape(f) for f in sorted(set(forms), key=len, reverse=True) if f)
+    alts = "|".join(accent_rx(f) for f in sorted(set(forms), key=len, reverse=True) if f)
     return re.compile(rf"(?<![\w’'])({markers})\s+((?:(?:{_ASPECT_WORDS})\s+)*)({alts})(?![\w’'])", re.IGNORECASE)
 
 
@@ -189,7 +203,7 @@ def examples_from_db(dict_db, forms: list[str], limit: int = 30) -> list[dict]:
     if dict_db is None or not forms:
         return []
     pat = clause_pattern(forms)
-    rx = [{"$regex": re.escape(f), "$options": "i"} for f in forms]
+    rx = [{"$regex": accent_rx(f), "$options": "i"} for f in forms]
     out: list[dict] = []
     seen: set[str] = set()
 
@@ -249,10 +263,8 @@ _PROJ = {"chuukese_word": 1, "english_translation": 1, "grammar": 1, "grammar_mo
 
 def _find_entry(col, query: str) -> dict | None:
     """Exact match first (accents ignored), verbs preferred; then a prefix match."""
-    rx = re.compile(rf"^{re.escape(query)}", re.IGNORECASE)
-    found = rows(lambda: col.find({"chuukese_word": {"$regex": rx.pattern, "$options": "i"}}, _PROJ).limit(60))
-    if norm(query) != query.lower():
-        found += rows(lambda: col.find({"chuukese_word": {"$regex": f"^{re.escape(norm(query))}", "$options": "i"}}, _PROJ).limit(60))
+    # Accents are optional on both sides: 'alisi' finds 'álisi' and the other way round.
+    found = rows(lambda: col.find({"chuukese_word": {"$regex": f"^{accent_rx(query)}", "$options": "i"}}, _PROJ).limit(80))
     exact = [r for r in found if norm(_word_of(r)) == norm(query)]
     exact.sort(key=lambda r: ((r.get("grammar") or "") != "verb", bool(r.get("grammar_modifier"))))
     if exact:
@@ -301,12 +313,9 @@ def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
     stem = _word_of(entry) if entry else query
     related: list[dict] = []
     if col is not None and stem:
-        pats = {re.escape(stem[:-1] if len(stem) > 3 else stem)}
-        n = norm(stem)
-        pats.add(re.escape(n[:-1] if len(n) > 3 else n))
+        prefix = accent_rx(stem[:-1] if len(stem) > 3 else stem)
         try:
-            for p in pats:
-                related += rows(lambda: col.find({"chuukese_word": {"$regex": f"^{p}", "$options": "i"}}, _PROJ).limit(200))
+            related += rows(lambda: col.find({"chuukese_word": {"$regex": f"^{prefix}", "$options": "i"}}, _PROJ).limit(200))
         except Exception as e:  # pragma: no cover
             log.warning("verb lookup, related: %s", e)
     objects = object_series(stem, related)
@@ -332,4 +341,4 @@ def lookup(dict_db, query: str, example_limit: int = 30) -> dict:
     }
 
 
-__all__ = ["PERSONS", "TENSES", "OBJECTS", "ASPECTS", "MARKER_INDEX", "norm", "candidates", "object_series", "other_forms", "subject_table", "clause_pattern", "find_clause", "examples_from_db", "english_matches", "lookup"]
+__all__ = ["PERSONS", "TENSES", "OBJECTS", "ASPECTS", "MARKER_INDEX", "norm", "accent_rx", "candidates", "object_series", "other_forms", "subject_table", "clause_pattern", "find_clause", "examples_from_db", "english_matches", "lookup"]
