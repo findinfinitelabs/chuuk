@@ -9,8 +9,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Anchor, Badge, Button, Card, Chip, Group, Loader, SegmentedControl, Stack, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
-import { IconAbc, IconSearch, IconWorld } from '@tabler/icons-react'
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, Chip, Group, Loader, Modal, SegmentedControl, Stack, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core'
+import { IconAbc, IconCheck, IconSearch, IconSparkles, IconWorld } from '@tabler/icons-react'
 import axios from 'axios'
 import { useSearchParams } from 'react-router-dom'
 import AddToTalk from '../components/AddToTalk'
@@ -66,6 +66,89 @@ function englishPattern(meanings: string[]): RegExp | null {
   return new RegExp(`\\b(?:${alts.join('|')})\\b`, 'i')
 }
 
+/** Translate one way with the site's engines (Google first on the hosted site). */
+async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_en'): Promise<string> {
+  const res = await axios.post('/api/translate', { text, direction })
+  const t = res.data?.translations || {}
+  const order = [res.data?.preferred === 'google' ? 'google' : 'helsinki', 'helsinki', 'madlad', 'model', 'google']
+  const pick = order.map((k) => (typeof t[k] === 'string' ? t[k] : t[k]?.text)).find((v) => typeof v === 'string' && v.trim() && !/error|not available|not configured/i.test(v))
+  return pick ? String(pick).trim() : ''
+}
+
+const normChk = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+interface Seed { clause: string; marker: string; form: string; en: string; person: string; tense: string }
+
+/** Make a sentence from a table cell: an English sentence is written from the
+ *  cell's gloss, translated by the site's engines, and shown with the
+ *  Chuukese editable so the clause can be put right before it is saved as a
+ *  verified pair or added to a talk. Stored examples with the same pronoun,
+ *  tense and form are listed first, since a real sentence beats a generated one. */
+function SentenceModal({ seed, examples, onClose }: { seed: Seed | null; examples: Example[]; onClose: () => void }) {
+  const [en, setEn] = useState('')
+  const [chk, setChk] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    if (!seed) return
+    const first = seed.en.charAt(0).toUpperCase() + seed.en.slice(1)
+    setEn(`${first}.`); setChk(''); setError(null); setSaved(false)
+  }, [seed])
+  if (!seed) return null
+  const same = examples.filter((e) => e.person === seed.person && e.tense === seed.tense && normChk(e.form) === normChk(seed.form))
+  const usesClause = chk && normChk(chk).includes(normChk(seed.clause))
+  const generate = async () => {
+    setBusy(true); setError(null); setSaved(false)
+    try {
+      const out = await machineTranslate(en.trim(), 'en_to_chk')
+      if (!out) setError('No translation came back')
+      setChk(out)
+    } catch (e) { setError(errorMessage(e, 'Translation failed')) } finally { setBusy(false) }
+  }
+  const save = async () => {
+    try { await axios.post('/api/pairs/verified', { chk: chk.trim(), en: en.trim(), source: 'verb_lookup', reference: seed.clause }); setSaved(true) } catch (e) { setError(errorMessage(e, 'Could not save')) }
+  }
+  return (
+    <Modal opened onClose={onClose} title={<Text fw={700}>Sentence with <span className={styles.chk}>{seed.clause}</span></Text>} size="lg">
+      <Stack gap="sm">
+        {same.length > 0 && (
+          <div>
+            <Text size="sm" fw={700} mb={4}>Stored sentences with this pronoun and form</Text>
+            <Stack gap={4}>
+              {same.slice(0, 5).map((e, i) => (
+                <div key={i} className={styles.example}>
+                  <div className={styles.chk}>{e.chk.slice(0, e.start)}<mark className={styles.hit}>{e.chk.slice(e.start, e.end)}</mark>{e.chk.slice(e.end)}</div>
+                  {e.en && <Text size="sm" c="dimmed">{e.en}</Text>}
+                  <Group gap={4} mt={2}><Text span size="xs" c="dimmed">{e.source}</Text><AddToTalk chk={e.chk} en={e.en} source={e.source} reference={e.reference} size="xs" /></Group>
+                </div>
+              ))}
+            </Stack>
+          </div>
+        )}
+        <Textarea label="English sentence" description="Edit it to say what you want, then generate the Chuukese." autosize minRows={2} value={en} onChange={(e) => setEn(e.currentTarget.value)} />
+        <Group>
+          <Button leftSection={<IconSparkles size={16} />} onClick={generate} loading={busy} disabled={!en.trim()}>Generate Chuukese</Button>
+          <Text size="xs" c="dimmed">Uses the site's translation engine; check it before saving.</Text>
+        </Group>
+        {error && <Alert color="red">{error}</Alert>}
+        {(chk || busy) && (
+          <>
+            <Textarea label="Chuukese" autosize minRows={2} value={chk} onChange={(e) => { setChk(e.currentTarget.value); setSaved(false) }} className={styles.chkArea} />
+            {chk && (usesClause
+              ? <Text size="xs" c="green">Uses “{seed.clause}”.</Text>
+              : <Text size="xs" c="orange">Does not contain “{seed.clause}”. The engine chose another wording; edit the Chuukese so it uses the pronoun and form you picked, or try a different English sentence.</Text>)}
+            <Group>
+              <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={save} disabled={!chk.trim() || saved}>{saved ? 'Saved as verified' : 'Save as verified pair'}</Button>
+              {chk.trim() && <AddToTalk chk={chk.trim()} en={en.trim()} source="verb lookup" reference={seed.clause} size="xs" variant="button" />}
+            </Group>
+          </>
+        )}
+      </Stack>
+    </Modal>
+  )
+}
+
 /** The English sentence with the verb's translation marked. */
 function HighlightEnglish({ text, pattern }: { text: string; pattern: RegExp | null }) {
   const m = pattern ? pattern.exec(text) : null
@@ -84,6 +167,7 @@ export default function VerbLookup() {
   const [wol, setWol] = useState<WolHit[] | null>(null)
   const [wolLoading, setWolLoading] = useState(false)
   const [wolError, setWolError] = useState<string | null>(null)
+  const [seed, setSeed] = useState<Seed | null>(null)
 
   const lookup = async (verb: string) => {
     const v = verb.trim()
@@ -117,6 +201,7 @@ export default function VerbLookup() {
 
   return (
     <Stack gap="md" className={styles.page}>
+      <SentenceModal seed={seed} examples={data?.examples || []} onClose={() => setSeed(null)} />
       <div>
         <Title order={2}><IconAbc size={26} style={{ verticalAlign: 'middle' }} /> Verb Lookup</Title>
         <Text c="dimmed" size="sm">Type a verb in Chuukese or English to see it with every subject pronoun and tense marker, every object suffix, and examples from the stored library.</Text>
@@ -207,7 +292,7 @@ export default function VerbLookup() {
                                 <span className={styles.chk}><span className={styles.marker}>{c.marker}</span> {between}{form}</span>
                                 <Text size="xs" c="dimmed">{en}</Text>
                               </div>
-                              <AddToTalk chk={chk} en={en} source="verb lookup" size="xs" />
+                              <Tooltip label={`Make a sentence with “${chk}”`}><ActionIcon size="sm" variant="subtle" color="violet" aria-label="Make a sentence" onClick={() => setSeed({ clause: chk, marker: c.marker, form, en, person: row.person, tense: c.tense })}><IconSparkles size={14} /></ActionIcon></Tooltip>
                             </Group>
                           </Table.Td>
                         )
