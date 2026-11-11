@@ -7002,7 +7002,7 @@ app.register_blueprint(_conversation_blueprint(lambda: dict_db, login_required, 
 from src.api.talks import create_blueprint as _talks_blueprint  # noqa: E402
 from src.api.verbs import create_blueprint as _verbs_blueprint  # noqa: E402
 
-app.register_blueprint(_verbs_blueprint(lambda: dict_db, login_required))
+app.register_blueprint(_verbs_blueprint(lambda: dict_db, login_required, lambda: _get_wol_search()))
 
 app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos_retry, fetch_scripture_from_jworg, _analyze_text, _get_wol_search))
 

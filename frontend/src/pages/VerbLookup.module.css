@@ -14,3 +14,4 @@
 .hit { background: var(--dictionary-selected, #DCEAF5); color: inherit; border-radius: 3px; padding: 0 2px; }
 .hitEn { background: rgba(255, 196, 0, 0.35); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 600; }
 .chkArea textarea { font-weight: 600; font-size: 1.05rem; }
+.countBadge { text-transform: none; font-weight: 700; }

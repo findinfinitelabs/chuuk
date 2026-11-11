@@ -127,3 +127,69 @@ def test_english_query_offers_chuukese_words():
     db.db.__getitem__.return_value.find.return_value.limit.return_value = []
     r = vf.lookup(db, "need")
     assert r["matches"][0]["chuukese"] == "osun" and r["verb"] in ("osun", "lamot")
+
+
+# ── wol.jw.org occurrence counts ────────────────────────────────────────────
+
+_COUNT_HTML = """
+<div class="resultsNav"><p>Fán 2216 (A nóm lón ewe eú chék sentence).</p></div>
+<ul class="results resultContentDocument">
+  <li class="caption"><a class="lnk" href="/chk/wol/d/r303/lp-te/2014445?q=tongei&amp;p=par">Kopwe Tongei</a><span class="count">(Fán 6)</span></li>
+  <li class="result"><ul class="resultItems">
+    <li class="searchResult pub-w docId-2014445 pub-w14"><div class="document"><p>Kopwe <span class="mk">tongei</span> Jiowa.</p></div></li>
+    <li class="ref">w14 6/1 p. 7-11 - Ewe Leenien Mas—2014</li>
+  </ul></li>
+</ul>
+<ul class="results resultContentDocument">
+  <li class="caption"><a class="lnk" href="/chk/wol/d/r303/lp-te/2024246?q=tongei&amp;p=par">Jiowa A Fókkun Tongeek</a><span class="count">(Fán 3)</span></li>
+  <li class="result"><ul class="resultItems">
+    <li class="searchResult pub-w docId-2024246 pub-w24"><div class="document"><p>Án Kot tong a fókkun lapalap me a <span class="mk">tongei</span> kich.</p></div></li>
+    <li class="ref">w24 January p. 26-31 - Ewe Leenien Mas—2024</li>
+  </ul></li>
+</ul>
+"""
+
+
+def test_count_reads_the_header_total_and_recent_share(monkeypatch):
+    from src.core.wol_search import WOLSearch
+
+    w = WOLSearch()
+    monkeypatch.setattr(w, "_fetch", lambda q, page, timeout: _COUNT_HTML)
+    monkeypatch.setattr("src.core.wol_search.BeautifulSoup", __import__("bs4").BeautifulSoup)
+    import datetime as dt
+    c = w.count("tongei", recent_years=3)
+    assert c["total"] == 2216  # the per-document "(Fán 6)" is not mistaken for the total
+    assert c["sample"] == 2
+    assert c["recent"] == (1 if dt.date.today().year - 3 < 2024 else 0)
+    assert c["since"] == dt.date.today().year - 2
+
+
+def test_wol_counts_route_uses_cache_then_fetches(monkeypatch):
+    import datetime as dt
+
+    db = MagicMock()
+    fresh = {"query": "tongei", "lang": "chk", "total": 2216, "recent": 1, "sample": 2, "since": 2024, "fetched_at": dt.datetime.utcnow()}
+    db.db.__getitem__.return_value.find_one.side_effect = lambda q, *a, **k: fresh if q["query"] == "tongei" else None
+    calls = []
+
+    class FakeWol:
+        def count(self, w):
+            calls.append(w)
+            return {"query": w, "total": 5, "recent": 0, "sample": 0, "since": 2024}
+
+    from src.api import verbs as verbs_api
+    monkeypatch.setattr(verbs_api, "SPACING_SECONDS", 0)
+    monkeypatch.setattr(app_module, "_get_wol_search", lambda: FakeWol())
+    c = _client(monkeypatch, db)
+    r = c.post("/api/verbs/wol-counts", json={"words": ["tongei", "tonge", ""]})
+    assert r.status_code == 200
+    rows = {x["query"]: x for x in r.get_json()["counts"]}
+    assert rows["tongei"]["cached"] is True and rows["tongei"]["total"] == 2216
+    assert rows["tonge"]["cached"] is False and rows["tonge"]["total"] == 5
+    assert calls == ["tonge"]
+    db.db.__getitem__.return_value.update_one.assert_called_once()
+
+
+def test_wol_counts_route_requires_words(monkeypatch):
+    c = _client(monkeypatch, MagicMock())
+    assert c.post("/api/verbs/wol-counts", json={"words": []}).status_code == 400

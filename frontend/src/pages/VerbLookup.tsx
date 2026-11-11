@@ -21,6 +21,7 @@ interface SubjectRow { person: string; english: string; pronoun: string; cells: 
 interface ObjectForm { object: string; english: string; suffix: string; form: string; attested: boolean; gloss: string; alternatives: string[] }
 interface OtherForm { form: string; english: string; modifier: string; grammar: string }
 interface Example { chk: string; en: string; source: string; reference: string; marker: string; aspect: string; form: string; person: string; tense: string; start: number; end: number }
+interface WolCount { query: string; total?: number; recent?: number; sample?: number; since?: number; cached?: boolean; error?: string }
 interface Lookup {
   matches: { chuukese: string; english: string; grammar: string }[]
   query: string; found: boolean; verb: string; english: string; grammar: string; modifier: string; definition: string
@@ -168,6 +169,22 @@ export default function VerbLookup() {
   const [wolLoading, setWolLoading] = useState(false)
   const [wolError, setWolError] = useState<string | null>(null)
   const [seed, setSeed] = useState<Seed | null>(null)
+  const [counts, setCounts] = useState<Record<string, WolCount>>({})
+  const [counting, setCounting] = useState(false)
+  const [countError, setCountError] = useState<string | null>(null)
+
+  /** One request per word on wol.jw.org (at most six, spaced, cached for a month on the server). Only from the button. */
+  const countOnWol = async () => {
+    if (!data) return
+    setCounting(true); setCountError(null)
+    try {
+      const words = data.matches.map((m) => m.chuukese).slice(0, 6)
+      const r = await axios.post('/api/verbs/wol-counts', { words })
+      const next: Record<string, WolCount> = {}
+      for (const c of r.data.counts || []) next[c.query.toLowerCase()] = c
+      setCounts(next)
+    } catch (e) { setCountError(errorMessage(e, 'Could not count on wol.jw.org')) } finally { setCounting(false) }
+  }
 
   const lookup = async (verb: string) => {
     const v = verb.trim()
@@ -175,7 +192,7 @@ export default function VerbLookup() {
     setLoading(true); setError(null); setWol(null); setWolError(null)
     try {
       const r = await axios.get<Lookup>('/api/verbs/lookup', { params: { q: v } })
-      setData(r.data); setObject('him'); setAspect('')
+      setData(r.data); setObject('him'); setAspect(''); setCounts({}); setCountError(null)
       setParams({ q: v }, { replace: true })
     } catch (e) { setError(errorMessage(e, 'Could not look up the verb')) } finally { setLoading(false) }
   }
@@ -220,14 +237,29 @@ export default function VerbLookup() {
           {data.matches.length > 0 && (
             // An English query: the dictionary words that carry that meaning; the first is shown, the others are a click away.
             <Card withBorder radius="md" p="sm">
-              <Text size="sm" fw={700} mb={4}>Words that mean “{data.query}”</Text>
-              <Group gap={6}>
-                {data.matches.map((m) => (
-                  <Button key={m.chuukese} size="xs" variant={m.chuukese === data.verb ? 'filled' : 'light'} color="violet" onClick={() => { setQ(m.chuukese); void lookup(m.chuukese) }}>
-                    {m.chuukese}<Text span size="xs" ml={6} opacity={0.85}>{m.english}{m.grammar ? ` (${m.grammar})` : ''}</Text>
-                  </Button>
-                ))}
+              <Group justify="space-between" mb={4}>
+                <Text size="sm" fw={700}>Words that mean “{data.query}”</Text>
+                <Tooltip label={`One search per word on wol.jw.org (${Math.min(6, data.matches.length)} words), cached for a month`}>
+                  <Button size="compact-xs" variant="light" leftSection={<IconWorld size={12} />} onClick={countOnWol} loading={counting} disabled={Object.keys(counts).length > 0}>Count on wol.jw.org</Button>
+                </Tooltip>
               </Group>
+              <Group gap={6}>
+                {data.matches.map((m) => {
+                  const c = counts[m.chuukese.toLowerCase()]
+                  return (
+                    <Button key={m.chuukese} size="xs" variant={m.chuukese === data.verb ? 'filled' : 'light'} color="violet" onClick={() => { setQ(m.chuukese); void lookup(m.chuukese) }}
+                      rightSection={c && (c.error
+                        ? <Tooltip label={c.error}><Badge size="xs" color="gray" variant="outline">?</Badge></Tooltip>
+                        : <Tooltip label={`${c.total?.toLocaleString()} occurrences on wol.jw.org (all years)${c.sample ? `; ${c.recent} of the ${c.sample} dated hits on the first page are from ${c.since} on` : ''}`}>
+                            <Badge size="xs" color={m.chuukese === data.verb ? 'white' : 'violet'} variant={m.chuukese === data.verb ? 'white' : 'light'} className={styles.countBadge}>{c.total?.toLocaleString()}{c.sample ? ` · ${c.recent}/${c.sample} recent` : ''}</Badge>
+                          </Tooltip>)}>
+                      {m.chuukese}<Text span size="xs" ml={6} opacity={0.85}>{m.english}{m.grammar ? ` (${m.grammar})` : ''}</Text>
+                    </Button>
+                  )
+                })}
+              </Group>
+              {countError && <Text size="xs" c="orange" mt={4}>{countError}</Text>}
+              {Object.keys(counts).length > 0 && <Text size="xs" c="dimmed" mt={4}>Counts are all-time totals from wol.jw.org, which has no date filter; “recent” is how many of the dated hits on the first results page fall in the last three years.</Text>}
             </Card>
           )}
           <Card withBorder radius="md" p="md" className={styles.head}>
