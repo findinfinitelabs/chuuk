@@ -80,18 +80,6 @@ async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_e
 }
 
 /** A line the person checked is stored as a verified word, phrase or sentence. */
-/** "James 2:17, 26", "Isa 55:8, 9", "1 Cor. 13:4-7": a scripture citation, which is fetched, never translated. */
-const SCRIPTURE_REF = /^\s*[1-3]?\s?[A-Za-zÀ-ÿ]+\.?\s+\d{1,3}:\d{1,3}(?:\s*[-–,]\s*\d{1,3})*\s*$/
-const isScriptureRef = (text: string) => SCRIPTURE_REF.test(text || '')
-
-/** The verse text for a citation: New World Translation from wol.jw.org for the
- *  Greek Scriptures, the uploaded Chuukese Bible for Genesis to Malachi. */
-async function fetchScripture(ref: string, talkId?: string): Promise<{ chk: string; en: string; source: string; error?: string }> {
-  const r = await axios.post('/api/talks/scriptures', { refs: [ref.trim()], talk_id: talkId, fetch: true })
-  const v = r.data?.[ref.trim()] || Object.values(r.data || {})[0] || {}
-  return { chk: v.chuukese || '', en: v.english || '', source: v.source || 'nwt', error: v.error || undefined }
-}
-
 async function storeVerified(line: Pick<Line, 'chk' | 'en' | 'ref'>) {
   if (!line.chk.trim() || !line.en.trim()) return
   try {
@@ -247,9 +235,9 @@ async function uploadImage(talkId: string, file: File): Promise<Omit<Line, 'id'>
 
 // ── A collected line ────────────────────────────────────────────────────────
 
-function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd, scripture = false, talkId }: {
+function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd, scripture = false }: {
   line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void
-  maps?: Maps | null; onGloss?: (g: Gloss | null) => void; onAdd?: (l: Omit<Line, 'id'>) => void; talkId?: string
+  maps?: Maps | null; onGloss?: (g: Gloss | null) => void; onAdd?: (l: Omit<Line, 'id'>) => void
   /** Show in the scripture colour (marked, or matched to a stored verse). */
   scripture?: boolean
 }) {
@@ -257,18 +245,6 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
   const [chk, setChk] = useState(line.chk)
   const [en, setEn] = useState(line.en)
   const [translating, setTranslating] = useState(false)
-  const [fetched, setFetched] = useState<{ ref: string; error?: string } | null>(null)
-  // A citation typed in either field is fetched, not translated.
-  const citation = isScriptureRef(chk) ? chk.trim() : isScriptureRef(en) ? en.trim() : ''
-  const fetchVerse = async () => {
-    setTranslating(true)
-    try {
-      const v = await fetchScripture(citation, talkId)
-      if (v.chk) setChk(v.chk)
-      if (v.en) setEn(v.en)
-      setFetched({ ref: citation, error: v.error })
-    } catch { setFetched({ ref: citation, error: 'Could not fetch the verse' }) } finally { setTranslating(false) }
-  }
 
   // Translation runs only from the button: a pasted scripture already has both sides.
   // It fills the empty side from the other; with both filled it refreshes the English.
@@ -288,19 +264,12 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
         <Stack gap={6}>
           <Textarea autosize minRows={1} label="Chuukese" value={chk} onChange={(e) => setChk(e.currentTarget.value)} />
           <Textarea autosize minRows={1} label="English" value={en} onChange={(e) => setEn(e.currentTarget.value)} />
-          {fetched?.error && <Text size="xs" c="orange">{fetched.error}</Text>}
           <Group justify="flex-end" gap="xs">
-            <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={() => { setEditing(false); setChk(line.chk); setEn(line.en); setFetched(null) }}>Cancel</Button>
-            {citation ? (
-              <Tooltip label="Fetch the verse text: New World Translation for Matthew to Revelation, the uploaded Chuukese Bible for Genesis to Malachi. No translation.">
-                <Button size="xs" variant="light" color="orange" leftSection={<IconBook2 size={14} />} onClick={fetchVerse} loading={translating}>Fetch scripture</Button>
-              </Tooltip>
-            ) : (
-              <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
-                <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={translating} disabled={!chk.trim() && !en.trim()}>Translate</Button>
-              </Tooltip>
-            )}
-            <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={() => { const next = { ...line, chk: chk.trim(), en: en.trim(), confirmed: true, ...(fetched && !fetched.error ? { ref: fetched.ref, scripture: true, source: 'scripture' } : {}) }; onChange(next); if (!fetched) storeVerified(next); setEditing(false); setFetched(null) }}>Save</Button>
+            <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={() => { setEditing(false); setChk(line.chk); setEn(line.en) }}>Cancel</Button>
+            <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
+              <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={translating} disabled={!chk.trim() && !en.trim()}>Translate</Button>
+            </Tooltip>
+            <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={() => { const next = { ...line, chk: chk.trim(), en: en.trim(), confirmed: true }; onChange(next); storeVerified(next); setEditing(false) }}>Save</Button>
           </Group>
         </Stack>
       ) : (
@@ -336,26 +305,12 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
   )
 }
 
-function AddLine({ onAdd, onGloss, talkId }: { onAdd: (l: Omit<Line, 'id'>) => void; onGloss?: (g: Gloss | null) => void; talkId?: string }) {
+function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onGloss?: (g: Gloss | null) => void }) {
   const [previewMaps, setPreviewMaps] = useState<Maps | null>(null)
   const [chk, setChk] = useState('')
   const [en, setEn] = useState('')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [fetched, setFetched] = useState<{ ref: string; error?: string } | null>(null)
-  // A citation ("James 2:17, 26", "Isa 55:8, 9") is fetched, never translated:
-  // New World Translation from wol.jw.org, or the uploaded Bible for Genesis to Malachi.
-  const citation = isScriptureRef(chk) ? chk.trim() : isScriptureRef(en) ? en.trim() : ''
-  const fetchVerse = async () => {
-    setBusy(true)
-    try {
-      const v = await fetchScripture(citation, talkId)
-      if (v.chk) setChk(v.chk)
-      if (v.en) setEn(v.en)
-      setFetched({ ref: citation, error: v.error })
-      if (v.chk) axios.post<Maps>('/api/talks/gloss', { texts: [v.chk] }).then((r) => setPreviewMaps(r.data)).catch(() => setPreviewMaps(null))
-    } catch { setFetched({ ref: citation, error: 'Could not fetch the verse' }) } finally { setBusy(false) }
-  }
   // Nothing is translated on its own: a pasted scripture goes in as typed. The
   // button fills the empty side from the other, or refreshes the English when both are filled.
   const translate = async () => {
@@ -369,7 +324,7 @@ function AddLine({ onAdd, onGloss, talkId }: { onAdd: (l: Omit<Line, 'id'>) => v
       if (text) axios.post<Maps>('/api/talks/gloss', { texts: [text] }).then((r) => setPreviewMaps(r.data)).catch(() => setPreviewMaps(null))
     } finally { setBusy(false) }
   }
-  const reset = () => { setChk(''); setEn(''); setPreviewMaps(null); setFetched(null); setOpen(false) }
+  const reset = () => { setChk(''); setEn(''); setPreviewMaps(null); setOpen(false) }
   if (!open) {
     return <Button mt="xs" variant="light" leftSection={<IconPlus size={16} />} onClick={() => setOpen(true)}>Add a line</Button>
   }
@@ -378,20 +333,13 @@ function AddLine({ onAdd, onGloss, talkId }: { onAdd: (l: Omit<Line, 'id'>) => v
       <Stack gap={6}>
         <Textarea autosize minRows={1} label="Chuukese" placeholder="Paste or type the Chuukese (a scripture needs no translation)" value={chk} onChange={(e) => setChk(e.currentTarget.value)} />
         {chk.trim() && previewMaps && onGloss && <Text className={styles.chk}><GlossedWords text={chk.trim()} dictionary={previewMaps.dictionary} similar={previewMaps.similar} phrases={previewMaps.phrases} onGloss={onGloss} keyPrefix="preview-" /></Text>}
-        <Textarea autosize minRows={1} label="English" placeholder="English, if you have it (or a citation such as James 2:17, 26 to fetch)" value={en} onChange={(e) => setEn(e.currentTarget.value)} />
-        {fetched?.error && <Text size="xs" c="orange">{fetched.error}</Text>}
+        <Textarea autosize minRows={1} label="English" placeholder="English, if you have it" value={en} onChange={(e) => setEn(e.currentTarget.value)} />
         <Group justify="flex-end" gap="xs">
           <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={reset}>Cancel</Button>
-          {citation ? (
-            <Tooltip label="Fetch the verse text: New World Translation for Matthew to Revelation, the uploaded Chuukese Bible for Genesis to Malachi. No translation.">
-              <Button size="xs" variant="light" color="orange" leftSection={<IconBook2 size={14} />} onClick={fetchVerse} loading={busy}>Fetch scripture</Button>
-            </Tooltip>
-          ) : (
-            <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
-              <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={busy} disabled={!chk.trim() && !en.trim()}>Translate</Button>
-            </Tooltip>
-          )}
-          <Button size="xs" color="green" leftSection={<IconPlus size={14} />} disabled={!chk.trim() && !en.trim()} onClick={() => { onAdd({ chk: chk.trim(), en: en.trim(), source: fetched && !fetched.error ? 'scripture' : 'typed', ref: fetched && !fetched.error ? fetched.ref : '', scripture: !!(fetched && !fetched.error), confirmed: false, note: '' }); reset() }}>Add under this point</Button>
+          <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
+            <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={busy} disabled={!chk.trim() && !en.trim()}>Translate</Button>
+          </Tooltip>
+          <Button size="xs" color="green" leftSection={<IconPlus size={14} />} disabled={!chk.trim() && !en.trim()} onClick={() => { onAdd({ chk: chk.trim(), en: en.trim(), source: 'typed', ref: '', confirmed: false, note: '' }); reset() }}>Add under this point</Button>
         </Group>
       </Stack>
     </Paper>
@@ -413,7 +361,7 @@ function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string
           )}
           {showEnglish && verse.english && <Text size="sm" className={`${styles.en} ${styles.verseEn}`}>{verse.english}</Text>}
           {!verse.chuukese && !verse.english && (verse.fetchable && onFetch
-            ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Tooltip label="New World Translation on wol.jw.org; no translation involved"><Button size="compact-xs" variant="light" color="orange" leftSection={<IconBook2 size={12} />} onClick={() => onFetch(cite)}>Fetch scripture</Button></Tooltip></Group>
+            ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Fetch from wol.jw.org</Button></Group>
             : <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>)}
         </>
       )}
@@ -763,14 +711,14 @@ export default function TalkBuilder() {
                 {l.kind === 'image' ? (
                   <ImageCard line={l} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
                 ) : (
-                  <LineCard line={l} talkId={talk?.id} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
+                  <LineCard line={l} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
                 )}
               </Box>
             </Group>
           ))}
         </Stack>
         <Group align="flex-start" gap="xs" wrap="nowrap">
-          <Box style={{ flex: 1 }}><AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} talkId={talk?.id} /></Box>
+          <Box style={{ flex: 1 }}><AddLine onAdd={(l) => addLine(p.id, l)} onGloss={setGloss} /></Box>
           <FileButton accept="image/*" onChange={async (file) => { if (file && talk) { const l = await uploadImage(talk.id, file); if (l) addLine(p.id, l) } }}>
             {(props) => <Button {...props} mt="xs" variant="default" leftSection={<IconPhoto size={16} />}>Add image</Button>}
           </FileButton>

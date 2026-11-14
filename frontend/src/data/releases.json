@@ -8,8 +8,7 @@
       "notes": [
         "Talk Builder: adding or editing a line no longer translates on its own. Add a line opens Chuukese and English fields; paste a scripture into both and add it as it is, with no translation call.",
         "Talk Builder: a Translate button sits between Cancel and Save (and Add). It fills whichever side is empty from the other, and with both filled it translates the Chuukese again into English. Nothing runs until you press it.",
-        "Talk Builder: a line can be added with only one side filled, to translate or complete later.",
-        "Talk Builder: type a citation such as James 2:17, 26 or Isa 55:8, 9 in a line and the Translate button becomes Fetch scripture. It brings in the verse text itself, from the New World Translation on wol.jw.org for Matthew to Revelation and from the uploaded Chuukese Bible for Genesis to Malachi, with the English alongside; nothing is translated. The line is marked as scripture with its citation. The verse boxes under each outline point use the same Fetch scripture button."
+        "Talk Builder: a line can be added with only one side filled, to translate or complete later."
       ]
     },
     {
