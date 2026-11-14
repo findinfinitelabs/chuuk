@@ -26,12 +26,13 @@ from bs4 import BeautifulSoup
 
 from src.core import wol_health
 from src.core.wol_search import WOL_BASE, _plain
+from src.core.wol_health import USER_AGENT
 
 _URL = {
     "chk": WOL_BASE + "/chk/wol/b/r303/lp-te/nwt/{book}/{chapter}",
     "en": WOL_BASE + "/en/wol/b/r1/lp-e/nwt/{book}/{chapter}",
 }
-_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+_UA = USER_AGENT
 _VERSE_ID = re.compile(r"^v(\d+)-(\d+)-(\d+)-(\d+)$")
 _MIN_INTERVAL = 2.5
 _lock = threading.Lock()

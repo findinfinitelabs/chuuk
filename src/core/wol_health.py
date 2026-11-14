@@ -15,6 +15,10 @@ from __future__ import annotations
 import threading
 import time
 
+# One honest identity for every request to wol.jw.org. The site answers a
+# browser-impersonating User-Agent with an empty HTTP 202; a plain client is served.
+USER_AGENT = "ChuukDictionary/1.0 (polite fetcher; a few requests, spaced out, cached)"
+
 FAILURES_TO_OPEN = 3
 COOL_OFF_SECONDS = 600
 

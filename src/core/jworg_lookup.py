@@ -7,6 +7,7 @@ and local publications. www.jw.org itself is never contacted.
 
 import requests
 from urllib.parse import quote
+from src.core.wol_health import USER_AGENT
 
 
 class JWOrgLookup:
@@ -17,7 +18,7 @@ class JWOrgLookup:
     def __init__(self, publication_manager=None):
         """Initialize the lookup service"""
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        self.session.headers.update({"User-Agent": USER_AGENT})
         self.publication_manager = publication_manager
 
     def search_word(self, word: str, language_code: str = "chk") -> list[dict[str, str]]:

@@ -4,8 +4,9 @@
     {
       "version": "1.0.0.11",
       "date": "2026-11-14",
-      "title": "Article Analysis: say when wol.jw.org declines the request",
+      "title": "wol.jw.org: one honest identity, and say when the site declines",
       "notes": [
+        "wol.jw.org: every request from the app now carries one plain client identity instead of pretending to be a Chrome browser. The site answered the browser impersonation with an empty page (which showed up as 'No readable content found in the article') and serves the plain identity normally, so Article Analysis, verse examples, counts and the Watchtower Library search work again.",
         "Article Analysis: when wol.jw.org answers an article request with an empty page (its way of refusing automated access), the message now says so instead of 'No readable content found in the article', and the app waits a few minutes before asking the site again, as the other wol.jw.org features already do."
       ]
     },
