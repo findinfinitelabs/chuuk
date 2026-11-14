@@ -2,6 +2,14 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.11",
+      "date": "2026-11-14",
+      "title": "Article Analysis: say when wol.jw.org declines the request",
+      "notes": [
+        "Article Analysis: when wol.jw.org answers an article request with an empty page (its way of refusing automated access), the message now says so instead of 'No readable content found in the article', and the app waits a few minutes before asking the site again, as the other wol.jw.org features already do."
+      ]
+    },
+    {
       "version": "1.0.0.10",
       "date": "2026-11-14",
       "title": "Talk Builder: translate only when asked, scripture fetched, collapsible sections",

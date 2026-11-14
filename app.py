@@ -6383,9 +6383,18 @@ def analyze_article_url():
         }
 
         def safe_fetch(target_url):
+            from src.core import wol_health
+
+            if not wol_health.available():
+                return None, "wol.jw.org has been declining this app's requests; waiting a few minutes before trying again"
             try:
                 r = requests.get(target_url, headers=fetch_headers, timeout=30)
                 r.raise_for_status()
+                # The site declines automated requests with HTTP 202 and an empty body.
+                if r.status_code != 200 or len(r.text) < 500:
+                    wol_health.record_failure()
+                    return None, f"wol.jw.org declined this request (HTTP {r.status_code}, {len(r.text)} bytes): it is refusing automated access right now, not a problem with the article"
+                wol_health.record_success()
                 return r.text, None
             except requests.exceptions.Timeout:
                 return None, "Request timed out"
