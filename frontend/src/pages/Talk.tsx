@@ -384,7 +384,7 @@ function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string
           )}
           {showEnglish && verse.english && <Text size="sm" className={`${styles.en} ${styles.verseEn}`}>{verse.english}</Text>}
           {!verse.chuukese && !verse.english && (verse.fetchable && onFetch
-            ? <Group gap="xs"><Text size="xs" c="dimmed">Not stored yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Fetch from wol.jw.org</Button></Group>
+            ? <Group gap="xs"><Text size="xs" c="dimmed">Not fetched yet.</Text><Button size="compact-xs" variant="light" onClick={() => onFetch(cite)}>Try again</Button></Group>
             : <Text size="xs" c="orange">{verse.error || 'Verse not available'}</Text>)}
         </>
       )}
@@ -589,17 +589,11 @@ export default function TalkBuilder() {
   // request runs: a talk with thirty verses used to fire the same lookup
   // several times and tie up the browser's connections to the server.
   const inFlight = useRef<Set<string>>(new Set())
-  // Opening a talk reads stored verses only (fetch: false); wol.jw.org is
-  // contacted only from the Fetch buttons.
-  useEffect(() => {
-    const missing = refs.filter((r) => !verses[r] && !inFlight.current.has(r))
-    if (!missing.length || !talk) return
-    missing.forEach((r) => inFlight.current.add(r))
-    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id, fetch: false })
-      .then((r) => setVerses((v) => ({ ...v, ...r.data })))
-      .catch(() => undefined)
-      .finally(() => missing.forEach((r) => inFlight.current.delete(r)))
-  }, [refs, verses, talk])
+  // Opening a talk reads the verses stored with it first (no network). Any
+  // citation still without text is then fetched once, Chuukese and English
+  // together (New World Translation via wol.jw.org, the uploaded Bible for
+  // Genesis to Malachi), stored with the talk, and never asked for again in
+  // this session; the Bible is never translated.
   const [fetchingVerses, setFetchingVerses] = useState(false)
   const fetchVerses = async (which: string[]) => {
     if (!talk || !which.length) return
@@ -609,6 +603,20 @@ export default function TalkBuilder() {
       setVerses((v) => ({ ...v, ...r.data }))
     } catch { /* shown as not stored */ } finally { setFetchingVerses(false) }
   }
+  const autoFetched = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const missing = refs.filter((r) => !verses[r] && !inFlight.current.has(r))
+    if (!missing.length || !talk) return
+    missing.forEach((r) => inFlight.current.add(r))
+    axios.post('/api/talks/scriptures', { refs: missing, talk_id: talk.id, fetch: false })
+      .then((r) => {
+        setVerses((v) => ({ ...v, ...r.data }))
+        const want = Object.entries(r.data as Record<string, Verse>).filter(([ref, v]) => v?.fetchable && !autoFetched.current.has(ref)).map(([ref]) => ref)
+        if (want.length) { want.forEach((ref) => autoFetched.current.add(ref)); void fetchVerses(want) }
+      })
+      .catch(() => undefined)
+      .finally(() => missing.forEach((r) => inFlight.current.delete(r)))
+  }, [refs, verses, talk]) // eslint-disable-line react-hooks/exhaustive-deps
   const fetchableRefs = refs.filter((r) => verses[r]?.fetchable)
   // Verse text known to the talk, for colouring lines that quote scripture.
   const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
@@ -876,7 +884,7 @@ export default function TalkBuilder() {
                     <Group gap="xs">
                       <Badge variant="light">{talk.outline.language === 'chk' ? 'Chuukese outline' : 'English outline'}</Badge>
                       {talk.outline.total_minutes && <Badge size="lg" variant="filled" color="violet">{talk.outline.total_minutes} min</Badge>}
-                      {fetchableRefs.length > 0 && <Button size="xs" variant="light" loading={fetchingVerses} onClick={() => fetchVerses(fetchableRefs)}>Fetch {fetchableRefs.length} missing verse{fetchableRefs.length === 1 ? '' : 's'} from wol.jw.org</Button>}
+                      {fetchableRefs.length > 0 && <Button size="xs" variant="light" loading={fetchingVerses} onClick={() => fetchVerses(fetchableRefs)}>Retry {fetchableRefs.length} verse{fetchableRefs.length === 1 ? '' : 's'} not fetched</Button>}
                       <Button size="xs" variant={editOutline ? 'filled' : 'default'} leftSection={<IconEdit size={14} />} onClick={() => setEditOutline((e) => !e)}>{editOutline ? 'Done editing outline' : 'Edit outline'}</Button>
                       {collapsed.size < talk.outline.points.length
                         ? <Button size="xs" variant="default" leftSection={<IconChevronUp size={14} />} onClick={() => saveCollapsed(new Set(talk.outline.points.map((x) => x.id)), talk.id)}>Collapse all</Button>

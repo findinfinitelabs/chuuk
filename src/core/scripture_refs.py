@@ -63,6 +63,8 @@ _CHAPTER_ONLY = re.compile(r"^\s*(\d+)\s*:\s*(.+)$")
 
 def canonical_book(name: str) -> str | None:
     key = re.sub(r"\s+", " ", name.strip().lower()).rstrip(".")
+    # Outlines write "1Pe", "2Ti", "1Co" without the space.
+    key = re.sub(r"^([1-3])(?=[a-z])", r"\1 ", key)
     return _ALIASES.get(key)
 
 
