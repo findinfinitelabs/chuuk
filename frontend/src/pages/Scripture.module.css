@@ -1,0 +1,24 @@
+/* Scripture Lookup: a citation or a book → chapter, verses in Chuukese and English. */
+.page { max-width: 1200px; }
+.head { background: var(--mantine-color-orange-0); }
+:global([data-mantine-color-scheme="dark"]) .head { background: var(--mantine-color-dark-6); }
+.bookGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.book { text-align: left; height: auto; padding: 6px 10px; line-height: 1.2; }
+.book .en { font-weight: 700; display: block; }
+.book .chkName { font-size: 0.78em; color: var(--mantine-color-dimmed); font-weight: 500; display: block; }
+.chapterGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.chapter { font-weight: 700; padding: 0; }
+.verse { padding: 8px 10px; border-radius: 8px; }
+.verse + .verse { border-top: 1px solid var(--mantine-color-gray-2); }
+:global([data-mantine-color-scheme="dark"]) .verse + .verse { border-top-color: var(--mantine-color-dark-4); }
+.highlight { background: var(--mantine-color-yellow-0); }
+:global([data-mantine-color-scheme="dark"]) .highlight { background: rgba(255, 196, 0, 0.12); }
+.num { color: orangered; font-weight: 800; font-size: 0.8em; vertical-align: super; margin-right: 4px; user-select: none; }
+.chk { font-size: 1.1rem; font-weight: 600; line-height: 1.45; }
+.en { font-size: 1rem; line-height: 1.5; color: var(--text-primary, #293241); }
+:global([data-mantine-color-scheme="dark"]) .en { color: var(--mantine-color-gray-3); }
+.missing { color: var(--mantine-color-dimmed); font-style: italic; font-weight: 500; }
+.label { font-size: 1.35rem; font-weight: 800; }
+.chkLabel { color: var(--mantine-color-dimmed); font-weight: 600; }
+.toolbar { position: sticky; top: 60px; z-index: 2; background: var(--mantine-color-body); padding: 6px 0; }
+@media print { .toolbar, .head { display: none; } }

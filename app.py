@@ -7025,6 +7025,10 @@ app.register_blueprint(_verbs_blueprint(lambda: dict_db, login_required, lambda:
 
 app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos_retry, fetch_scripture_from_jworg, _analyze_text, _get_wol_search))
 
+from src.api.bible import create_blueprint as _bible_blueprint  # noqa: E402
+
+app.register_blueprint(_bible_blueprint(lambda: dict_db, login_required, _analyze_text))
+
 
 # Catch-all route for React (must be last)
 @app.route("/", defaults={"path": ""})
