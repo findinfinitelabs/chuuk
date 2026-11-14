@@ -41,12 +41,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.core import wol_harvest as wh  # noqa: E402
 from src.core.wol_search import WOL_BASE  # noqa: E402
+from src.core.wol_health import USER_AGENT as _WOL_USER_AGENT
 
 CACHE_DIR = PROJECT_ROOT / "data" / "wol_cache"
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
+USER_AGENT = _WOL_USER_AGENT
 
 
 def log(msg: str) -> None:

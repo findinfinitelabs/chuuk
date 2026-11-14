@@ -17,11 +17,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 from src.core import wol_health
+from src.core.wol_health import USER_AGENT
 
 log = logging.getLogger(__name__)
 COLLECTION = "wol_pages"
 _DISK_CACHE = Path(__file__).resolve().parent.parent.parent / "data" / "wol_cache"
-_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+_UA = USER_AGENT
 _MIN_INTERVAL = 2.5
 _lock = threading.Lock()
 _last = 0.0

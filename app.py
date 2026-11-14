@@ -74,6 +74,7 @@ from scripts.processing_logger import processing_logger
 from pymongo.errors import DuplicateKeyError, OperationFailure
 import requests
 from bs4 import BeautifulSoup
+from src.core.wol_health import USER_AGENT as _WOL_USER_AGENT
 
 # Neural translation engine. TRANSLATION_ENGINE=helsinki (default, Marian OPUS-MT)
 # or TRANSLATION_ENGINE=madlad (Google MADLAD-400 3B + LoRA, pre-trained on Chuukese).
@@ -3968,7 +3969,7 @@ def api_fetch_article():
 
         def fetch_content(target_url):
             headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": _WOL_USER_AGENT,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Connection": "keep-alive",
@@ -6377,15 +6378,24 @@ def analyze_article_url():
             return _json.dumps(obj, ensure_ascii=False) + "\n"
 
         fetch_headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": _WOL_USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
 
         def safe_fetch(target_url):
+            from src.core import wol_health
+
+            if not wol_health.available():
+                return None, "wol.jw.org has been declining this app's requests; waiting a few minutes before trying again"
             try:
                 r = requests.get(target_url, headers=fetch_headers, timeout=30)
                 r.raise_for_status()
+                # The site declines automated requests with HTTP 202 and an empty body.
+                if r.status_code != 200 or len(r.text) < 500:
+                    wol_health.record_failure()
+                    return None, f"wol.jw.org declined this request (HTTP {r.status_code}, {len(r.text)} bytes): it is refusing automated access right now, not a problem with the article"
+                wol_health.record_success()
                 return r.text, None
             except requests.exceptions.Timeout:
                 return None, "Request timed out"

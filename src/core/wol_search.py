@@ -30,15 +30,13 @@ from bs4 import BeautifulSoup
 
 from src.core.sentence_align import align_paragraphs, align_sentences, paragraph_label
 from src.utils.scripture_parser import split_sentences as _shared_split
+from src.core.wol_health import USER_AGENT
 
 WOL_BASE = "https://wol.jw.org"
 WOL_SEARCH = WOL_BASE + "/{lang}/wol/s/r303/lp-te"
 
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": USER_AGENT,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "chk,en;q=0.9",
     "Connection": "keep-alive",

@@ -26,7 +26,7 @@ def get_language_url(english_url, lang_code="tr"):
 def fetch_article_content(url):
     """Fetch article content from wol.jw.org."""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+        headers = {"User-Agent": "ChuukDictionary/1.0 (polite fetcher; a few requests, spaced out, cached)"}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         return response.text
