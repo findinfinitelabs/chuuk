@@ -22,6 +22,8 @@
 .sectionEmpty .sectionTime { color: var(--mantine-color-orange-7); }
 .sectionLines { color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; font-weight: 600; }
 .sectionBody { padding: 12px 16px 0; }
+/* A collapsed section shows its header band only; print ignores it. */
+.sectionCollapsed { display: none; }
 .sectionCount { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
 
 /* An outline point struck through: kept for reference, not to be used. */
@@ -143,6 +145,7 @@
   .sectionTime { background: none; color: #000; font-size: 8pt; font-weight: 400; padding: 0; }
   .sectionTime::before { content: "("; } .sectionTime::after { content: ")"; }
   .sectionBody { padding: 0; }
+  .sectionCollapsed { display: block; }
 
   .point, .child { border: none !important; box-shadow: none !important; background: none !important; padding: 2pt 0 0 !important; margin: 4pt 0 0 !important; }
   .pointTitle { color: #000; font-size: 12pt; font-weight: 700; }

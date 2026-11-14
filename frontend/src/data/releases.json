@@ -4,11 +4,13 @@
     {
       "version": "1.0.0.10",
       "date": "2026-11-14",
-      "title": "Talk Builder: translate only when asked",
+      "title": "Talk Builder: translate only when asked, scripture fetched, collapsible sections",
       "notes": [
         "Talk Builder: adding or editing a line no longer translates on its own. Add a line opens Chuukese and English fields; paste a scripture into both and add it as it is, with no translation call.",
         "Talk Builder: a Translate button sits between Cancel and Save (and Add). It fills whichever side is empty from the other, and with both filled it translates the Chuukese again into English. Nothing runs until you press it.",
-        "Talk Builder: a line can be added with only one side filled, to translate or complete later."
+        "Talk Builder: a line can be added with only one side filled, to translate or complete later.",
+        "Talk Builder: scripture is fetched, never translated. When you add or save a line that is scripture with only the Chuukese or only the English, the other side is filled in on its own: from the verses already stored with the talk, else by fetching the point's cited verses (New World Translation from wol.jw.org for Matthew to Revelation, the uploaded Chuukese Bible for Genesis to Malachi). A citation typed as the line, such as James 2:17, 26, brings in the verse text itself. The line is marked as scripture with its citation.",
+        "Talk Builder: each section header has a chevron that folds the section down to its header band, with Collapse all and Expand all in the toolbar, so you can work on one section at a time. The choice is remembered per talk on your device; printing always shows every section."
       ]
     },
     {
