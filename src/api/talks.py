@@ -230,18 +230,20 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
     def api_scriptures():
         data = request.get_json(silent=True) or {}
         refs = [str(r).strip() for r in (data.get("refs") or []) if str(r).strip()][:40]
-        # wol.jw.org is contacted only when the person asks (fetch: true);
-        # a page opening reads stored verses only.
-        fetch = bool(data.get("fetch"))
-        from src.core import liebenzell_bible, wol_bible
+        # The Bible is never fetched from the network and never translated:
+        # English and Chuukese (Matthew–Revelation) come from the uploaded New
+        # World Translation, Chuukese Genesis–Malachi from the Liebenzell Paipel.
+        fetch = bool(data.get("fetch"))  # kept for older clients; no effect
+        from src.core import liebenzell_bible, nwt_bible
         from src.core.scripture_refs import BOOKS, expand
 
         # Verses already stored with the talk are returned as they are, unless
         # Chuukese was missing: a source may have been added since.
         oid, talk = talk_doc(data.get("talk_id"), {"scriptures": 1})
-        stored = {s["ref"]: s for s in (talk or {}).get("scriptures") or [] if s.get("chuukese")}
+        stored = {s["ref"]: s for s in (talk or {}).get("scriptures") or [] if s.get("chuukese") and s.get("english")}
         out = {ref: stored[ref] for ref in refs if ref in stored}
         new_entries = []
+        db = getattr(get_db(), "db", None)
         for ref in refs:
             if ref in out:
                 continue
@@ -252,28 +254,21 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
             rows, errors, sources = [], [], set()
             missing = False
             for label, query in verses[:12]:
-                try:
-                    r = scripture_lookup(query) or {}
-                except Exception as e:  # pragma: no cover
-                    r = {"error": str(e)}
-                chk, eng = r.get("chuukese", "") or "", r.get("english", "") or ""
-                # Fall back to wol.jw.org (cached per chapter) for whatever the local lookup lacks.
                 m = re.match(r"^(.+?) (\d+):(\d+)$", query)
-                if m and (not chk or not eng):
-                    book = BOOKS.index(m.group(1)) + 1 if m.group(1) in BOOKS else None
-                    db = getattr(get_db(), "db", None)
-                    if book:
-                        chk = chk or wol_bible.verse(db, "chk", book, int(m.group(2)), int(m.group(3)), fetch=fetch)
-                        eng = eng or wol_bible.verse(db, "en", book, int(m.group(2)), int(m.group(3)), fetch=fetch)
+                book = BOOKS.index(m.group(1)) + 1 if m and m.group(1) in BOOKS else None
+                chk = eng = ""
                 source = "nwt"
-                if m and not chk and book and book <= 39:
-                    # The New World Translation in Chuukese covers Matthew–Revelation only;
-                    # for the Hebrew Scriptures show the Liebenzell Mission Paipel, labelled.
-                    chk = liebenzell_bible.verse(db, book, int(m.group(2)), int(m.group(3)))
-                    if chk:
-                        source = "liebenzell"
+                if book:
+                    chapter, number = int(m.group(2)), int(m.group(3))
+                    eng = nwt_bible.verse(db, "en", book, chapter, number)
+                    if book >= 40:
+                        chk = nwt_bible.verse(db, "chk", book, chapter, number)
+                    else:
+                        chk = liebenzell_bible.verse(db, book, chapter, number)
+                        if chk:
+                            source = "liebenzell"
                 if not (chk or eng):
-                    errors.append(f"{label}: {'not stored yet' if not fetch else (r.get('error') or 'not available')}")
+                    errors.append(f"{label}: not in the uploaded Bibles")
                     missing = True
                 elif not chk:
                     errors.append(f"{label}: no Chuukese text available")
@@ -287,8 +282,8 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
                 "english": " ".join(f"{v['ref'].rsplit(':', 1)[1]} {v['english']}".strip() for v in rows if v["english"]),
                 "error": "; ".join(errors) or None,
                 "source": "liebenzell" if sources == {"liebenzell"} else ("mixed" if "liebenzell" in sources else "nwt"),
-                # True when some verse is not stored and the person may ask wol.jw.org for it.
-                "fetchable": missing and not fetch,
+                # Nothing can be fetched any more: the Bibles are local.
+                "fetchable": False,
                 "verses": rows,
                 "maps": maps_for(chk_text),
                 "fetched_at": datetime.now(timezone.utc).isoformat(),

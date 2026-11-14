@@ -197,3 +197,11 @@ if __name__ == '__main__':
     full_text = ' '.join(sentences)
     print(f'  "1 Cor. 13:4, 7" intact: {"1 Cor. 13:4, 7" in full_text}')
     print(f'  "1 Cor. 9:26" intact: {"1 Cor. 9:26" in full_text}')
+
+
+def test_books_written_without_a_space_are_read():
+    from src.core.scripture_refs import expand
+
+    assert [v for v, _ in expand("1Pe 3:1, 2, 15")] == ["1 Peter 3:1", "1 Peter 3:2", "1 Peter 3:15"]
+    assert [v for v, _ in expand("2Ti 3:16, 17")] == ["2 Timothy 3:16", "2 Timothy 3:17"]
+    assert [v for v, _ in expand("1Co 13:4-7")][0] == "1 Corinthians 13:4"

@@ -267,3 +267,7 @@ models/madlad400-chuukese/lora/tokenizer.json
 models/madlad400-chuukese/lora/tokenizer_config.json
 models/madlad400-chuukese/lora/special_tokens_map.json
 models/madlad400-chuukese/lora/spiece.model
+
+# uploaded Bible files stay local; the parsed JSON is committed
+data/bible/*.epub
+data/bible/*.pdf

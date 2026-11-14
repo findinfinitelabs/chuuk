@@ -2839,25 +2839,34 @@ def fetch_scripture_from_jworg(scripture_ref):
         chuukese_text = ""
         english_text = ""
 
-        # For Old Testament, use Chuukese OT EPUB
-        if book_num in old_testament_books:
-            chuukese_text = extract_ot_verse(book_name_for_epub, chapter, verse)
-            if not chuukese_text:
-                chuukese_text = ""
-        else:
-            # New Testament - use Chuukese NT EPUB
-            chk_parser = get_nwt_chuukese_parser()
-            if chk_parser:
-                chuukese_text = chk_parser.get_verse(book_num, chapter, verse)
-            if not chuukese_text:
-                chuukese_text = ""
+        # First the uploaded Bibles stored in Cosmos (New World Translation in
+        # English and, for Matthew–Revelation, in Chuukese; the Liebenzell
+        # Paipel for Chuukese Genesis–Malachi). Nothing is fetched or translated.
+        try:
+            from src.core import liebenzell_bible, nwt_bible
 
-        # Fetch English from NWT English EPUB (full Bible)
-        eng_parser = get_nwt_english_parser()
-        if eng_parser:
-            english_text = eng_parser.get_verse(book_num, chapter, verse)
+            _db = getattr(dict_db, "db", None)
+            _book, _chapter, _verse = int(book_num), int(chapter), int(verse)
+            english_text = nwt_bible.verse(_db, "en", _book, _chapter, _verse) or ""
+            if book_num in old_testament_books:
+                chuukese_text = liebenzell_bible.verse(_db, _book, _chapter, _verse) or ""
+            else:
+                chuukese_text = nwt_bible.verse(_db, "chk", _book, _chapter, _verse) or ""
+        except Exception as e:  # pragma: no cover - stored Bibles unavailable
+            print(f"stored Bible lookup failed for {scripture_ref}: {e}")
+
+        # Then the EPUB files on disk, if present
+        if not chuukese_text:
+            if book_num in old_testament_books:
+                chuukese_text = extract_ot_verse(book_name_for_epub, chapter, verse) or ""
+            else:
+                chk_parser = get_nwt_chuukese_parser()
+                if chk_parser:
+                    chuukese_text = chk_parser.get_verse(book_num, chapter, verse) or ""
         if not english_text:
-            english_text = ""
+            eng_parser = get_nwt_english_parser()
+            if eng_parser:
+                english_text = eng_parser.get_verse(book_num, chapter, verse) or ""
 
         return {
             "chuukese": chuukese_text,
