@@ -2,6 +2,16 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.10",
+      "date": "2026-11-14",
+      "title": "Talk Builder: translate only when asked",
+      "notes": [
+        "Talk Builder: adding or editing a line no longer translates on its own. Add a line opens Chuukese and English fields; paste a scripture into both and add it as it is, with no translation call.",
+        "Talk Builder: a Translate button sits between Cancel and Save (and Add). It fills whichever side is empty from the other, and with both filled it translates the Chuukese again into English. Nothing runs until you press it.",
+        "Talk Builder: a line can be added with only one side filled, to translate or complete later."
+      ]
+    },
+    {
       "version": "1.0.0.9",
       "date": "2026-11-11",
       "title": "Verb Lookup: a verb with every pronoun, suffix and tense",

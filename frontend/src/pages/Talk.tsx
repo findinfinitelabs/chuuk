@@ -69,7 +69,6 @@ const SourceTag = ({ verse, size = 'xs' }: { verse: Verse; size?: string }) =>
 
 const errorMessage = (e: unknown, fallback: string) =>
   (axios.isAxiosError(e) && (e.response?.data?.error as string)) || (e instanceof Error ? e.message : fallback)
-const looksEnglish = (s: string) => [...s].every((c) => c.charCodeAt(0) < 128 || !/\p{L}/u.test(c))
 
 async function machineTranslate(text: string, direction: 'en_to_chk' | 'chk_to_en'): Promise<string> {
   const res = await axios.post('/api/translate', { text, direction })
@@ -245,26 +244,31 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
   const [editing, setEditing] = useState(false)
   const [chk, setChk] = useState(line.chk)
   const [en, setEn] = useState(line.en)
-  const [suggesting, setSuggesting] = useState<'chk' | 'en' | null>(null)
-  const timer = useRef<number | null>(null)
+  const [translating, setTranslating] = useState(false)
 
-  const suggest = (side: 'chk' | 'en', text: string) => {
-    if (timer.current) window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(async () => {
-      if (!text.trim()) return
-      setSuggesting(side)
-      try { const out = await machineTranslate(text.trim(), side === 'chk' ? 'en_to_chk' : 'chk_to_en'); if (out) (side === 'chk' ? setChk : setEn)(out) } finally { setSuggesting(null) }
-    }, 900)
+  // Translation runs only from the button: a pasted scripture already has both sides.
+  // It fills the empty side from the other; with both filled it refreshes the English.
+  const translate = async () => {
+    const from = chk.trim() && !en.trim() ? 'chk' : en.trim() && !chk.trim() ? 'en' : chk.trim() ? 'chk' : null
+    if (!from) return
+    setTranslating(true)
+    try {
+      const out = await machineTranslate(from === 'chk' ? chk.trim() : en.trim(), from === 'chk' ? 'chk_to_en' : 'en_to_chk')
+      if (out) (from === 'chk' ? setEn : setChk)(out)
+    } finally { setTranslating(false) }
   }
 
   return (
     <Paper withBorder p="sm" radius="md" className={`${styles.line} ${line.confirmed ? styles.lineConfirmed : ''} ${scripture ? styles.lineScripture : ''}`}>
       {editing ? (
         <Stack gap={6}>
-          <Textarea autosize minRows={1} label="Chuukese" value={chk} onChange={(e) => { setChk(e.currentTarget.value); suggest('en', e.currentTarget.value) }} rightSection={suggesting === 'chk' ? <Loader size={14} /> : null} />
-          <Textarea autosize minRows={1} label="English" value={en} onChange={(e) => { setEn(e.currentTarget.value); suggest('chk', e.currentTarget.value) }} rightSection={suggesting === 'en' ? <Loader size={14} /> : null} />
+          <Textarea autosize minRows={1} label="Chuukese" value={chk} onChange={(e) => setChk(e.currentTarget.value)} />
+          <Textarea autosize minRows={1} label="English" value={en} onChange={(e) => setEn(e.currentTarget.value)} />
           <Group justify="flex-end" gap="xs">
             <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={() => { setEditing(false); setChk(line.chk); setEn(line.en) }}>Cancel</Button>
+            <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
+              <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={translating} disabled={!chk.trim() && !en.trim()}>Translate</Button>
+            </Tooltip>
             <Button size="xs" color="green" leftSection={<IconCheck size={14} />} onClick={() => { const next = { ...line, chk: chk.trim(), en: en.trim(), confirmed: true }; onChange(next); storeVerified(next); setEditing(false) }}>Save</Button>
           </Group>
         </Stack>
@@ -303,37 +307,42 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
 
 function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onGloss?: (g: Gloss | null) => void }) {
   const [previewMaps, setPreviewMaps] = useState<Maps | null>(null)
-  const [text, setText] = useState('')
-  const [out, setOut] = useState<{ chk: string; en: string } | null>(null)
+  const [chk, setChk] = useState('')
+  const [en, setEn] = useState('')
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Nothing is translated on its own: a pasted scripture goes in as typed. The
+  // button fills the empty side from the other, or refreshes the English when both are filled.
   const translate = async () => {
-    if (!text.trim()) return
+    const from = chk.trim() && !en.trim() ? 'chk' : en.trim() && !chk.trim() ? 'en' : chk.trim() ? 'chk' : null
+    if (!from) return
     setBusy(true)
     try {
-      const en = looksEnglish(text)
-      const t = await machineTranslate(text.trim(), en ? 'en_to_chk' : 'chk_to_en')
-      const next = en ? { en: text.trim(), chk: t } : { chk: text.trim(), en: t }
-      setOut(next)
-      if (next.chk) axios.post<Maps>('/api/talks/gloss', { texts: [next.chk] }).then((r) => setPreviewMaps(r.data)).catch(() => setPreviewMaps(null))
+      const out = await machineTranslate(from === 'chk' ? chk.trim() : en.trim(), from === 'chk' ? 'chk_to_en' : 'en_to_chk')
+      if (out) (from === 'chk' ? setEn : setChk)(out)
+      const text = from === 'chk' ? chk.trim() : out
+      if (text) axios.post<Maps>('/api/talks/gloss', { texts: [text] }).then((r) => setPreviewMaps(r.data)).catch(() => setPreviewMaps(null))
     } finally { setBusy(false) }
   }
+  const reset = () => { setChk(''); setEn(''); setPreviewMaps(null); setOpen(false) }
+  if (!open) {
+    return <Button mt="xs" variant="light" leftSection={<IconPlus size={16} />} onClick={() => setOpen(true)}>Add a line</Button>
+  }
   return (
-    <Box mt="xs">
-      <Group gap="xs" align="flex-start">
-        <TextInput placeholder="Type a line in English or Chuukese" value={text} onChange={(e) => setText(e.currentTarget.value)} style={{ flex: 1 }} onKeyDown={(e) => e.key === 'Enter' && translate()} />
-        <Button variant="light" leftSection={<IconLanguage size={16} />} onClick={translate} loading={busy}>Translate</Button>
-      </Group>
-      {out && (
-        <Paper withBorder p="sm" mt="xs" radius="md">
-          <Text className={styles.chk}>{out.chk ? (previewMaps && onGloss ? <GlossedWords text={out.chk} dictionary={previewMaps.dictionary} similar={previewMaps.similar} phrases={previewMaps.phrases} onGloss={onGloss} keyPrefix="preview-" /> : out.chk) : <Text span c="dimmed" fs="italic">No translation</Text>}</Text>
-          <Text size="sm" c="dimmed">{out.en}</Text>
-          <Group justify="flex-end" mt={4} gap="xs">
-            <Button size="xs" variant="default" onClick={() => setOut(null)}>Discard</Button>
-            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => { onAdd({ ...out, source: 'typed', ref: '', confirmed: false, note: '' }); setOut(null); setText('') }}>Add under this point</Button>
-          </Group>
-        </Paper>
-      )}
-    </Box>
+    <Paper withBorder p="sm" mt="xs" radius="md">
+      <Stack gap={6}>
+        <Textarea autosize minRows={1} label="Chuukese" placeholder="Paste or type the Chuukese (a scripture needs no translation)" value={chk} onChange={(e) => setChk(e.currentTarget.value)} />
+        {chk.trim() && previewMaps && onGloss && <Text className={styles.chk}><GlossedWords text={chk.trim()} dictionary={previewMaps.dictionary} similar={previewMaps.similar} phrases={previewMaps.phrases} onGloss={onGloss} keyPrefix="preview-" /></Text>}
+        <Textarea autosize minRows={1} label="English" placeholder="English, if you have it" value={en} onChange={(e) => setEn(e.currentTarget.value)} />
+        <Group justify="flex-end" gap="xs">
+          <Button size="xs" variant="default" leftSection={<IconX size={14} />} onClick={reset}>Cancel</Button>
+          <Tooltip label={chk.trim() && en.trim() ? 'Translate the Chuukese again into English' : 'Fill the empty side from the other'}>
+            <Button size="xs" variant="light" leftSection={<IconLanguage size={14} />} onClick={translate} loading={busy} disabled={!chk.trim() && !en.trim()}>Translate</Button>
+          </Tooltip>
+          <Button size="xs" color="green" leftSection={<IconPlus size={14} />} disabled={!chk.trim() && !en.trim()} onClick={() => { onAdd({ chk: chk.trim(), en: en.trim(), source: 'typed', ref: '', confirmed: false, note: '' }); reset() }}>Add under this point</Button>
+        </Group>
+      </Stack>
+    </Paper>
   )
 }
 
