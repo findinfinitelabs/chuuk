@@ -2,6 +2,23 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.9",
+      "date": "2026-11-11",
+      "title": "Verb Lookup: a verb with every pronoun, suffix and tense",
+      "notes": [
+        "New Verb Lookup page (sidebar, under Talk Builder): type any verb and see it with all seven subject pronouns across the seven tense markers (ua, upwe, upwap, use, usap, usaamwo, upwele and their counterparts), with an English guide for each cell.",
+        "Verb Lookup: an English word works too. Looking up 'need' lists the dictionary words that carry that meaning (osun, lamot, osupwang), opens the first and lets you switch to another with a click; the translation is shown next to the verb.",
+        "Verb Lookup: the object suffixes (me -ei, you -uk, us -kich / -kem, you all -kemi, them -r) are formed for the verb and checked against the dictionary; each form is marked as in the dictionary or formed by rule, and picking one changes the whole table. 'fen', 'kan', 'chék', 'pwal' or 'tongeni' can be placed between the marker and the verb.",
+        "Verb Lookup: other dictionary forms built on the verb (directionals, reduplications, possessed forms) are listed and open with a click.",
+        "Verb Lookup: examples from the stored library, analysed articles, conversations and dictionary examples where a subject marker stands directly before the verb, with the pronoun, tense and aspect identified and the clause highlighted. A Search wol.jw.org button fetches live examples only when pressed.",
+        "Any cell or example can be added to a talk with the usual button.",
+        "Verb Lookup: in each example the English word for the verb is highlighted too (helped, helps, helping all count), so the Chuukese clause and its translation line up at a glance.",
+        "Verb Lookup: each cell of the pronoun table has a sparkle button that makes a sentence with that pronoun and form: stored sentences with the same pronoun, tense and form are listed first; otherwise an English sentence written from the cell's meaning can be edited and translated with the site's engine, the Chuukese checked for the chosen clause and corrected, then saved as a verified pair or added to a talk.",
+        "Verb Lookup: when several words share a meaning, a Count on wol.jw.org button puts a badge on each with how often wol.jw.org uses it (its all-time total, since the site has no date filter) and how many of the dated hits on the first results page come from the last three years. One search per word, at most six, spaced out and cached for a month.",
+        "Verb Lookup: accents are optional everywhere. Typing alisi finds álisi, and the related forms, stored examples and clause detection match a word whether or not it was written with its accents."
+      ]
+    },
+    {
       "version": "1.0.0.8",
       "date": "2026-11-10",
       "title": "Print: title line and page number clear of the text",

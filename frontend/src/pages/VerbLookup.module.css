@@ -1,0 +1,17 @@
+/* Verb Lookup: subject × tense table, object forms, examples. */
+.page { max-width: 1200px; }
+.head { background: var(--mantine-color-violet-0); }
+:global([data-mantine-color-scheme="dark"]) .head { background: var(--mantine-color-dark-6); }
+.verb { font-size: 1.8rem; font-weight: 800; color: var(--mantine-color-violet-7); }
+.chk { font-size: 1.02rem; font-weight: 600; color: var(--text-primary, #293241); }
+.marker { color: var(--mantine-color-violet-7); }
+.suffix { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8em; color: var(--mantine-color-gray-6); }
+.table td, .table th { vertical-align: top; }
+.cell { min-width: 120px; }
+.other { cursor: pointer; text-transform: none; font-weight: 600; height: auto; padding: 4px 10px; }
+.example { padding: 6px 10px; border-left: 3px solid var(--mantine-color-violet-2); border-radius: 6px; background: var(--mantine-color-gray-0); }
+:global([data-mantine-color-scheme="dark"]) .example { background: var(--mantine-color-dark-6); }
+.hit { background: var(--dictionary-selected, #DCEAF5); color: inherit; border-radius: 3px; padding: 0 2px; }
+.hitEn { background: rgba(255, 196, 0, 0.35); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 600; }
+.chkArea textarea { font-weight: 600; font-size: 1.05rem; }
+.countBadge { text-transform: none; font-weight: 700; }

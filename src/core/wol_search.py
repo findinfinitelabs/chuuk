@@ -662,6 +662,24 @@ class WOLSearch:
             "sort": sort,
         }
 
+    def count(self, query: str, recent_years: int = 3, timeout: int = 30) -> dict:
+        """How often `query` occurs on wol.jw.org: one request for the first
+        results page. The header's total ("Fán 2216") is the count across all
+        years; wol.jw.org has no date filter, so the share from the last
+        `recent_years` is estimated from the dated citations on that page."""
+        import datetime as _dt  # noqa: PLC0415
+
+        html = self._fetch(query, 1, timeout)
+        soup = BeautifulSoup(html, "html.parser")
+        for span in soup.select("span.count"):
+            span.decompose()  # per-document "(Fán 6)" counts would be matched first
+        text = _clean(soup.get_text(" "))
+        m = re.search(r"Fán\s+([\d,.]+)", text) or re.search(r"([\d,.]+)\s+results?\b", text, re.IGNORECASE)
+        total = int(re.sub(r"[^\d]", "", m.group(1))) if m else 0
+        cutoff = _dt.date.today().year - recent_years
+        years = [r["reference"].get("year") for r in self._parse(html, query) if (r.get("reference") or {}).get("year")]
+        return {"query": query, "total": total, "recent": sum(1 for y in years if y >= cutoff), "sample": len(years), "since": cutoff + 1}
+
     def verb_examples(
         self,
         verb: str,
