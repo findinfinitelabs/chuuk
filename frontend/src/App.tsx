@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { AppShell, NavLink, Title, Group, MantineProvider, Burger, TextInput, Menu, Button, Avatar, Text, Container, Alert, Divider } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Notifications } from '@mantine/notifications'
-import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconPresentation, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist, IconAbc } from '@tabler/icons-react'
+import { IconHome, IconSearch, IconBooks, IconDatabase, IconLanguage, IconPuzzle, IconMessages, IconPresentation, IconLogout, IconUser, IconLock, IconFileText, IconWorld, IconBrain, IconQuote, IconChecklist, IconAbc, IconBook } from '@tabler/icons-react'
 import axios from 'axios'
 import Home from './pages/Home'
 import Lookup from './pages/Lookup'
@@ -28,6 +28,7 @@ import Footer from './components/Footer'
 import UpdateToast from './components/UpdateToast'
 import Conversation from './pages/Conversation'
 import TalkBuilder from './pages/Talk'
+import Scripture from './pages/Scripture'
 import ReleaseNotes from './pages/ReleaseNotes'
 import { chuukTheme } from './theme'
 import { UserContext } from './contexts/UserContext'
@@ -302,6 +303,17 @@ function App() {
             )}
             {hasPermission('lookup') && (
               <NavLink 
+                label="Scripture Lookup" 
+                leftSection={<IconBook size="1.2rem" />} 
+                component={Link}
+                to="/scripture"
+                active={location.pathname === '/scripture'}
+                className="nav-link"
+                onClick={toggleNav}
+              />
+            )}
+            {hasPermission('lookup') && (
+              <NavLink 
                 label="Watchtower Library" 
                 leftSection={<IconQuote size="1.2rem" />} 
                 component={Link}
@@ -440,6 +452,7 @@ function App() {
               <Route path="/article-analysis" element={hasPermission('sentences') ? <ArticleAnalysis /> : <AccessDenied />} />
               <Route path="/verbs" element={hasPermission('sentences') ? <Verbs /> : <AccessDenied />} />
               <Route path="/verb-lookup" element={hasPermission('sentences') ? <VerbLookup /> : <AccessDenied />} />
+              <Route path="/scripture" element={hasPermission('lookup') ? <Scripture /> : <AccessDenied />} />
               <Route path="/wol-search" element={hasPermission('lookup') ? <WolSearch /> : <AccessDenied />} />
               <Route path="/translate" element={hasPermission('translate') ? <Translate /> : <AccessDenied />} />
               <Route path="/database" element={hasPermission('database') ? <Database /> : <AccessDenied />} />
