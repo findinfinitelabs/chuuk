@@ -2,6 +2,17 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.13",
+      "date": "2026-11-15",
+      "title": "Talk Builder: similar lines found by meaning, not by words",
+      "notes": [
+        "Talk Builder: 'Similar in the library' now searches by what a line means. The English of the line is read as ideas (its clauses without their lead-in words), such as 'consequences of disobedience', 'disobey Jehovah' and 'rejected his love', and the outline point and section around the line tell the search who it is about (Adam, Jehovah). The ideas and subjects searched for are shown above the results.",
+        "Talk Builder: every stored pair with English (library phrases, analysed articles, corrected conversation lines) is compared with the line by meaning, so 'disobeyed' finds 'disobedience' and 'trusted Jehovah' finds 'Trust in Jehovah'. Each result shows how close it is in meaning, which of the ideas it carries as a phrase, and 'same subject' when it names the person or thing the line is about.",
+        "Talk Builder: phrases are preferred to single words: a result that carries a whole idea ranks above one that only shares a word. Lines with no English yet are still searched by their Chuukese key terms; add English (the Translate button) to search by meaning.",
+        "Talk Builder: the meaning index is built in the background the first time it is used after the app starts (about a minute); until it is ready the results are word matches and the panel says so. Searching wol.jw.org is unchanged: only on the Search wol.jw.org button, by the line's Chuukese terms."
+      ]
+    },
+    {
       "version": "1.0.0.11",
       "date": "2026-11-14",
       "title": "wol.jw.org: one honest identity, and say when the site declines",
