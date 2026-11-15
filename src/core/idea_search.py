@@ -36,6 +36,7 @@ import os
 import re
 import threading
 import time
+import warnings
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -303,8 +304,10 @@ class IdeaIndex:
         idea_sem = np.zeros((max(len(idea_list), 1), n), dtype="float32")
         if vectors is not None and status == "ready" and len(vectors) == n:
             q = self.embedder.encode([english] + idea_list)
-            # numpy 2 on Apple's BLAS warns spuriously on float32 matmul; the values are fine.
-            with np.errstate(all="ignore"):
+            # numpy 2 on Apple's BLAS raises spurious RuntimeWarnings on float32
+            # matmul (the values are correct and match float64); keep them out of the log.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
                 sem = np.nan_to_num(vectors @ q[0])
                 if idea_list:
                     idea_sem = np.nan_to_num(q[1:] @ vectors.T)
