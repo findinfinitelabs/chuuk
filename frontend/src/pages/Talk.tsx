@@ -152,13 +152,16 @@ const allRefs = (o: Outline | null): string[] => Array.from(new Set([o?.theme_sc
 
 // ── Alternatives for a line ──────────────────────────────────────────────────
 
-interface Alternative { chk: string; en: string; source: 'wol' | 'library' | 'article' | 'conversation'; reference: string; link: string | null; score: number }
-interface Alternatives { terms: string[]; items: Alternative[]; wol_reachable: boolean; wol_count: number; maps?: Maps; cached?: boolean }
+interface Alternative { chk: string; en: string; source: 'wol' | 'library' | 'article' | 'conversation'; reference: string; link: string | null; score: number; meaning?: number; matched?: string[]; named?: boolean }
+interface Alternatives { terms: string[]; ideas?: string[]; about?: string[]; index?: 'building' | 'ready' | 'unavailable'; indexed?: number; by_meaning?: boolean; items: Alternative[]; wol_reachable: boolean; wol_count: number; maps?: Maps; cached?: boolean }
 const SOURCE_LABEL: Record<Alternative['source'], string> = { wol: 'wol.jw.org', library: 'library', article: 'analysed article', conversation: 'conversation' }
 
 /** Published sentences close to the line, behind an accordion; searched when opened. */
-function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
-  line: Line; showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onUse: (a: Alternative) => void; onAdd?: (a: Alternative) => void
+function LineAlternatives({ line, context = '', showEnglish, onGloss, onUse, onAdd }: {
+  line: Line
+  /** The outline point (and its section) the line sits under: tells the search who or what the line is about. */
+  context?: string
+  showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onUse: (a: Alternative) => void; onAdd?: (a: Alternative) => void
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const [data, setData] = useState<Alternatives | null>(null)
@@ -168,25 +171,34 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
   // searched only from the "Search wol.jw.org" button.
   const [wolAsked, setWolAsked] = useState(false)
   const load = async (refresh = false, wol = false) => {
-    if (!line.chk.trim()) return
+    if (!line.chk.trim() && !line.en.trim()) return
     setLoading(true); setError(''); if (wol) setWolAsked(true)
-    try { const res = await axios.post<Alternatives>('/api/talks/alternatives', { chk: line.chk, refresh, wol }); setData(res.data) } catch (e) { setError(errorMessage(e, 'Could not search')) } finally { setLoading(false) }
+    try { const res = await axios.post<Alternatives>('/api/talks/alternatives', { chk: line.chk, en: line.en, context, refresh, wol }); setData(res.data) } catch (e) { setError(errorMessage(e, 'Could not search')) } finally { setLoading(false) }
   }
-  useEffect(() => { setData(null) }, [line.chk])
+  useEffect(() => { setData(null) }, [line.chk, line.en])
   useEffect(() => { if (open && !data && !loading) load() }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!line.chk.trim()) return null
+  if (!line.chk.trim() && !line.en.trim()) return null
   return (
     <Accordion value={open} onChange={setOpen} variant="separated" radius="md" mt={6} styles={{ control: { padding: '4px 8px' }, content: { padding: '4px 8px 8px' }, item: { background: 'var(--mantine-color-gray-0)' } }}>
       <Accordion.Item value="alt">
         <Accordion.Control icon={<IconSearch size={14} />}>
-          <Group gap={6}><Text size="xs" fw={600}>Similar in the library (and on wol.jw.org when you ask)</Text>{data && <Badge size="xs" variant="light" color={data.items.length ? 'violet' : 'gray'}>{data.items.length}</Badge>}{loading && <Loader size={12} />}</Group>
+          <Group gap={6}><Text size="xs" fw={600}>Similar in meaning in the library (and on wol.jw.org when you ask)</Text>{data && <Badge size="xs" variant="light" color={data.items.length ? 'violet' : 'gray'}>{data.items.length}</Badge>}{loading && <Loader size={12} />}</Group>
         </Accordion.Control>
         <Accordion.Panel>
           {error && <Alert color="red" py={4}><Text size="xs">{error}</Text></Alert>}
           {data && (
             <Stack gap={6}>
               <Group gap={6} justify="space-between">
-                <Text component="div" size="xs" c="dimmed">Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{wolAsked && !data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}{!wolAsked && <Text span> · library only</Text>}</Text>
+                <Text component="div" size="xs" c="dimmed">
+                  {data.by_meaning && (data.ideas || []).length > 0 ? (
+                    <>Ideas searched for {(data.ideas || []).map((t) => <Badge key={t} size="xs" variant="outline" color="violet" mr={4} style={{ textTransform: 'none' }}>{t}</Badge>)}{(data.about || []).length > 0 && <> · about {(data.about || []).map((t) => <Badge key={t} size="xs" variant="light" color="teal" mr={4} style={{ textTransform: 'none' }}>{t}</Badge>)}</>}</>
+                  ) : (
+                    <>Searched for {data.terms.map((t) => <Badge key={t} size="xs" variant="outline" mr={4}>{t}</Badge>)}{!data.by_meaning && <Text span> · add English to the line to search by meaning</Text>}</>
+                  )}
+                  {wolAsked && !data.wol_reachable && <Text span c="orange"> · wol.jw.org did not answer; showing the library only</Text>}{!wolAsked && <Text span> · library only</Text>}
+                  {data.index === 'building' && <Text span c="orange"> · the meaning index is still being built (first use since a restart); these are word matches, press Search again in a minute</Text>}
+                  {data.index === 'unavailable' && <Text span c="orange"> · the meaning index could not be built; showing word matches</Text>}
+                </Text>
                 <Group gap={4}>
                   <Button size="compact-xs" variant="light" leftSection={<IconSearch size={12} />} onClick={() => load(true, true)} loading={loading}>Search wol.jw.org</Button>
                   <Button size="compact-xs" variant="subtle" leftSection={<IconRefresh size={12} />} onClick={() => load(true, wolAsked)}>Search again</Button>
@@ -202,7 +214,9 @@ function LineAlternatives({ line, showEnglish, onGloss, onUse, onAdd }: {
                       <Group gap={6} mt={2}>
                         <Badge size="xs" variant="light" color={a.source === 'wol' ? 'violet' : 'teal'}>{SOURCE_LABEL[a.source]}</Badge>
                         {a.reference && (a.link ? <Anchor size="xs" href={a.link} target="_blank" rel="noopener noreferrer">{a.reference}</Anchor> : <Text size="xs" c="dimmed">{a.reference}</Text>)}
-                        <Text size="xs" c="dimmed">{Math.round(a.score * 100)}% of the words</Text>
+                        <Text size="xs" c="dimmed">{a.meaning ? `${Math.round(a.meaning * 100)}% in meaning` : a.source === 'wol' ? `${Math.round(a.score * 100)}% of the words` : `${Math.round(a.score * 100)}% match`}</Text>
+                        {(a.matched || []).map((m) => <Badge key={m} size="xs" variant="light" color="violet" style={{ textTransform: 'none' }}>{m}</Badge>)}
+                        {a.named && <Badge size="xs" variant="light" color="teal">same subject</Badge>}
                       </Group>
                     </Box>
                     <Group gap={4} wrap="nowrap">
@@ -258,7 +272,8 @@ async function uploadImage(talkId: string, file: File): Promise<Omit<Line, 'id'>
 
 // ── A collected line ────────────────────────────────────────────────────────
 
-function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd, scripture = false }: {
+function LineCard({ line, context, showEnglish, onChange, onRemove, onMove, maps, onGloss, onAdd, scripture = false }: {
+  context?: string
   line: Line; showEnglish: boolean; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void
   maps?: Maps | null; onGloss?: (g: Gloss | null) => void; onAdd?: (l: Omit<Line, 'id'>) => void
   /** Show in the scripture colour (marked, or matched to a stored verse). */
@@ -320,7 +335,7 @@ function LineCard({ line, showEnglish, onChange, onRemove, onMove, maps, onGloss
         </Group>
       )}
       {!editing && (
-        <LineAlternatives line={line} showEnglish={showEnglish} onGloss={onGloss}
+        <LineAlternatives line={line} context={context} showEnglish={showEnglish} onGloss={onGloss}
           onUse={(a) => onChange({ ...line, chk: a.chk, en: a.en || line.en, source: a.source, ref: a.reference, confirmed: false })}
           onAdd={onAdd ? (a) => onAdd({ chk: a.chk, en: a.en, source: a.source, ref: a.reference, confirmed: false, note: '' }) : undefined} />
       )}
@@ -746,8 +761,10 @@ export default function TalkBuilder() {
   const unsorted = talk?.lines['unsorted'] || []
 
   const sections = talk?.outline.points || []
-  const renderPoint = (p: Point, child = false) => {
+  const renderPoint = (p: Point, child = false, parent?: Point) => {
     const rows = talk?.lines[p.id] || []
+    // What the lines under this point are about, for the meaning search: the section, then the point.
+    const lineContext = [talk?.outline?.title, parent?.text, p.text].filter(Boolean).join(' · ')
     const childLines = (p.children || []).reduce((n, c) => n + (talk?.lines[c.id] || []).length, 0)
     const sectionIndex = sections.findIndex((s) => s.id === p.id)
     const head = child ? (
@@ -798,7 +815,7 @@ export default function TalkBuilder() {
                 {l.kind === 'image' ? (
                   <ImageCard line={l} onChange={(nl) => changeLine(p.id, nl, l)} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} />
                 ) : (
-                  <LineCard line={l} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
+                  <LineCard line={l} context={lineContext} scripture={isScripture(l, verseTexts)} showEnglish={showEnglish} maps={lineMaps} onGloss={setGloss} onChange={(nl) => setLines(p.id, rows.map((x) => (x.id === nl.id ? nl : x)))} onRemove={() => setLines(p.id, rows.filter((x) => x.id !== l.id))} onMove={(d) => moveLine(p.id, i, d)} onAdd={(nl) => addLine(p.id, nl)} />
                 )}
               </Box>
             </Group>
@@ -810,7 +827,7 @@ export default function TalkBuilder() {
             {(props) => <Button {...props} mt="xs" variant="default" leftSection={<IconPhoto size={16} />}>Add image</Button>}
           </FileButton>
         </Group>
-        {(p.children || []).length > 0 && <Stack gap="sm" mt="sm">{p.children!.map((c) => renderPoint(c, true))}</Stack>}
+        {(p.children || []).length > 0 && <Stack gap="sm" mt="sm">{p.children!.map((c) => renderPoint(c, true, p))}</Stack>}
       </>
     )
     if (child) {

@@ -11,7 +11,7 @@ user library.
 Routes
     POST   /api/talks/parse-outline        {text, language?} or multipart `file`
     POST   /api/talks/scriptures           {refs: [...]} → {ref: {chuukese, english, error}}
-    POST   /api/talks/alternatives         {chk} → published sentences close to the line, with English
+    POST   /api/talks/alternatives         {chk, en, context, wol?} → stored sentences close in meaning, with English
     GET    /api/talks                       the caller's talks (metadata)
     POST   /api/talks                       create {title, language, outline, lines}
     GET    /api/talks/<id>
@@ -195,33 +195,67 @@ def create_blueprint(get_db: Callable, login_required: Callable, cosmos_retry: C
     @bp.route("/api/talks/alternatives", methods=["POST"])
     @login_required
     def api_alternatives():
-        """Published sentences close to one line, from wol.jw.org and the
-        stored pairs, with their English and the gloss maps. Cached per line
-        for a week in `line_alternatives`; `refresh` searches again."""
-        from src.core.line_alternatives import Finder, _norm
+        """Published sentences close to one line. The stored library is
+        searched by meaning (the line's English and the ideas in it, with the
+        outline point as context: see idea_search); wol.jw.org, only when the
+        person asks, by the line's Chuukese key terms. Cached per line for a
+        week in `line_alternatives`; `refresh` searches again."""
+        from src.core.idea_search import get_index
+        from src.core.line_alternatives import Finder, _norm, key_terms, overlap
 
         data = request.get_json(silent=True) or {}
         chk = (data.get("chk") or "").strip()
-        if not chk:
-            return jsonify({"error": "chk is required"}), 400
+        en = (data.get("en") or "").strip()
+        context = (data.get("context") or "").strip()[:600]
+        if not (chk or en):
+            return jsonify({"error": "chk or en is required"}), 400
         db = getattr(get_db(), "db", None)
         cache = db["line_alternatives"] if db is not None else None
-        key = _norm(chk)[:300] + ("" if data.get("wol") else "|library")
+        key = (_norm(chk)[:200] + "|" + _norm(en)[:200] + "|" + _norm(context)[:100] + ("" if data.get("wol") else "|library"))[:600]
         if cache is not None and not data.get("refresh"):
             hit = cosmos_retry(lambda: cache.find_one({"key": key}, {"_id": 0, "result": 1, "at": 1}))
             if hit and hit.get("at") and hit["at"].replace(tzinfo=timezone.utc) > datetime.now(timezone.utc) - timedelta(days=7) and (hit["result"].get("items") or hit["result"].get("wol_reachable")):
                 return jsonify({**hit["result"], "cached": True})
-        wol = None
-        if wol_search and data.get("wol"):  # wol.jw.org only when the person asks
+
+        # The library, by meaning. The index builds in the background the
+        # first time; a short wait lets a warm index answer at once.
+        index = get_index(get_db())
+        index.ensure()
+        if index.status == "building":
+            index.wait(8)
+        result: dict
+        if en:
+            result = index.search(en, chk, context)
+        else:
+            result = {"ideas": [], "about": [], "items": [], "index": index.status, "indexed": len(index.rows)}
+        terms = key_terms(chk) if chk else []
+        finder = Finder(get_db(), None)
+        if not en or (result["index"] != "ready" and not result["items"]):
+            # No English to search by meaning (or no index yet): fall back to the Chuukese key terms.
+            for it in finder.local(chk, terms):
+                it.update({"score": round(overlap(chk, it["chk"]), 2), "matched": [], "meaning": 0.0, "named": False})
+                if it["score"] > 0:
+                    result["items"].append(it)
+            result["items"].sort(key=lambda it: -it["score"])
+            result["items"] = result["items"][:10]
+
+        # wol.jw.org only when the person asks, and only by the Chuukese terms.
+        wol_items, reachable = [], False
+        if wol_search and data.get("wol") and chk:
             try:
-                wol = wol_search()
+                finder.wol = wol_search()
+                wol_items, reachable = finder.wol_hits(chk, terms)
             except Exception as e:  # pragma: no cover
                 current_app.logger.warning("wol client: %s", e)
-        result = Finder(get_db(), wol).find(chk)
+            seen = {_norm(it["chk"]) for it in result["items"]}
+            for it in wol_items:
+                if _norm(it["chk"]) in seen:
+                    continue
+                it.update({"score": round(overlap(chk, it["chk"]), 2), "matched": [], "meaning": 0.0, "named": False})
+                result["items"].insert(0, it)
+        result.update({"terms": terms, "wol_reachable": reachable, "wol_count": len(wol_items), "by_meaning": bool(en)})
         result["maps"] = maps_for(" ".join(it["chk"] for it in result["items"]))
-        if not result["wol_reachable"]:
-            current_app.logger.warning("alternatives for %r: wol.jw.org not reachable", chk[:60])
-        if cache is not None and (result["items"] or result["wol_reachable"]):
+        if cache is not None and result["index"] == "ready" and (result["items"] or reachable):
             cosmos_retry(lambda: cache.update_one({"key": key}, {"$set": {"key": key, "result": result, "at": datetime.now(timezone.utc)}}, upsert=True))
         return jsonify(result)
 
