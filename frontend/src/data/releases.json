@@ -13,6 +13,18 @@
       ]
     },
     {
+      "version": "1.0.0.12",
+      "date": "2026-11-14",
+      "title": "Scripture Lookup: any citation, in Chuukese and English",
+      "notes": [
+        "New Scripture Lookup page (sidebar, above Watchtower Library): type a citation the way jw.org takes it, such as John 3:16, 17, Ps 23, 1 Pe 3:1, 2, 15, Isa. 33:24; 35:5, 6 or a Chuukese form like Kölf. 37:29, and the cited verses appear in Chuukese and English side by side. A book name alone opens its first chapter; a book and chapter opens the whole chapter.",
+        "Scripture Lookup: a Books button opens the 66 books as on jw.org, Hebrew-Aramaic and Christian Greek Scriptures, each with its Chuukese name, then a grid of chapter numbers. Whole chapters have Previous and Next chapter buttons; a cited passage has Read the whole chapter, with the cited verses highlighted.",
+        "Scripture Lookup: the Chuukese text carries the dictionary overlay used on the other pages: phrases underlined, hover or click a word for its gloss, with the Show dictionary indicators switch. A control switches between Chuukese + English, Chuukese only and English only, remembered on your device.",
+        "Scripture Lookup: every verse has the usual Add to talk button, and each passage can be copied with both languages. Recent citations are kept on your device and offered under the search box.",
+        "Scripture Lookup: verses come only from the uploaded Bibles, the New World Translation in English and in Chuukese for Matthew to Revelation and the Liebenzell Paipel for Chuukese Genesis to Malachi. Nothing is fetched from wol.jw.org and nothing is translated; a verse missing from the uploaded files says so."
+      ]
+    },
+    {
       "version": "1.0.0.11",
       "date": "2026-11-14",
       "title": "wol.jw.org: one honest identity, and say when the site declines",
