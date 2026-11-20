@@ -28,6 +28,7 @@ import { ReferenceInline } from '../components/ReferenceView'
 import { searchLink } from '../components/wolLinks'
 import type { StoredReference } from '../components/ReferenceView'
 import { GlossCard, GlossLegend, GlossedWords } from '../components/GlossedText'
+import TalkPrint from './TalkPrint'
 import type { Dictionary, Gloss, SimilarMap } from '../components/GlossedText'
 import type { PhraseMap } from '../components/glossUtils'
 import styles from './Talk.module.css'
@@ -111,8 +112,8 @@ async function storeVerified(line: Pick<Line, 'chk' | 'en' | 'ref'>) {
   } catch { /* the line is still checked; storing can be retried by unchecking and checking */ }
 }
 
-/** Print the open talk: 5×7 pages (see @media print in Talk.module.css); the
- *  document title is set so the running header and any saved PDF carry it. */
+/** Print the open talk: full Letter pages with a page number (TalkPrint.tsx);
+ *  the document title is set so a saved PDF carries it. */
 function printTalk(talk: Talk) {
   const previous = document.title
   document.title = talk.title
@@ -888,7 +889,7 @@ export default function TalkBuilder() {
             </Alert>
           ) : (
             <>
-              <div className={styles.printHeader} aria-hidden="true">{talk.title}</div>
+              <TalkPrint talk={talk} verses={verses} showEnglish={showEnglish} isScripture={(l) => isScripture(l as Line, verseTexts)} />
               <Card withBorder radius="md" p="md" mb="sm" className={styles.titleCard}>
                 <Group justify="space-between" wrap="wrap" align="flex-start">
                   <Box style={{ flex: 1, minWidth: 260 }}>
