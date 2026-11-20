@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  ActionIcon, Alert, Badge, Box, Button, Card, Collapse, Container, Divider, Group, Loader, Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput, Title, Tooltip, UnstyledButton,
+  ActionIcon, Alert, Badge, Box, Button, Card, Collapse, Container, Divider, Group, Loader, Paper, SegmentedControl, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, UnstyledButton,
 } from '@mantine/core'
 import { IconArrowLeft, IconArrowRight, IconBook, IconChevronLeft, IconChevronRight, IconCopy, IconSearch, IconX } from '@tabler/icons-react'
 import axios from 'axios'
@@ -19,6 +19,7 @@ import { GlossCard, GlossLegend, GlossedWords } from '../components/GlossedText'
 import type { Dictionary, Gloss, SimilarMap } from '../components/GlossedText'
 import type { PhraseMap } from '../components/glossUtils'
 import AddToTalk from '../components/AddToTalk'
+import { alignWords, pairColor, WORD_TOKENS } from '../components/wordAlign'
 import styles from './Scripture.module.css'
 
 interface Book { number: number; name: string; chk_name: string; chapters: number }
@@ -41,6 +42,7 @@ interface Passage extends Book {
 
 type View = 'both' | 'chk' | 'en'
 const VIEW_KEY = 'scripture-view'
+const LINK_KEY = 'scripture-link-words'
 const RECENT_KEY = 'scripture-recent'
 const EXAMPLES = ['John 3:16', 'Ps 23', '1 Pe 3:1, 2, 15', 'Isa 55:8, 9', 'Mat 24:14', 'Kölf. 37:29']
 
@@ -57,14 +59,30 @@ function errorMessage(e: unknown, fallback: string): string {
   return fallback
 }
 
+/** The English of a verse with its paired words tinted like their Chuukese counterparts. */
+function PairedEnglish({ text, pairs, activePair, onPairHover }: { text: string; pairs: (number | undefined)[]; activePair: number | null; onPairHover: (p: number | null) => void }) {
+  // Tokens with their word ordinal, computed up front so render stays pure.
+  const tokens = useMemo(() => {
+    let wi = -1
+    return text.split(WORD_TOKENS).filter(Boolean).map((tok) => ({ tok, wi: /^[\p{L}\p{N}]+$/u.test(tok) ? ++wi : -1 }))
+  }, [text])
+  return <>{tokens.map(({ tok, wi }, i) => {
+    const pair = wi >= 0 ? pairs[wi] : undefined
+    if (pair === undefined) return <span key={i}>{tok}</span>
+    return <span key={i} className={styles.pairEn} style={{ background: pairColor(pair), boxShadow: activePair === pair ? `0 0 0 2px ${pairColor(pair)}` : undefined }} onMouseEnter={() => onPairHover(pair)} onMouseLeave={() => onPairHover(null)}>{tok}</span>
+  })}</>
+}
+
 /** One verse: number, Chuukese with the gloss behind it, English beside or below. */
-function VerseRow({ v, p, view, onGloss }: { v: Verse; p: Passage; view: View; onGloss: (g: Gloss | null) => void }) {
+function VerseRow({ v, p, view, link, onGloss }: { v: Verse; p: Passage; view: View; link: boolean; onGloss: (g: Gloss | null) => void }) {
   const cite = `${p.name} ${p.chapter}:${v.n}`
+  const [activePair, setActivePair] = useState<number | null>(null)
+  const align = useMemo(() => (link && v.chk && v.en ? alignWords(v.chk, v.en, p.maps.dictionary) : null), [link, v.chk, v.en, p.maps.dictionary])
   const chk = v.chk
-    ? <Text className={styles.chk}><span className={styles.num}>{v.n}</span><GlossedWords text={v.chk} dictionary={p.maps.dictionary} similar={p.maps.similar} phrases={p.maps.phrases} onGloss={onGloss} keyPrefix={`${p.number}-${p.chapter}-${v.n}-`} /></Text>
+    ? <Text className={styles.chk}><span className={styles.num}>{v.n}</span><GlossedWords text={v.chk} dictionary={p.maps.dictionary} similar={p.maps.similar} phrases={p.maps.phrases} onGloss={onGloss} keyPrefix={`${p.number}-${p.chapter}-${v.n}-`} pairs={align?.chk} activePair={activePair} onPairHover={setActivePair} /></Text>
     : <Text className={styles.chk}><span className={styles.num}>{v.n}</span><span className={styles.missing}>No Chuukese text for this verse in the uploaded Bibles</span></Text>
   const en = v.en
-    ? <Text className={styles.en}>{view === 'en' && <span className={styles.num}>{v.n}</span>}{v.en}</Text>
+    ? <Text className={styles.en}>{view === 'en' && <span className={styles.num}>{v.n}</span>}{align ? <PairedEnglish text={v.en} pairs={align.en} activePair={activePair} onPairHover={setActivePair} /> : v.en}</Text>
     : <Text className={`${styles.en} ${styles.missing}`}>{view === 'en' && <span className={styles.num}>{v.n}</span>}No English text for this verse in the uploaded Bible</Text>
   return (
     <Box className={`${styles.verse}${p.highlight.includes(v.n) ? ` ${styles.highlight}` : ''}`} id={`v${p.number}-${p.chapter}-${v.n}`}>
@@ -93,11 +111,14 @@ export default function Scripture() {
   const [pickBook, setPickBook] = useState<Book | null>(null)
   const [recent, setRecent] = useState<string[]>(readRecent)
   const [view, setView] = useState<View>(() => { try { return (localStorage.getItem(VIEW_KEY) as View) || 'both' } catch { return 'both' } })
+  // Link words: tint each Chuukese word and the English word its dictionary gloss matches alike.
+  const [link, setLink] = useState<boolean>(() => { try { return localStorage.getItem(LINK_KEY) !== 'off' } catch { return true } })
   const [copied, setCopied] = useState<string | null>(null)
   const inFlight = useRef<string | null>(null)
 
   useEffect(() => { axios.get<Book[]>('/api/bible/books').then((r) => setBooks(r.data)).catch(() => setBooks([])) }, [])
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view) } catch { /* ignore */ } }, [view])
+  useEffect(() => { try { localStorage.setItem(LINK_KEY, link ? 'on' : 'off') } catch { /* ignore */ } }, [link])
 
   // The address bar is the source of truth: a citation in it is looked up,
   // so a link or the browser's Back button shows the same passage.
@@ -222,6 +243,7 @@ export default function Scripture() {
               onChange={(v) => setView(v as View)}
               data={[{ value: 'both', label: 'Chuukese + English' }, { value: 'chk', label: 'Chuukese' }, { value: 'en', label: 'English' }]}
             />
+            <Tooltip label="Each Chuukese word the dictionary holds is tinted with the English word its gloss matches; hover one to see its partner"><Switch size="xs" label="Link words" checked={link} onChange={(e) => setLink(e.currentTarget.checked)} /></Tooltip>
             <GlossLegend />
           </Group>
 
@@ -243,7 +265,7 @@ export default function Scripture() {
                   <Text size="xs" c="dimmed" mb={4}>Verse{p.missing.length === 1 ? '' : 's'} {p.missing.join(', ')} {p.missing.length === 1 ? 'is' : 'are'} not in this chapter of the uploaded Bibles.</Text>
                 )}
                 <Divider mb={4} />
-                {p.verses.map((v) => <VerseRow key={v.n} v={v} p={p} view={view} onGloss={setGloss} />)}
+                {p.verses.map((v) => <VerseRow key={v.n} v={v} p={p} view={view} link={link && view === 'both'} onGloss={setGloss} />)}
                 <Divider mt="xs" mb="xs" />
                 <Group justify="space-between" wrap="wrap">
                   {p.whole ? (

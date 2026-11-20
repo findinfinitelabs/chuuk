@@ -2,6 +2,15 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.16",
+      "date": "2026-11-20",
+      "title": "Scripture Lookup: Chuukese words linked to their English",
+      "notes": [
+        "Scripture Lookup: with Link words on (the default, remembered on your device), each Chuukese word the dictionary holds is looked up and the English word its gloss matches is found in the verse; both are tinted in the same pastel colour, so Kot and God, tongei and loved, fénúfan and world read as pairs. Hovering a word on either side outlines its partner.",
+        "Scripture Lookup: the linking is purely from the dictionary, with a word paired at most once on each side; words the dictionary does not hold, or whose gloss does not appear in the English, stay plain. The gloss hover and click on the Chuukese work as before."
+      ]
+    },
+    {
       "version": "1.0.0.15",
       "date": "2026-11-20",
       "title": "Talk Builder: hide what you won't read; scripture bold and indented; Times New Roman",

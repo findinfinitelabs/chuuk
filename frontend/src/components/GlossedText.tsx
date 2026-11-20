@@ -14,6 +14,7 @@ import { Group, Switch, Text } from '@mantine/core'
 import { setIndicators, useIndicators } from './glossSettings'
 import styles from './GlossedText.module.css'
 import { findPhraseSpans, grammarPhraseSpans, normKey, phraseGloss, spanIndex } from './glossUtils'
+import { pairColor } from './wordAlign'
 import type { PhraseEntry, PhraseMap } from './glossUtils'
 
 /** An article in which a word was matched during the Translation Game. */
@@ -97,9 +98,14 @@ function groupAppearances(appearances: Appearance[]): Appearance[] {
  *  the next click or Escape. With "Show dictionary indicators" on, every word
  *  the dictionary holds also gets a faint dotted underline. */
 export function GlossedWords({
-  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks,
+  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks, pairs, activePair, onPairHover,
 }: {
   text: string
+  /** Pair id per word ordinal (from wordAlign): the word is tinted in its pair's colour. */
+  pairs?: (number | undefined)[]
+  /** The pair under the pointer on either side, drawn stronger on both. */
+  activePair?: number | null
+  onPairHover?: (pair: number | null) => void
   /** Lowercase words to mark as key phrases (yellow), on top of the dictionary tint. */
   marks?: Set<string>
   dictionary: Dictionary
@@ -145,9 +151,13 @@ export function GlossedWords({
   })
   const pinnedSpan = pinned !== null ? tokenSpan.get(pinned) : undefined
 
+  const ordinal = new Map<number, number>()
+  wordAt.forEach((ti, wi) => ordinal.set(ti, wi))
   return tokens.map((tok, ti) => {
     if (!tok) return null
     const key = `${keyPrefix}${ti}`
+    const pair = pairs ? pairs[ordinal.get(ti) ?? -1] : undefined
+    const pairStyle = pair !== undefined ? { background: pairColor(pair), boxShadow: activePair === pair ? `0 0 0 2px ${pairColor(pair)}` : undefined } : undefined
     const span = tokenSpan.get(ti)
     const inPinned = pinned !== null && (ti === pinned || (!!pinnedSpan && span === pinnedSpan))
     const phraseClass = span ? ` ${span.entry.kind === 'grammar' ? styles.grammarPhrase : styles.phrase}` : ''
@@ -174,7 +184,8 @@ export function GlossedWords({
     return (
       <span
         key={key}
-        className={`${styles.word}${hoverable ? ` ${styles.known}` : ''}${indicators && entry ? ` ${styles.indicator}` : ''}${phraseClass}${selectedClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}`}
+        className={`${styles.word}${hoverable ? ` ${styles.known}` : ''}${indicators && entry ? ` ${styles.indicator}` : ''}${phraseClass}${selectedClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}${pair !== undefined ? ` ${styles.pair}` : ''}`}
+        style={pairStyle}
         role={hoverable || onWordClick ? 'button' : undefined}
         tabIndex={hoverable || onWordClick ? 0 : undefined}
         aria-label={hoverable ? label : undefined}
@@ -189,8 +200,8 @@ export function GlossedWords({
         } : undefined}
         onFocus={hoverable ? (e: FocusEvent<HTMLSpanElement>) => { if (pinned === null) { const r = e.currentTarget.getBoundingClientRect(); onGloss(gloss({ clientX: r.left, clientY: r.bottom })) } } : undefined}
         onBlur={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
-        onMouseEnter={hoverable ? (e: MouseEvent<HTMLSpanElement>) => { if (pinned === null) onGloss(gloss(e)) } : undefined}
-        onMouseLeave={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
+        onMouseEnter={(e: MouseEvent<HTMLSpanElement>) => { if (hoverable && pinned === null) onGloss(gloss(e)); if (pair !== undefined) onPairHover?.(pair) }}
+        onMouseLeave={() => { if (hoverable && pinned === null) onGloss(null); if (pair !== undefined) onPairHover?.(null) }}
       >
         {tok}
       </span>
