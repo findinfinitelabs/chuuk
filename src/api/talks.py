@@ -51,6 +51,8 @@ def _line(data: dict) -> dict:
         "note": (data.get("note") or "")[:500],
         # A line that quotes scripture: shown in the scripture colour.
         "scripture": bool(data.get("scripture")),
+        # Hidden in Prepare: left off the delivery and the print, kept for an Unhide.
+        "hidden": bool(data.get("hidden")),
     }
     if data.get("kind") == "image" and data.get("image_id"):
         line.update({"kind": "image", "image_id": str(data["image_id"])[:40], "caption": (data.get("caption") or "")[:300]})

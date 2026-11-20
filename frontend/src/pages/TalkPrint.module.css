@@ -17,7 +17,7 @@
 .label { font-weight: 700; margin-right: 4pt; }
 .chk { font-size: 12pt; line-height: 1.3; }
 .en { font-size: 8.5pt; line-height: 1.25; color: #333; }
-.scripture { border-left: 1.5pt solid #000; padding-left: 6pt; margin: 3pt 0; }
+.scripture { border-left: 1.5pt solid #000; padding-left: 6pt; margin: 3pt 0 3pt 0.3in; font-weight: 700; }
 .cite { font-size: 9pt; font-weight: 700; }
 .image { text-align: right; }
 .image img { max-height: 1.6in; max-width: 2.2in; display: inline-block; }

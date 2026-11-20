@@ -17,7 +17,7 @@ import {
 } from '@mantine/core'
 import {
   IconArrowDown, IconArrowUp, IconBook2, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp, IconDeviceFloppy, IconEdit, IconLanguage,
-  IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconStrikethrough, IconTrash, IconUpload, IconX,
+  IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconPresentation, IconPrinter, IconRefresh, IconSearch, IconEye, IconEyeOff, IconTrash, IconUpload, IconX,
 } from '@tabler/icons-react'
 import axios from 'axios'
 import { notifications } from '@mantine/notifications'
@@ -38,12 +38,18 @@ import styles from './Talk.module.css'
 interface Reference { raw: string; kind: string }
 interface Point {
   id: string; label: string; text: string; scriptures: string[]; references?: Reference[]; minutes: number | null; children?: Point[]
-  /** Struck through: kept in the outline for reference but not used in the talk. */
+  /** Hidden in Prepare: kept in the outline but left off the delivery and the print. (`skipped` is the older name.) */
+  hidden?: boolean
   skipped?: boolean
+  /** Citations and references of this point hidden the same way. */
+  hidden_scriptures?: string[]
+  hidden_refs?: string[]
 }
 interface Outline { title: string; number?: string; note?: string; theme_scripture: string; language: 'en' | 'chk'; points: Point[]; total_minutes: number | null }
 interface Line {
   id: string; chk: string; en: string; source: string; ref: string; confirmed: boolean; note: string
+  /** Hidden in Prepare: left off the delivery and the print until unhidden. */
+  hidden?: boolean
   /** An image placed among the lines: shows where it sits, small and right-aligned, in Deliver view. */
   kind?: 'text' | 'image'; image_id?: string; caption?: string
   /** Marked as scripture by the person; lines matching a stored verse are coloured as scripture automatically. */
@@ -59,6 +65,20 @@ function isScripture(line: Line, verseTexts: string[]): boolean {
   return verseTexts.some((v) => v.includes(t) || t.includes(v))
 }
 const imageUrl = (l: Line) => `/api/talks/images/${l.image_id}`
+const isHidden = (p: Point) => !!(p.hidden ?? p.skipped)
+const shownScriptures = (p: Point) => p.scriptures.filter((c) => !(p.hidden_scriptures || []).includes(c))
+const shownLines = (talk: Talk, pid: string) => (talk.lines[pid] || []).filter((l) => !l.hidden)
+
+/** The one trace of something hidden in Prepare: what it was, and an Unhide. Never printed. */
+function HiddenMarker({ label, onUnhide, section = false }: { label: string; onUnhide: () => void; section?: boolean }) {
+  return (
+    <Group gap="xs" wrap="nowrap" className={`${styles.hiddenMarker} ${section ? styles.hiddenSection : ''} ${styles.noPrint}`}>
+      <IconEyeOff size={14} />
+      <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>Hidden · {label}</Text>
+      <Button size="compact-xs" variant="subtle" leftSection={<IconEye size={12} />} onClick={onUnhide}>Unhide</Button>
+    </Group>
+  )
+}
 interface Talk { id: string; title: string; language: string; outline: Outline; outline_text?: string; lines: Record<string, Line[]>; line_count: number; updated_at?: string; scriptures?: (Verse & { ref: string })[]; references?: StoredReference[] }
 interface TalkMeta { id: string; title: string; line_count: number; updated_at?: string; outline?: { title?: string; total_minutes?: number | null } }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
@@ -238,6 +258,7 @@ function LineAlternatives({ line, context = '', showEnglish, onGloss, onUse, onA
 // ── An image among the lines ─────────────────────────────────────────────────
 
 function ImageCard({ line, onChange, onRemove, onMove }: { line: Line; onChange: (l: Line) => void; onRemove: () => void; onMove: (d: -1 | 1) => void }) {
+  if (line.hidden) return <HiddenMarker label={line.caption || 'image'} onUnhide={() => onChange({ ...line, hidden: false })} />
   return (
     <Paper withBorder p="sm" radius="md" className={styles.line}>
       <Group align="flex-start" wrap="nowrap" justify="space-between">
@@ -249,6 +270,7 @@ function ImageCard({ line, onChange, onRemove, onMove }: { line: Line; onChange:
           </Box>
         </div>
         <Group gap={2} wrap="nowrap">
+          <Tooltip label="Hide: left off the delivery and the print"><ActionIcon variant="subtle" color="gray" onClick={() => onChange({ ...line, hidden: true })} aria-label="Hide"><IconEyeOff size={16} /></ActionIcon></Tooltip>
           <ActionIcon variant="subtle" color="gray" onClick={() => onMove(-1)}><IconArrowUp size={16} /></ActionIcon>
           <ActionIcon variant="subtle" color="gray" onClick={() => onMove(1)}><IconArrowDown size={16} /></ActionIcon>
           <ActionIcon variant="subtle" color="red" onClick={onRemove}><IconTrash size={16} /></ActionIcon>
@@ -284,6 +306,7 @@ function LineCard({ line, context, showEnglish, onChange, onRemove, onMove, maps
   const [chk, setChk] = useState(line.chk)
   const [en, setEn] = useState(line.en)
   const [translating, setTranslating] = useState(false)
+  if (line.hidden) return <HiddenMarker label={line.chk || line.en} onUnhide={() => onChange({ ...line, hidden: false })} />
 
   // Translation runs only from the button: a pasted scripture already has both sides.
   // It fills the empty side from the other; with both filled it refreshes the English.
@@ -329,6 +352,7 @@ function LineCard({ line, context, showEnglish, onChange, onRemove, onMove, maps
             <Tooltip label={line.scripture ? 'Not scripture' : 'Mark as scripture'}><ActionIcon variant="subtle" color={line.scripture ? 'orange' : 'gray'} onClick={() => onChange({ ...line, scripture: !line.scripture })} aria-pressed={!!line.scripture}><IconBook2 size={16} /></ActionIcon></Tooltip>
             <Tooltip label={line.confirmed ? 'Mark unchecked' : 'Mark as checked'}><ActionIcon variant="subtle" color={line.confirmed ? 'green' : 'gray'} onClick={() => { onChange({ ...line, confirmed: !line.confirmed }); if (!line.confirmed) storeVerified(line) }}><IconCheck size={16} /></ActionIcon></Tooltip>
             <ActionIcon variant="subtle" color="gray" onClick={() => { setChk(line.chk); setEn(line.en); setEditing(true) }}><IconEdit size={16} /></ActionIcon>
+            <Tooltip label="Hide: not read in this talk, left off the delivery and the print"><ActionIcon variant="subtle" color="gray" onClick={() => onChange({ ...line, hidden: true })} aria-label="Hide"><IconEyeOff size={16} /></ActionIcon></Tooltip>
             <ActionIcon variant="subtle" color="gray" onClick={() => onMove(-1)}><IconArrowUp size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => onMove(1)}><IconArrowDown size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="red" onClick={onRemove}><IconTrash size={16} /></ActionIcon>
@@ -387,10 +411,13 @@ function AddLine({ onAdd, onGloss }: { onAdd: (l: Omit<Line, 'id'>) => void; onG
 
 // ── Verse box ───────────────────────────────────────────────────────────────
 
-function VerseBox({ cite, verse, showEnglish, onGloss, onFetch }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onFetch?: (cite: string) => void }) {
+function VerseBox({ cite, verse, showEnglish, onGloss, onFetch, onHide }: { cite: string; verse?: Verse; showEnglish: boolean; onGloss?: (g: Gloss | null) => void; onFetch?: (cite: string) => void; onHide?: () => void }) {
   return (
     <Box className={styles.verse} mt={6}>
-      <Group gap={4}><Text size="xs" fw={700} c="violet">{cite}</Text>{verse && <SourceTag verse={verse} />}</Group>
+      <Group gap={4} justify="space-between" wrap="nowrap">
+        <Group gap={4}><Text size="xs" fw={700} c="violet">{cite}</Text>{verse && <SourceTag verse={verse} />}</Group>
+        {onHide && <Tooltip label="Hide: not read in this talk, left off the delivery and the print"><ActionIcon size="sm" variant="subtle" color="gray" className={styles.noPrint} onClick={onHide} aria-label="Hide scripture"><IconEyeOff size={14} /></ActionIcon></Tooltip>}
+      </Group>
       {!verse ? <Text size="xs" c="dimmed">Loading…</Text> : (
         <>
           {verse.chuukese && (
@@ -421,7 +448,7 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   const paceKey = `talk-pace-${talk.id}`
   const [arrivals, setArrivals] = useState<Record<number, number>>({})
   const [previous] = useState<Record<number, number>>(() => { try { return JSON.parse(localStorage.getItem(paceKey) || '{}') } catch { return {} } })
-  const points = talk.outline.points
+  const points = talk.outline.points.filter((p) => !isHidden(p))
   const point = points[i]
   useEffect(() => { if (!running) return; const t = window.setInterval(() => setElapsed((e) => e + 1), 1000); return () => window.clearInterval(t) }, [running])
   // Stamp the section with the time it was reached, once per run, as soon as the timer has started.
@@ -451,14 +478,14 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
   )
   const block = (p: Point) => (
     <Box key={p.id}>
-      {p.scriptures.map((c) => verses[c] && (
+      {shownScriptures(p).map((c) => verses[c] && (
         <Box key={c} className={styles.deliverVerse}>
           <Group gap={4}><Text size="sm" fw={700} c="violet">{c}</Text><SourceTag verse={verses[c]} size="sm" /></Group>
           <div>{verses[c].chuukese || verses[c].english}</div>
           {showEnglish && verses[c].chuukese && <Text size="md" className={styles.deliverVerseEn}>{verses[c].english}</Text>}
         </Box>
       ))}
-      {(talk.lines[p.id] || []).map((l) => (
+      {shownLines(talk, p.id).map((l) => (
         l.kind === 'image' ? (
           <figure key={l.id} className={styles.deliverImage} onClick={() => setZoom(l)}>
             <img src={imageUrl(l)} alt={l.caption || 'Talk image'} />
@@ -474,22 +501,10 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
       <div className={styles.deliverClear} />
     </Box>
   )
-  const children = (point.children || []).map((c) => (
+  const children = (point.children || []).filter((c) => !isHidden(c)).map((c) => (
     <Box key={c.id}>
-      {c.skipped && !point.skipped ? (
-        // A struck-through point: folded away behind its crossed-out heading.
-        <Accordion variant="contained" radius="md" mt="sm" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
-          <Accordion.Item value={c.id}>
-            <Accordion.Control><span className={styles.deliverSub} style={{ marginTop: 0 }}>{c.label ? `${c.label}. ` : '· '}{c.text}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
-            <Accordion.Panel>{block(c)}</Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      ) : (
-        <div>
-          <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
-          {block(c)}
-        </div>
-      )}
+      <div className={styles.deliverSub}>{c.label ? `${c.label}. ` : '· '}{c.text}</div>
+      {block(c)}
     </Box>
   ))
   return (
@@ -524,21 +539,11 @@ function Deliver({ talk, verses, showEnglish: initialEnglish, onClose }: { talk:
           )}
         </div>
       )}
-      {point.skipped ? (
-        // A struck-through section: folded away behind its crossed-out title.
-        <Accordion variant="contained" radius="md" className={styles.deliverSkipped} styles={{ item: { background: 'var(--mantine-color-gray-0)' } }}>
-          <Accordion.Item value="skipped">
-            <Accordion.Control><span className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}<span className={styles.deliverSkippedTag}>not used</span></span></Accordion.Control>
-            <Accordion.Panel>{block(point)}{children}</Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      ) : (
-        <div>
-          <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}</div>
-          {block(point)}
-        </div>
-      )}
-      {!point.skipped && children}
+      <div>
+        <div className={styles.deliverTitle}>{point.label ? `${point.label}. ` : ''}{point.text}{point.minutes ? <Text span c="dimmed" fw={400} size="lg"> ({point.minutes} min.)</Text> : null}</div>
+        {block(point)}
+      </div>
+      {children}
       {i === 0 && talk.outline.theme_scripture && verses[talk.outline.theme_scripture] && (
         <Box className={styles.deliverVerse}><Group gap={4}><Text size="sm" fw={700} c="violet">Theme · {talk.outline.theme_scripture}</Text><SourceTag verse={verses[talk.outline.theme_scripture]} size="sm" /></Group><div>{verses[talk.outline.theme_scripture].chuukese}</div></Box>
       )}
@@ -779,7 +784,7 @@ export default function TalkBuilder() {
           <Group gap="xs">
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : p.minutes ? <Badge size="lg" variant="filled" color={p.skipped ? 'gray' : 'violet'}>{p.minutes} min</Badge> : null}
             <Badge variant={rows.length ? 'light' : 'outline'} color={rows.length ? 'green' : 'orange'}>{rows.length} line{rows.length === 1 ? '' : 's'}</Badge>
-            <Tooltip label={p.skipped ? 'Use this point again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through"><IconStrikethrough size={16} /></ActionIcon></Tooltip>
+            <Tooltip label="Hide this point: not read in this talk, left off the delivery and the print"><ActionIcon variant="subtle" color="gray" className={styles.noPrint} onClick={() => updatePoint(p.id, { hidden: true, skipped: false })} aria-label="Hide point"><IconEyeOff size={16} /></ActionIcon></Tooltip>
           </Group>
         </Group>
     ) : (
@@ -796,19 +801,27 @@ export default function TalkBuilder() {
           <div className={styles.sectionMeta}>
             <Text className={styles.sectionLines}>{rows.length + childLines} line{rows.length + childLines === 1 ? '' : 's'}</Text>
             {editOutline ? <TextInput w={80} type="number" placeholder="min" value={p.minutes ?? ''} onChange={(e) => updatePoint(p.id, { minutes: e.currentTarget.value ? Number(e.currentTarget.value) : null })} /> : <span className={styles.sectionTime}>{p.minutes ? `${p.minutes} min` : 'no time'}</span>}
-            <Tooltip label={p.skipped ? 'Use this section again' : 'Strike through: not used in this talk'}><ActionIcon variant={p.skipped ? 'filled' : 'subtle'} color="gray" onClick={() => updatePoint(p.id, { skipped: !p.skipped })} aria-pressed={!!p.skipped} aria-label="Strike through" style={{ color: p.skipped ? undefined : '#fff' }}><IconStrikethrough size={16} /></ActionIcon></Tooltip>
+            <Tooltip label="Hide this section: not read in this talk, left off the delivery and the print"><ActionIcon variant="subtle" color="gray" className={styles.noPrint} onClick={() => updatePoint(p.id, { hidden: true, skipped: false })} aria-label="Hide section" style={{ color: '#fff' }}><IconEyeOff size={16} /></ActionIcon></Tooltip>
             <Tooltip label={collapsed.has(p.id) ? 'Expand this section' : 'Collapse this section'}><ActionIcon variant="subtle" color="gray" className={styles.noPrint} onClick={() => toggleCollapsed(p.id)} aria-expanded={!collapsed.has(p.id)} aria-label={collapsed.has(p.id) ? 'Expand' : 'Collapse'} style={{ color: '#fff' }}>{collapsed.has(p.id) ? <IconChevronDown size={18} /> : <IconChevronUp size={18} />}</ActionIcon></Tooltip>
           </div>
         </div>
     )
     const body = (
       <>
-        {(p.references || []).map((r) => (
-          <div key={`${talk?.id}-${p.id}-${r.raw}-wrap`} className={styles.noPrint}><ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
+        {(p.references || []).map((r) => (p.hidden_refs || []).includes(r.raw) ? (
+          <HiddenMarker key={`${talk?.id}-${p.id}-${r.raw}-hidden`} label={`Reference ${r.raw}`} onUnhide={() => updatePoint(p.id, { hidden_refs: (p.hidden_refs || []).filter((x) => x !== r.raw) })} />
+        ) : (
+          <div key={`${talk?.id}-${p.id}-${r.raw}-wrap`} className={`${styles.noPrint} ${styles.refRow}`}><ReferenceInline key={`${talk?.id}-${p.id}-${r.raw}`} reference={r.raw} context={p.text} talkId={talk?.id} showEnglish={showEnglish} onGloss={setGloss}
             onResolved={(raw, d) => { const link = d.links.en || d.links.search; if (link) setRefLinks((m) => (m[raw] === link ? m : { ...m, [raw]: link })) }}
-            stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300) && s.result.paragraphs.length > 0)?.result} /></div>
+            stored={(talk?.references || []).find((s) => s.key.ref === r.raw.toLowerCase() && s.key.context === p.text.toLowerCase().slice(0, 300) && s.result.paragraphs.length > 0)?.result} />
+            <Tooltip label="Hide this reference: not read in this talk"><ActionIcon size="sm" variant="subtle" color="gray" className={styles.refHide} onClick={() => updatePoint(p.id, { hidden_refs: [...(p.hidden_refs || []), r.raw] })} aria-label="Hide reference"><IconEyeOff size={14} /></ActionIcon></Tooltip>
+          </div>
         ))}
-        {p.scriptures.map((c) => <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} />)}
+        {p.scriptures.map((c) => (p.hidden_scriptures || []).includes(c) ? (
+          <HiddenMarker key={c} label={`Scripture ${c}`} onUnhide={() => updatePoint(p.id, { hidden_scriptures: (p.hidden_scriptures || []).filter((x) => x !== c) })} />
+        ) : (
+          <VerseBox key={c} cite={c} verse={verses[c]} showEnglish={showEnglish} onGloss={setGloss} onFetch={(cite) => fetchVerses([cite])} onHide={() => updatePoint(p.id, { hidden_scriptures: [...(p.hidden_scriptures || []), c] })} />
+        ))}
         <Stack gap="xs" mt="sm">
           {rows.map((l, i) => (
             <Group key={l.id} align="stretch" gap={4} wrap="nowrap">
@@ -831,16 +844,19 @@ export default function TalkBuilder() {
         {(p.children || []).length > 0 && <Stack gap="sm" mt="sm">{p.children!.map((c) => renderPoint(c, true, p))}</Stack>}
       </>
     )
+    if (isHidden(p)) {
+      return <HiddenMarker key={p.id} section={!child} label={`${child ? 'Point' : 'Section'} ${p.label ? p.label + '. ' : ''}${p.text}`} onUnhide={() => updatePoint(p.id, { hidden: false, skipped: false })} />
+    }
     if (child) {
       return (
-        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''} ${p.skipped ? styles.skippedPoint : ''}`}>
+        <Card key={p.id} withBorder radius="md" p="md" className={`${styles.child} ${styles.point} ${rows.length === 0 ? styles.pointEmpty : ''}`}>
           {head}
           {body}
         </Card>
       )
     }
     return (
-      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''} ${p.skipped ? styles.skipped : ''}`}>
+      <section key={p.id} className={`${styles.section} ${rows.length + childLines === 0 ? styles.sectionEmpty : ''}`}>
         {head}
         <div className={`${styles.sectionBody} ${collapsed.has(p.id) ? styles.sectionCollapsed : ''}`}>{body}</div>
       </section>
