@@ -110,7 +110,10 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
   const blocks = useMemo(() => buildBlocks(talk, verses, isScripture), [talk, verses, isScripture])
   const measureRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [pages, setPages] = useState<number[][]>([])
+  // The layout is kept with the blocks it was measured from: when a line is
+  // hidden or shown the blocks change first, and stale page indexes must not be used.
+  const [layout, setLayout] = useState<{ blocks: Block[]; pages: number[][] }>({ blocks: [], pages: [] })
+  const pages = layout.blocks === blocks ? layout.pages : []
   const [tick, setTick] = useState(0)
 
   useLayoutEffect(() => {
@@ -123,7 +126,7 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
       const mt = parseFloat(getComputedStyle(c as HTMLElement).marginTop) || 0
       return r.height + mb + mt
     })
-    setPages(paginate(heights, blocks.map((b) => b.kind), limit))
+    setLayout({ blocks, pages: paginate(heights, blocks.map((b) => b.kind), limit) })
   }, [blocks, showEnglish, tick])
 
   const node = (
@@ -137,7 +140,7 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
       </div>
       {pages.map((idx, pi) => (
         <div className={styles.page} key={pi}>
-          <div className={styles.body}>{idx.map((i) => <BlockView key={i} b={blocks[i]} showEnglish={showEnglish} />)}</div>
+          <div className={styles.body}>{idx.map((i) => blocks[i] && <BlockView key={i} b={blocks[i]} showEnglish={showEnglish} />)}</div>
           <div className={styles.foot}>{pi + 1} / {pages.length}</div>
         </div>
       ))}

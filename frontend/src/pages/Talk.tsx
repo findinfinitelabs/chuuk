@@ -641,6 +641,7 @@ export default function TalkBuilder() {
   const fetchableRefs = refs.filter((r) => verses[r]?.fetchable)
   // Verse text known to the talk, for colouring lines that quote scripture.
   const verseTexts = useMemo(() => Object.values(verses).flatMap((v) => [v.chuukese, v.english]).filter(Boolean).map(normVerse).filter((t) => t.length >= 20), [verses])
+  const printIsScripture = useCallback((l: { chk: string; en: string; scripture?: boolean }) => isScripture(l as Line, verseTexts), [verseTexts])
 
   const open = async (id: string) => {
     try {
@@ -905,7 +906,7 @@ export default function TalkBuilder() {
             </Alert>
           ) : (
             <>
-              <TalkPrint talk={talk} verses={verses} showEnglish={showEnglish} isScripture={(l) => isScripture(l as Line, verseTexts)} />
+              <TalkPrint talk={talk} verses={verses} showEnglish={showEnglish} isScripture={printIsScripture} />
               <Card withBorder radius="md" p="md" mb="sm" className={styles.titleCard}>
                 <Group justify="space-between" wrap="wrap" align="flex-start">
                   <Box style={{ flex: 1, minWidth: 260 }}>
