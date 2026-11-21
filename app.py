@@ -7027,7 +7027,7 @@ app.register_blueprint(_talks_blueprint(lambda: dict_db, login_required, _cosmos
 
 from src.api.bible import create_blueprint as _bible_blueprint  # noqa: E402
 
-app.register_blueprint(_bible_blueprint(lambda: dict_db, login_required, _analyze_text))
+app.register_blueprint(_bible_blueprint(lambda: dict_db, login_required, _analyze_text, _get_similarity_index))
 
 
 # Catch-all route for React (must be last)

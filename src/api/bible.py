@@ -12,7 +12,8 @@ Routes
     GET /api/bible/lookup?q=John 3:16, 17    a citation as jw.org accepts it → the cited verses per chapter
 
 Each verse with both languages carries ``links``: the Chuukese ↔ English word
-pairs found through the dictionary (see src/core/word_links.py).
+pairs found through the dictionary, and for each Chuukese word the dictionary
+base word it was read through, when any (see src/core/word_links.py).
 """
 
 from __future__ import annotations
@@ -96,7 +97,9 @@ def parse_query(q: str) -> list[tuple[int, int, list[int] | None]]:
     return out
 
 
-def create_blueprint(get_db: Callable, login_required: Callable, analyzer: Callable | None = None) -> Blueprint:
+def create_blueprint(get_db: Callable, login_required: Callable, analyzer: Callable | None = None, lexicon: Callable | None = None) -> Blueprint:
+    """`lexicon()` returns the whole-dictionary index (by_norm, english) the word
+    linker reads base words from; without it only whole words are linked."""
     bp = Blueprint("bible", __name__)
 
     def db():
@@ -132,9 +135,10 @@ def create_blueprint(get_db: Callable, login_required: Callable, analyzer: Calla
             from src.core.word_links import linker_for
 
             linker = linker_for(get_db())
+            lex = lexicon() if lexicon else None
             for r in rows:
                 if r["chk"] and r["en"]:
-                    r["links"] = linker.link(r["chk"], r["en"], maps["dictionary"])
+                    r["links"] = linker.link(r["chk"], r["en"], maps["dictionary"], lex)
         except Exception:
             pass
         info = book_info(book)

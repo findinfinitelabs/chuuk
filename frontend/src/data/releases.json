@@ -7,7 +7,9 @@
       "title": "Scripture Lookup: Chuukese words linked to their English",
       "notes": [
         "Scripture Lookup: with Link words on (the default, remembered on your device), each Chuukese word the dictionary holds is looked up and the English word its gloss matches is found in the verse; both are tinted in the same pastel colour, so Kot and God, tongei and loved, fénúfan and world read as pairs. Hovering a word on either side outlines its partner.",
-        "Scripture Lookup: a word is paired by spelling first (pregnant with pregnancy, love with loved) and then by meaning, so weiresin (difficulty) meets pain and néún (child) meets Son; a word is paired at most once on each side, and words the dictionary does not hold stay plain. The gloss hover and click on the Chuukese work as before."
+        "Scripture Lookup: a word is paired by spelling first (pregnant with pregnancy, love with loved) and then by meaning, so weiresin (difficulty) meets pain and néún (child) meets Son; a word is paired at most once on each side. The gloss hover and click on the Chuukese work as before.",
+        "Scripture Lookup: a longer word the dictionary does not hold as it stands is read through the dictionary words inside it, and the one whose gloss matches the English of the verse is shown in small type under it (ápilúkú, hope, under ápilúkúni beside hoped), so the word links to its English too. Nothing is guessed: a base word is always a dictionary headword, and it is shown only when the English of the same verse supports it. The Base words switch turns this off; the gloss card names the base word as well.",
+        "Everywhere words are matched, umlauts and acute accents count as the same letters (ä and á, ö and ó, ü and ú)."
       ]
     },
     {
