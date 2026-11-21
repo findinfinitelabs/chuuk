@@ -1,0 +1,34 @@
+/* Printed talk: full Letter pages laid out by TalkPrint.tsx, a page number at the foot of each. */
+.root { position: absolute; left: -30000px; top: 0; width: 8.5in; background: #fff; color: #000; font-family: "Times New Roman", Times, serif; }
+.root * { font-family: "Times New Roman", Times, serif; box-sizing: border-box; }
+.page { width: 8.5in; height: 11in; padding: 0.7in 0.75in 0.6in; position: relative; overflow: hidden; background: #fff; }
+.body { height: 9.45in; overflow: hidden; }
+.measure { height: auto; overflow: visible; }
+.foot { position: absolute; left: 0; right: 0; bottom: 0.3in; text-align: center; font-size: 9pt; color: #333; }
+
+.block { margin: 0 0 4pt; break-inside: avoid; }
+.title { font-size: 16pt; font-weight: 700; margin: 0 0 2pt; }
+.number { font-size: 10pt; font-weight: 400; color: #333; margin-right: 8pt; }
+.note { font-size: 9pt; color: #333; font-style: italic; margin: 0 0 2pt; }
+.theme { font-size: 11pt; font-weight: 700; margin: 2pt 0 0; }
+.section { border-top: 1pt solid #000; padding-top: 4pt; margin-top: 8pt; font-size: 12pt; font-weight: 700; text-transform: uppercase; }
+.minutes { font-size: 8pt; font-weight: 400; text-transform: none; margin-left: 6pt; }
+.point { font-size: 12pt; font-weight: 700; margin-top: 4pt; }
+.label { font-weight: 700; margin-right: 4pt; }
+.chk { font-size: 12pt; line-height: 1.3; }
+.en { font-size: 8.5pt; line-height: 1.25; color: #333; }
+.scripture { border-left: 1.5pt solid #000; padding-left: 6pt; margin: 3pt 0; }
+.cite { font-size: 9pt; font-weight: 700; }
+.image { text-align: right; }
+.image img { max-height: 1.6in; max-width: 2.2in; display: inline-block; }
+.caption { font-size: 8.5pt; color: #333; }
+
+@page { size: letter; margin: 0; }
+@media print {
+  /* The page shows only the printed talk. */
+  :global(body) > *:not(.root) { display: none !important; }
+  .root { position: static; left: auto; width: auto; }
+  .measureWrap { display: none !important; }
+  .page { page-break-after: always; break-after: page; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+}

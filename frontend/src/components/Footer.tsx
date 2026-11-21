@@ -11,7 +11,7 @@ export default function Footer() {
 
   return (
     <>
-      <Box mt="xl" py="lg" ta="center" style={{ borderTop: '1px solid #e0e0e0' }}>
+      <Box mt="xl" py="lg" ta="center" className="no-print app-footer" style={{ borderTop: '1px solid #e0e0e0' }}>
         <Text size="xs" c="black">
           © {new Date().getFullYear()} FindInfinite Labs. All rights reserved.
         </Text>

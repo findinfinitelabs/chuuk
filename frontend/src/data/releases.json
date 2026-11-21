@@ -2,6 +2,16 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.14",
+      "date": "2026-11-19",
+      "title": "Talk Builder: print on full pages with a page number",
+      "notes": [
+        "Talk Builder: Print now lays the talk out on full Letter pages instead of 5 × 7 inch cards, with a simple page number (1 / 4) at the foot of each page and nothing else in the margins. The running title line at the top of each page is gone.",
+        "Talk Builder: pages are filled by the app itself rather than left to the browser, so a section or point heading is never stranded at the bottom of a page, a line or scripture is never split across two pages, and the page numbers are right in every browser.",
+        "Print: the site footer (copyright, Terms of Use, version) is no longer printed on any page."
+      ]
+    },
+    {
       "version": "1.0.0.13",
       "date": "2026-11-15",
       "title": "Talk Builder: similar lines found by meaning, not by words",
