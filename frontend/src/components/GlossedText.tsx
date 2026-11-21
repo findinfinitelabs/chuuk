@@ -14,6 +14,7 @@ import { Group, Switch, Text } from '@mantine/core'
 import { setIndicators, useIndicators } from './glossSettings'
 import styles from './GlossedText.module.css'
 import { findPhraseSpans, grammarPhraseSpans, normKey, phraseGloss, spanIndex } from './glossUtils'
+import { pairColor } from './wordAlign'
 import type { PhraseEntry, PhraseMap } from './glossUtils'
 
 /** An article in which a word was matched during the Translation Game. */
@@ -48,6 +49,10 @@ export interface DictEntry {
 
 export type Dictionary = Record<string, DictEntry>
 
+/** The dictionary word a longer word was read through (ápilúkú in ápilúkúni),
+ *  with the gloss that matched the English of the same sentence. */
+export interface BaseWord { word: string; english: string }
+
 /** A dictionary word that looks related to one we don't hold. */
 export interface SimilarWord {
   word: string
@@ -69,6 +74,8 @@ export interface Gloss {
   phrase?: { entry: PhraseEntry; words: { word: string; entry?: DictEntry }[] }
   /** What the translation model proposes, shown after the dictionary's answer. */
   suggestion?: string
+  /** The dictionary word this word was read through, when the sentence's English supports it. */
+  base?: BaseWord
   x: number
   y: number
 }
@@ -97,9 +104,16 @@ function groupAppearances(appearances: Appearance[]): Appearance[] {
  *  the next click or Escape. With "Show dictionary indicators" on, every word
  *  the dictionary holds also gets a faint dotted underline. */
 export function GlossedWords({
-  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks,
+  text, dictionary, similar, phrases = {}, onGloss, onWordClick, keyPrefix = '', marks, pairs, activePair, onPairHover, bases,
 }: {
   text: string
+  /** Base word per word ordinal (from the server's word links), shown in small type under the word. */
+  bases?: (BaseWord | undefined)[]
+  /** Pair id per word ordinal (from wordAlign): the word is tinted in its pair's colour. */
+  pairs?: (number | undefined)[]
+  /** The pair under the pointer on either side, drawn stronger on both. */
+  activePair?: number | null
+  onPairHover?: (pair: number | null) => void
   /** Lowercase words to mark as key phrases (yellow), on top of the dictionary tint. */
   marks?: Set<string>
   dictionary: Dictionary
@@ -145,9 +159,13 @@ export function GlossedWords({
   })
   const pinnedSpan = pinned !== null ? tokenSpan.get(pinned) : undefined
 
+  const ordinal = new Map<number, number>()
+  wordAt.forEach((ti, wi) => ordinal.set(ti, wi))
   return tokens.map((tok, ti) => {
     if (!tok) return null
     const key = `${keyPrefix}${ti}`
+    const pair = pairs ? pairs[ordinal.get(ti) ?? -1] : undefined
+    const pairStyle = pair !== undefined ? { background: pairColor(pair), boxShadow: activePair === pair ? `0 0 0 2px ${pairColor(pair)}` : undefined } : undefined
     const span = tokenSpan.get(ti)
     const inPinned = pinned !== null && (ti === pinned || (!!pinnedSpan && span === pinnedSpan))
     const phraseClass = span ? ` ${span.entry.kind === 'grammar' ? styles.grammarPhrase : styles.phrase}` : ''
@@ -157,24 +175,26 @@ export function GlossedWords({
     const lower = tok.toLowerCase()
     const entry = dictionary[lower]
     const near = entry ? undefined : similar[lower]
-    const hoverable = !!(entry || near || span)
+    const base = bases ? bases[ordinal.get(ti) ?? -1] : undefined
+    const hoverable = !!(entry || near || span || base)
     const marked = marks?.has(lower.replace(/[^\p{L}\p{N}]/gu, '')) ? ` ${styles.mark}` : ''
     const gloss = (e: { clientX: number; clientY: number }): Gloss => ({
-      word: tok, entry, similar: near,
+      word: tok, entry, similar: near, base,
       phrase: span ? phraseGloss(span.entry, dictionary) : undefined,
       x: e.clientX, y: e.clientY,
     })
-    const label = entry ? `${tok}: ${entry.english || 'in the dictionary'}` : span ? `${tok}, part of ${span.entry.text}` : near ? `${tok}: similar to ${near[0]?.word}` : tok
+    const label = entry ? `${tok}: ${entry.english || 'in the dictionary'}` : base ? `${tok}, from ${base.word}: ${base.english}` : span ? `${tok}, part of ${span.entry.text}` : near ? `${tok}: similar to ${near[0]?.word}` : tok
     const select = (e: { clientX: number; clientY: number; stopPropagation: () => void }) => {
       e.stopPropagation()
       if (onWordClick) { onWordClick(tok); return }
       if (!hoverable) return
       if (pinned === ti) { setPinned(null); onGloss(null) } else { setPinned(ti); onGloss(gloss(e)) }
     }
-    return (
+    const word = (
       <span
-        key={key}
-        className={`${styles.word}${hoverable ? ` ${styles.known}` : ''}${indicators && entry ? ` ${styles.indicator}` : ''}${phraseClass}${selectedClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}`}
+        key={base ? `${key}w` : key}
+        className={`${styles.word}${hoverable ? ` ${styles.known}` : ''}${indicators && entry ? ` ${styles.indicator}` : ''}${phraseClass}${selectedClass}${marked}${onWordClick ? ` ${styles.clickable}` : ''}${pair !== undefined ? ` ${styles.pair}` : ''}`}
+        style={pairStyle}
         role={hoverable || onWordClick ? 'button' : undefined}
         tabIndex={hoverable || onWordClick ? 0 : undefined}
         aria-label={hoverable ? label : undefined}
@@ -189,10 +209,18 @@ export function GlossedWords({
         } : undefined}
         onFocus={hoverable ? (e: FocusEvent<HTMLSpanElement>) => { if (pinned === null) { const r = e.currentTarget.getBoundingClientRect(); onGloss(gloss({ clientX: r.left, clientY: r.bottom })) } } : undefined}
         onBlur={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
-        onMouseEnter={hoverable ? (e: MouseEvent<HTMLSpanElement>) => { if (pinned === null) onGloss(gloss(e)) } : undefined}
-        onMouseLeave={hoverable ? () => { if (pinned === null) onGloss(null) } : undefined}
+        onMouseEnter={(e: MouseEvent<HTMLSpanElement>) => { if (hoverable && pinned === null) onGloss(gloss(e)); if (pair !== undefined) onPairHover?.(pair) }}
+        onMouseLeave={() => { if (hoverable && pinned === null) onGloss(null); if (pair !== undefined) onPairHover?.(null) }}
       >
         {tok}
+      </span>
+    )
+    if (!base) return word
+    // The base word sits in small type under the word it was read through.
+    return (
+      <span key={key} className={styles.stack}>
+        {word}
+        <span className={styles.base} aria-hidden="true">{base.word}</span>
       </span>
     )
   })
@@ -232,6 +260,11 @@ export function GlossCard({ gloss }: { gloss: Gloss }) {
         </div>
       )}
       <div className={styles.glossWord}>{gloss.word}</div>
+      {gloss.base && (
+        <div className={styles.glossVariant}>
+          Base word <strong>{gloss.base.word}</strong>: {gloss.base.english}
+        </div>
+      )}
 
       {entry ? (
         <>

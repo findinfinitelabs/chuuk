@@ -166,3 +166,23 @@
 
 /* A key phrase of the learner's outline, on top of the dictionary states. */
 .mark { background: #ffd43b; border-radius: 3px; box-shadow: 0 0 0 1px #ffd43b; }
+
+/* A word paired with its counterpart in the other language (wordAlign): tinted alike on both sides. */
+.pair { color: var(--text-primary); }
+
+/* A word with its base word under it: the word keeps the line's baseline. */
+.stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: baseline;
+}
+
+.base {
+  font-size: 0.68em;
+  line-height: 1;
+  margin-top: 1px;
+  color: var(--text-secondary, #6b6b6b);
+  font-style: italic;
+  white-space: nowrap;
+}
