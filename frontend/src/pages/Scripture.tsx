@@ -23,7 +23,8 @@ import { alignWords, pairColor, WORD_TOKENS } from '../components/wordAlign'
 import styles from './Scripture.module.css'
 
 interface Book { number: number; name: string; chk_name: string; chapters: number }
-interface Verse { n: number; en: string; chk: string }
+interface WordLinks { chk: (number | null)[]; en: (number | null)[]; pairs: number; semantic: boolean }
+interface Verse { n: number; en: string; chk: string; links?: WordLinks }
 interface Maps { dictionary: Dictionary; similar: SimilarMap; phrases: PhraseMap }
 interface Passage extends Book {
   chapter: number
@@ -77,7 +78,12 @@ function PairedEnglish({ text, pairs, activePair, onPairHover }: { text: string;
 function VerseRow({ v, p, view, link, onGloss }: { v: Verse; p: Passage; view: View; link: boolean; onGloss: (g: Gloss | null) => void }) {
   const cite = `${p.name} ${p.chapter}:${v.n}`
   const [activePair, setActivePair] = useState<number | null>(null)
-  const align = useMemo(() => (link && v.chk && v.en ? alignWords(v.chk, v.en, p.maps.dictionary) : null), [link, v.chk, v.en, p.maps.dictionary])
+  // The server pairs words by spelling and meaning; the local aligner is the fallback for older responses.
+  const align = useMemo(() => {
+    if (!link || !v.chk || !v.en) return null
+    if (v.links) return { chk: v.links.chk.map((x) => x ?? undefined), en: v.links.en.map((x) => x ?? undefined), pairs: v.links.pairs }
+    return alignWords(v.chk, v.en, p.maps.dictionary)
+  }, [link, v.chk, v.en, v.links, p.maps.dictionary])
   const chk = v.chk
     ? <Text className={styles.chk}><span className={styles.num}>{v.n}</span><GlossedWords text={v.chk} dictionary={p.maps.dictionary} similar={p.maps.similar} phrases={p.maps.phrases} onGloss={onGloss} keyPrefix={`${p.number}-${p.chapter}-${v.n}-`} pairs={align?.chk} activePair={activePair} onPairHover={setActivePair} /></Text>
     : <Text className={styles.chk}><span className={styles.num}>{v.n}</span><span className={styles.missing}>No Chuukese text for this verse in the uploaded Bibles</span></Text>

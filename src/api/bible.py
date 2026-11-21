@@ -10,6 +10,9 @@ Routes
     GET /api/bible/books                     the 66 books: number, English and Chuukese name, chapter count
     GET /api/bible/chapter?book=43&chapter=3 one chapter in both languages, with the gloss maps
     GET /api/bible/lookup?q=John 3:16, 17    a citation as jw.org accepts it → the cited verses per chapter
+
+Each verse with both languages carries ``links``: the Chuukese ↔ English word
+pairs found through the dictionary (see src/core/word_links.py).
 """
 
 from __future__ import annotations
@@ -123,6 +126,17 @@ def create_blueprint(get_db: Callable, login_required: Callable, analyzer: Calla
         rows = [{"n": n, "en": en.get(str(n), ""), "chk": chk.get(str(n), "")} for n in wanted if n in numbers or only][:MAX_VERSES]
         missing = [r["n"] for r in rows if not (r["en"] or r["chk"])]
         rows = [r for r in rows if r["en"] or r["chk"]]
+        maps = maps_for(" ".join(r["chk"] for r in rows if r["chk"]))
+        # Word links: which English word each Chuukese word corresponds to (word_links).
+        try:
+            from src.core.word_links import linker_for
+
+            linker = linker_for(get_db())
+            for r in rows:
+                if r["chk"] and r["en"]:
+                    r["links"] = linker.link(r["chk"], r["en"], maps["dictionary"])
+        except Exception:
+            pass
         info = book_info(book)
         label = f"{info['name']} {chapter}" + (f":{_spec(wanted)}" if only else "")
         return {
@@ -133,7 +147,7 @@ def create_blueprint(get_db: Callable, login_required: Callable, analyzer: Calla
             "source_chk_label": nwt_bible.SOURCE_CHK if source_chk == "nwt" else liebenzell_bible.SOURCE,
             "prev": {"book": book, "chapter": chapter - 1} if chapter > 1 else ({"book": book - 1, "chapter": CHAPTERS[book - 2]} if book > 1 else None),
             "next": {"book": book, "chapter": chapter + 1} if chapter < CHAPTERS[book - 1] else ({"book": book + 1, "chapter": 1} if book < 66 else None),
-            "maps": maps_for(" ".join(r["chk"] for r in rows if r["chk"])),
+            "maps": maps,
         }
 
     @bp.route("/api/bible/books")
