@@ -2,6 +2,16 @@
   "_format": "Version is major.minor.build.deploy. Newest release first. Add a new entry here for every deployment; the footer shows the first entry's version.",
   "releases": [
     {
+      "version": "1.0.0.15",
+      "date": "2026-11-20",
+      "title": "Talk Builder: hide what you won't read; scripture bold and indented; Times New Roman",
+      "notes": [
+        "Talk Builder: the strike-through is replaced by Hide. In Prepare, every section, point, scripture, reference and collected line (images too) has an eye button; hidden items are left off the Deliver view and the print entirely, and in Prepare only a slim marker remains, 'Hidden · …', with an Unhide button. Sections struck through earlier are treated as hidden.",
+        "Talk Builder: scriptures, both the cited verses and lines marked as scripture, are indented and bold in the Deliver view and on the printed talk.",
+        "Talk Builder: the talk text in Prepare, Deliver and print is set in Times New Roman."
+      ]
+    },
+    {
       "version": "1.0.0.14",
       "date": "2026-11-19",
       "title": "Talk Builder: print on full pages with a page number",

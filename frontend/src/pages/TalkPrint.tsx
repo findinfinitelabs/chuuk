@@ -12,8 +12,9 @@ import { createPortal } from 'react-dom'
 import styles from './TalkPrint.module.css'
 import { paginate } from './talkPaginate'
 
-interface PrintLine { id: string; chk: string; en: string; scripture?: boolean; kind?: 'text' | 'image'; image_id?: string; caption?: string }
-interface PrintPoint { id: string; label: string; text: string; scriptures: string[]; minutes: number | null; children?: PrintPoint[]; skipped?: boolean }
+interface PrintLine { id: string; chk: string; en: string; scripture?: boolean; hidden?: boolean; kind?: 'text' | 'image'; image_id?: string; caption?: string }
+interface PrintPoint { id: string; label: string; text: string; scriptures: string[]; minutes: number | null; children?: PrintPoint[]; hidden?: boolean; skipped?: boolean; hidden_scriptures?: string[] }
+const hidden = (p: PrintPoint) => !!(p.hidden ?? p.skipped)
 interface PrintVerse { chuukese: string; english: string }
 export interface PrintTalk {
   title: string
@@ -35,20 +36,22 @@ function buildBlocks(talk: PrintTalk, verses: Record<string, PrintVerse | undefi
   out.push({ kind: 'title', number: talk.outline.number, title: talk.title, note: talk.outline.note, theme: theme || undefined, verse: theme ? verses[theme] : undefined })
   const pushPoint = (p: PrintPoint) => {
     for (const c of p.scriptures) {
+      if ((p.hidden_scriptures || []).includes(c)) continue
       const v = verses[c]
       if (v && (v.chuukese || v.english)) out.push({ kind: 'verse', cite: c, chk: v.chuukese, en: v.english })
     }
     for (const l of talk.lines[p.id] || []) {
+      if (l.hidden) continue
       if (l.kind === 'image' && l.image_id) out.push({ kind: 'image', src: `/api/talks/images/${l.image_id}`, caption: l.caption || '' })
       else if (l.chk || l.en) out.push({ kind: 'line', chk: l.chk, en: l.en, scripture: isScripture(l) })
     }
   }
   for (const s of talk.outline.points) {
-    if (s.skipped) continue
+    if (hidden(s)) continue
     out.push({ kind: 'section', text: s.text, minutes: s.minutes })
     pushPoint(s)
     for (const c of s.children || []) {
-      if (c.skipped) continue
+      if (hidden(c)) continue
       out.push({ kind: 'point', label: c.label, text: c.text })
       pushPoint(c)
     }
@@ -107,7 +110,10 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
   const blocks = useMemo(() => buildBlocks(talk, verses, isScripture), [talk, verses, isScripture])
   const measureRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [pages, setPages] = useState<number[][]>([])
+  // The layout is kept with the blocks it was measured from: when a line is
+  // hidden or shown the blocks change first, and stale page indexes must not be used.
+  const [layout, setLayout] = useState<{ blocks: Block[]; pages: number[][] }>({ blocks: [], pages: [] })
+  const pages = layout.blocks === blocks ? layout.pages : []
   const [tick, setTick] = useState(0)
 
   useLayoutEffect(() => {
@@ -120,7 +126,7 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
       const mt = parseFloat(getComputedStyle(c as HTMLElement).marginTop) || 0
       return r.height + mb + mt
     })
-    setPages(paginate(heights, blocks.map((b) => b.kind), limit))
+    setLayout({ blocks, pages: paginate(heights, blocks.map((b) => b.kind), limit) })
   }, [blocks, showEnglish, tick])
 
   const node = (
@@ -134,7 +140,7 @@ export default function TalkPrint({ talk, verses, showEnglish, isScripture }: {
       </div>
       {pages.map((idx, pi) => (
         <div className={styles.page} key={pi}>
-          <div className={styles.body}>{idx.map((i) => <BlockView key={i} b={blocks[i]} showEnglish={showEnglish} />)}</div>
+          <div className={styles.body}>{idx.map((i) => blocks[i] && <BlockView key={i} b={blocks[i]} showEnglish={showEnglish} />)}</div>
           <div className={styles.foot}>{pi + 1} / {pages.length}</div>
         </div>
       ))}
